@@ -1,0 +1,880 @@
+import asyncio
+import json
+import logging
+import time
+import uuid
+from contextlib import asynccontextmanager
+from pathlib import Path
+from typing import Annotated
+
+from fastapi import Depends, FastAPI, Query, Request
+from fastapi.exceptions import RequestValidationError
+from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
+from fastapi.staticfiles import StaticFiles
+from sqlalchemy import delete, select, text, update
+from sqlalchemy.exc import DBAPIError
+from sqlalchemy.exc import TimeoutError as PoolTimeout
+
+from . import documents, progress
+from . import schemas as S
+from .administration import Setup, device_view, email_change_complete, email_change_start, grant_view
+from .config import Settings, get_settings
+from .db import context, coordinate, session_factory
+from .mail import Mailer
+from .mail_outbox import MailOutbox
+from .mail_outbox import enqueue as enqueue_mail
+from .models import Approval, Audit, AuthSession, Device, Enrollment, Grant, Membership, Project, User
+from .security import HubError, check_proof, now, rate_limit
+from .service import Hub, approval_view, require_root, user_view
+
+
+def create_app(
+    settings: Settings | None = None, *, factory=None, security_factory=None, mailer=None
+) -> FastAPI:
+    cfg = settings or get_settings()
+    sessions = factory or session_factory(cfg)
+    security_sessions = security_factory or session_factory(cfg, security=True)
+    mail = mailer or Mailer(cfg)
+    hub = Hub(cfg, mail)
+    setup = Setup(hub)
+    deliveries = MailOutbox(cfg, sessions, mail)
+
+    @asynccontextmanager
+    async def lifespan(app):
+        with sessions() as db:
+            role = db.execute(text("SELECT rolsuper, rolbypassrls FROM pg_roles WHERE rolname=current_user"))
+            superuser, bypass = role.one()
+            owner = db.scalar(
+                text(
+                    "SELECT pg_get_userbyid(relowner)=current_user FROM pg_class "
+                    "WHERE oid='public.projects'::regclass"
+                )
+            )
+            rls = db.scalar(text("SELECT relrowsecurity FROM pg_class WHERE oid='public.projects'::regclass"))
+            if superuser or bypass or owner or not rls:
+                raise RuntimeError(
+                    "API requires a non-owner, non-superuser, non-BYPASSRLS role and migrated RLS"
+                )
+        stop = asyncio.Event()
+
+        async def recover_mail():
+            while not stop.is_set():
+                try:
+                    await asyncio.to_thread(deliveries.recover_once)
+                except Exception:
+                    logging.getLogger(__name__).error("Mail outbox recovery deferred")
+                try:
+                    await asyncio.wait_for(stop.wait(), timeout=5)
+                except TimeoutError:
+                    pass
+
+        worker = asyncio.create_task(recover_mail()) if cfg.mail_mode != "memory" else None
+        try:
+            yield
+        finally:
+            stop.set()
+            if worker:
+                await worker
+            if security_factory is None:
+                security_sessions.kw["bind"].dispose()
+
+    app = FastAPI(title="Agent Hub", version="0.3.2", lifespan=lifespan)
+    app.state.sessions, app.state.mailer, app.state.hub = sessions, mail, hub
+    app.state.security_sessions, app.state.deliveries = security_sessions, deliveries
+
+    @app.middleware("http")
+    async def request_metadata(request: Request, call_next):
+        request.state.request_id = str(uuid.uuid4())
+        response = await call_next(request)
+        response.headers["X-Request-ID"] = request.state.request_id
+        response.headers["Cache-Control"] = "no-store"
+        response.headers["X-Content-Type-Options"] = "nosniff"
+        response.headers["Referrer-Policy"] = "no-referrer"
+        response.headers["Content-Security-Policy"] = (
+            "default-src 'self'; script-src 'self'; style-src 'self'; connect-src 'self'; "
+            "img-src 'self' data:; object-src 'none'; base-uri 'none'; frame-ancestors 'none'"
+        )
+        return response
+
+    @app.exception_handler(HubError)
+    async def business_error(request: Request, error: HubError):
+        return JSONResponse(
+            status_code=error.status,
+            content={
+                "code": error.code,
+                "request_id": request.state.request_id,
+                **error.details,
+            },
+        )
+
+    @app.exception_handler(RequestValidationError)
+    async def validation_error(request: Request, error: RequestValidationError):
+        return JSONResponse(
+            status_code=422,
+            content={
+                "code": "INVALID_REQUEST",
+                "request_id": request.state.request_id,
+                "errors": [
+                    {"location": list(e["loc"]), "message": e["msg"], "type": e["type"]}
+                    for e in error.errors()
+                ],
+            },
+        )
+
+    @app.exception_handler(PoolTimeout)
+    @app.exception_handler(DBAPIError)
+    async def database_busy(request: Request, error):
+        code = getattr(getattr(error, "orig", None), "sqlstate", None)
+        if not isinstance(error, PoolTimeout) and code not in {"55P03", "40P01", "57014", "53300"}:
+            logging.getLogger(__name__).error("Database request failed")
+        return JSONResponse(
+            status_code=503,
+            content={"code": "SERVICE_BUSY", "request_id": request.state.request_id},
+            headers={"Retry-After": "3"},
+        )
+
+    def db_dependency(request: Request):
+        pending_mail = []
+        with sessions() as db:
+            try:
+                yield db
+                db.commit()
+                pending_mail = db.info.pop("mail_deliveries", [])
+            except HubError as exc:
+                if exc.persist:
+                    db.commit()
+                else:
+                    db.rollback()
+                actor_id = getattr(request.state, "actor_id", None)
+                # Unauthenticated admission failures must not become an unbounded audit sink.
+                if actor_id or exc.code not in {
+                    "RATE_LIMITED",
+                    "DEVICE_PROOF_REQUIRED",
+                    "DPOP_TOKEN_REQUIRED",
+                }:
+                    with security_sessions.begin() as audit_db:
+                        hub.audit(
+                            audit_db,
+                            actor_id,
+                            "request.denied",
+                            request.url.path[:100],
+                            request.state.request_id,
+                            code=exc.code,
+                        )
+                raise
+            except Exception:
+                db.rollback()
+                raise
+        for job_id in pending_mail:
+            deliveries.deliver(job_id, raise_errors=True)
+
+    DB = Annotated[object, Depends(db_dependency, scope="function")]
+
+    def proof(request, token=None):
+        return check_proof(
+            security_sessions, cfg, request.headers.get("DPoP", ""), request.method, request.url.path, token
+        )
+
+    def token(request):
+        header = request.headers.get("Authorization", "")
+        if not header.startswith("DPoP ") or not 20 <= len(header[5:]) <= 256:
+            raise HubError("DPOP_TOKEN_REQUIRED", 401)
+        return header[5:]
+
+    def actor(request, db, *, users=(), projects=(), resources=(), grant_id=None):
+        value = token(request)
+        _, thumb = proof(request, value)
+        params = request.path_params
+        hub.lock_session(
+            db,
+            value,
+            thumb,
+            user_ids=[*users, params.get("user_id")],
+            project_ids=[*projects, params.get("project_id")],
+            device_id=params.get("device_id"),
+            approval_id=params.get("approval_id"),
+            grant_id=grant_id,
+            resources=resources,
+            exclusive=request.method not in {"GET", "HEAD"}
+            and not request.url.path.endswith(("/documents/read", "/documents/search")),
+        )
+        identity = hub.authenticate(db, value, thumb)
+        request.state.actor_id = identity.user.id
+        return identity
+
+    def enrollment(request, db, *, grant_id=None):
+        value = token(request)
+        _, thumb = proof(request, value)
+        hub.lock_enrollment(db, value, thumb, grant_id=grant_id)
+        user, device = hub.enrollment_identity(db, value, thumb)
+        request.state.actor_id = user.id
+        return user, device
+
+    def mutate(request, db, identity, body, action):
+        return hub.idempotent(
+            db,
+            identity,
+            f"{request.method}:{request.url.path}",
+            request.headers.get("Idempotency-Key"),
+            body.model_dump(mode="python"),
+            action,
+        )
+
+    @app.get("/healthz")
+    def health():
+        return {"status": "ok", "phase": "P2-documents", "version": "0.3.2"}
+
+    @app.post("/api/auth/enrollments")
+    def enroll(body: S.Enroll, request: Request, db: DB):
+        rate_limit(
+            security_sessions, hub.secret, f"ip:{request.client.host if request.client else 'local'}", 60, 300
+        )
+        jwk, thumb = proof(request)
+        user_id = db.scalar(select(User.id).where(User.login == body.login))
+        if user_id:
+            rate_limit(security_sessions, hub.secret, f"login:{user_id}", 10, 300)
+        coordinate(db, user_ids=[user_id], resources=[f"login:{body.login}"])
+        db.expire_all()
+        return hub.enroll(db, body, jwk, thumb, request.state.request_id)
+
+    @app.get("/api/devices/enrollment")
+    def enrollment_status(request: Request, db: DB):
+        user, device = enrollment(request, db)
+        hub.confirm_superadmin_device(db, user, device, request.state.request_id)
+        return {
+            "device_id": str(device.id),
+            "status": device.status,
+            "email_verification_required": bool(user.email and not device.email_verified_at),
+            "platform_role": user.platform_role,
+            "device_approval_mode": "root_email" if user.platform_role == "superadmin" else "superadmin",
+        }
+
+    @app.post("/api/devices/email-challenges")
+    def email_challenge(body: S.Empty, request: Request, db: DB):
+        user, device = enrollment(request, db)
+        rate_limit(security_sessions, hub.secret, f"mail:{user.id}", 5, 3600)
+        return hub.send_email(db, user, device, request.state.request_id)
+
+    @app.post("/api/devices/email-verifications")
+    def verify_email(body: S.VerifyEmail, request: Request, db: DB):
+        user, device = enrollment(request, db)
+        return hub.verify_email(db, user, device, body, request.state.request_id)
+
+    @app.post("/api/auth/sessions")
+    def start_session(body: S.StartSession, request: Request, db: DB):
+        user, device = enrollment(request, db, grant_id=body.grant_id)
+        grant = db.get(Grant, body.grant_id) if body.grant_id else None
+        if body.grant_id and (not grant or grant.user_id != user.id or grant.device_id != device.id):
+            raise HubError("GRANT_NOT_ACCESSIBLE", 404)
+        result = hub.issue_session(db, user, device, grant)
+        hub.audit(db, user.id, "session.created", result["session_id"], request.state.request_id)
+        return result
+
+    @app.post("/api/auth/refresh")
+    def refresh(body: S.Empty, request: Request, db: DB):
+        value = token(request)
+        _, thumb = proof(request, value)
+        hub.lock_session(db, value, thumb, refresh=True)
+        identity = hub.authenticate(db, value, thumb, refresh=True)
+        identity.session.state = "rotated"
+        return hub.issue_session(
+            db,
+            identity.user,
+            identity.device,
+            identity.grant,
+            family=identity.session.family_id,
+            family_expiry=identity.session.refresh_expires_at,
+        )
+
+    @app.get("/api/me")
+    def me(request: Request, db: DB):
+        identity = actor(request, db)
+        return {
+            "user": user_view(identity.user),
+            "device_id": str(identity.device.id),
+            "grant_id": str(identity.grant.id) if identity.grant else None,
+        }
+
+    @app.get("/api/me/grants")
+    def own_grants(request: Request, db: DB):
+        identity = actor(request, db)
+        grants = db.scalars(
+            select(Grant).where(
+                Grant.user_id == identity.user.id,
+                Grant.device_id == identity.device.id,
+                Grant.status == "active",
+                Grant.expires_at > now(),
+            )
+        )
+        items = []
+        try:
+            for g in grants:
+                try:
+                    hub.validate_grant(db, identity.user, identity.device, g)
+                except HubError:
+                    continue
+                p = db.get(Project, g.project_id)
+                items.append({**grant_view(g), "project_name": p.name, "project_slug": p.slug})
+        finally:
+            context(db, identity.user.id, identity.device.id, identity.session.grant_id)
+        return {"items": items}
+
+    @app.post("/api/admin/users/admins")
+    def create_admin(body: S.NewUser, request: Request, db: DB):
+        resources = [f"login:{body.login}"]
+        if body.email:
+            resources.append(f"email:{str(body.email).lower()}")
+        identity = actor(request, db, resources=resources)
+        require_root(identity)
+        return mutate(
+            request,
+            db,
+            identity,
+            body,
+            lambda: user_view(hub.create_user(db, identity, body, request.state.request_id, admin=True)),
+        )
+
+    @app.post("/api/admin/projects")
+    def create_project(body: S.NewProject, request: Request, db: DB):
+        identity = actor(request, db)
+        require_root(identity)
+        return mutate(
+            request,
+            db,
+            identity,
+            body,
+            lambda: hub.create_project(db, identity, body, request.state.request_id),
+        )
+
+    @app.get("/api/projects")
+    def projects(request: Request, db: DB):
+        actor(request, db)
+        return {
+            "items": [
+                {"id": str(p.id), "slug": p.slug, "name": p.name}
+                for p in db.scalars(select(Project).order_by(Project.slug))
+            ]
+        }
+
+    @app.get("/api/projects/{project_id}/context")
+    def project_context(project_id: uuid.UUID, request: Request, db: DB):
+        identity = actor(request, db)
+        p = hub.project(db, identity, project_id)
+        return {
+            "id": str(p.id),
+            "slug": p.slug,
+            "name": p.name,
+            "capabilities": identity.grant.capabilities if identity.grant else [],
+        }
+
+    @app.put("/api/admin/projects/{project_id}/administrators")
+    def assign_admin(project_id: uuid.UUID, body: S.AssignAdmin, request: Request, db: DB):
+        identity = actor(request, db, users=[body.user_id])
+        require_root(identity)
+        return mutate(
+            request,
+            db,
+            identity,
+            body,
+            lambda: hub.assign_admin(db, identity, project_id, body.user_id, request.state.request_id),
+        )
+
+    @app.post("/api/projects/{project_id}/member-invitations")
+    def invite(project_id: uuid.UUID, body: S.MemberInvitation, request: Request, db: DB):
+        resources = [f"login:{body.new_user.login}"] if body.new_user else []
+        if body.new_user and body.new_user.email:
+            resources.append(f"email:{str(body.new_user.email).lower()}")
+        identity = actor(request, db, users=[body.user_id], resources=resources)
+        hub.manage_members(db, identity, project_id)
+        return mutate(
+            request,
+            db,
+            identity,
+            body,
+            lambda: hub.invite(db, identity, project_id, body, request.state.request_id),
+        )
+
+    @app.post("/api/grant-requests")
+    def grant_request(body: S.GrantRequest, request: Request, db: DB):
+        identity = actor(request, db, users=[body.user_id], projects=[body.project_id])
+        return mutate(
+            request,
+            db,
+            identity,
+            body,
+            lambda: hub.request_grant(db, identity, body, request.state.request_id),
+        )
+
+    @app.post("/api/admin/grants")
+    def direct_grant(body: S.GrantRequest, request: Request, db: DB):
+        identity = actor(request, db, users=[body.user_id], projects=[body.project_id])
+        require_root(identity)
+
+        def issue():
+            a = hub.request_grant(db, identity, body, request.state.request_id)
+            return hub.decide(
+                db,
+                identity,
+                uuid.UUID(a["id"]),
+                S.Decision(approve=True, expected_version=a["version"], expected_hash=a["payload_hash"]),
+                request.state.request_id,
+            )
+
+        return mutate(request, db, identity, body, issue)
+
+    @app.get("/api/admin/approvals")
+    def approvals(
+        request: Request, db: DB, offset: int = Query(0, ge=0), limit: int = Query(100, ge=1, le=100)
+    ):
+        identity = actor(request, db)
+        require_root(identity)
+        return {
+            "items": [
+                approval_view(a)
+                for a in db.scalars(
+                    select(Approval)
+                    .where(Approval.status == "pending_approval", Approval.expires_at > now())
+                    .order_by(Approval.created_at, Approval.id)
+                    .offset(offset)
+                    .limit(limit)
+                )
+            ]
+        }
+
+    @app.post("/api/admin/approvals/{approval_id}/decision")
+    def decision(approval_id: uuid.UUID, body: S.Decision, request: Request, db: DB):
+        identity = actor(request, db)
+        require_root(identity)
+        return mutate(
+            request,
+            db,
+            identity,
+            body,
+            lambda: hub.decide(db, identity, approval_id, body, request.state.request_id),
+        )
+
+    @app.post("/api/projects/{project_id}/members/{user_id}/revoke")
+    def revoke_member(project_id: uuid.UUID, user_id: uuid.UUID, body: S.Empty, request: Request, db: DB):
+        identity = actor(request, db)
+        hub.manage_members(db, identity, project_id)
+        return mutate(
+            request,
+            db,
+            identity,
+            body,
+            lambda: hub.revoke_member(db, identity, project_id, user_id, request.state.request_id),
+        )
+
+    @app.post("/api/admin/users/{user_id}/status")
+    def user_status(user_id: uuid.UUID, body: S.UserStatus, request: Request, db: DB):
+        identity = actor(request, db)
+        require_root(identity)
+        return mutate(
+            request,
+            db,
+            identity,
+            body,
+            lambda: hub.user_status(db, identity, user_id, body.status, request.state.request_id),
+        )
+
+    @app.post("/api/admin/projects/{project_id}/members/{user_id}/restore")
+    def restore_member(project_id: uuid.UUID, user_id: uuid.UUID, body: S.Empty, request: Request, db: DB):
+        identity = actor(request, db)
+        require_root(identity)
+        return mutate(
+            request,
+            db,
+            identity,
+            body,
+            lambda: hub.restore_member(db, identity, project_id, user_id, request.state.request_id),
+        )
+
+    @app.post("/api/admin/devices/{device_id}/revoke")
+    def revoke_device(device_id: uuid.UUID, body: S.Empty, request: Request, db: DB):
+        identity = actor(request, db)
+        require_root(identity)
+        return mutate(
+            request,
+            db,
+            identity,
+            body,
+            lambda: hub.revoke_device(db, identity, device_id, request.state.request_id),
+        )
+
+    @app.get("/api/audit")
+    def audit(request: Request, db: DB, project_id: uuid.UUID | None = None):
+        identity = actor(request, db)
+        statement = select(Audit).order_by(Audit.created_at.desc()).limit(100)
+        if identity.user.platform_role != "superadmin":
+            if not project_id:
+                raise HubError("PROJECT_NOT_ACCESSIBLE", 404)
+            hub.manage_members(db, identity, project_id)
+            hub.project(db, identity, project_id, "audit:read")
+        if project_id:
+            statement = statement.where(Audit.project_id == project_id)
+        return {
+            "items": [
+                {
+                    "id": str(e.id),
+                    "action": e.action,
+                    "object_id": e.object_id,
+                    "project_id": str(e.project_id) if e.project_id else None,
+                    "request_id": e.request_id,
+                    "details": e.details,
+                    "created_at": e.created_at.isoformat(),
+                }
+                for e in db.scalars(statement)
+            ]
+        }
+
+    @app.get("/api/setup/status")
+    def setup_status(db: DB):
+        return {
+            "setup_required": setup.required(db),
+            "setup_enabled": bool(cfg.bootstrap_token.get_secret_value()),
+            "active_origin": cfg.public_url,
+        }
+
+    def setup_identity(request, db):
+        supplied = request.headers.get("X-Setup-Token", "")
+        rate_limit(
+            security_sessions,
+            hub.secret,
+            f"setup-access:{request.client.host if request.client else 'local'}",
+            60,
+            300,
+        )
+        result = proof(request, supplied)
+        coordinate(db)
+        setup.guard(db, supplied)
+        return result
+
+    @app.get("/api/setup/configuration")
+    def setup_configuration(request: Request, db: DB):
+        setup_identity(request, db)
+        return hub.site.view(db)
+
+    @app.put("/api/setup/configuration")
+    def save_setup_configuration(body: S.SiteConfigurationInput, request: Request, db: DB):
+        setup_identity(request, db)
+        result = hub.site.write(db, body)
+        hub.audit(
+            db, None, "setup.configuration_saved", "site", request.state.request_id, version=result["version"]
+        )
+        return result
+
+    @app.post("/api/setup/challenges")
+    def setup_challenge(body: S.BootstrapStart, request: Request, db: DB):
+        jwk, thumb = setup_identity(request, db)
+        rate_limit(security_sessions, hub.secret, f"setup-mail:{str(body.email).lower()}", 5, 3600)
+        return setup.challenge(db, body, jwk, thumb, request.state.request_id)
+
+    @app.post("/api/setup/complete")
+    def complete_setup(body: S.BootstrapComplete, request: Request, db: DB):
+        _, thumb = setup_identity(request, db)
+        return setup.complete(db, body, thumb, request.state.request_id)
+
+    @app.get("/api/admin/settings")
+    def site_settings(request: Request, db: DB):
+        require_root(actor(request, db))
+        return hub.site.view(db)
+
+    @app.put("/api/admin/settings")
+    def save_site_settings(body: S.SiteConfigurationInput, request: Request, db: DB):
+        identity = actor(request, db)
+        require_root(identity)
+
+        def save():
+            result = hub.site.write(db, body, identity.user.id)
+            hub.audit(
+                db,
+                identity.user.id,
+                "site.configuration_saved",
+                "site",
+                request.state.request_id,
+                version=result["version"],
+            )
+            return result
+
+        return mutate(request, db, identity, body, save)
+
+    @app.post("/api/admin/settings/test-email")
+    def test_email(body: S.Empty, request: Request, db: DB):
+        identity = actor(request, db)
+        require_root(identity)
+        rate_limit(security_sessions, hub.secret, f"mail-test:{identity.user.id}", 5, 3600)
+        enqueue_mail(db, cfg, identity.user.email)
+        hub.audit(db, identity.user.id, "site.test_email_queued", "site", request.state.request_id)
+        return {"sent": True, "recipient": identity.user.email}
+
+    @app.get("/api/admin/users")
+    def users(request: Request, db: DB, offset: int = Query(0, ge=0), limit: int = Query(100, ge=1, le=100)):
+        require_root(actor(request, db))
+        return {
+            "items": [
+                user_view(u)
+                for u in db.scalars(select(User).order_by(User.login).offset(offset).limit(limit))
+            ]
+        }
+
+    @app.get("/api/admin/devices")
+    def devices(
+        request: Request,
+        db: DB,
+        user_id: uuid.UUID | None = None,
+        offset: int = Query(0, ge=0),
+        limit: int = Query(100, ge=1, le=100),
+    ):
+        require_root(actor(request, db))
+        statement = (
+            select(Device, User.login).join(User, Device.user_id == User.id).order_by(Device.created_at)
+        )
+        if user_id:
+            statement = statement.where(Device.user_id == user_id)
+        return {
+            "items": [device_view(d, login) for d, login in db.execute(statement.offset(offset).limit(limit))]
+        }
+
+    @app.get("/api/me/devices")
+    def own_devices(request: Request, db: DB):
+        identity = actor(request, db)
+        return {
+            "items": [
+                device_view(d, identity.user.login)
+                for d in db.scalars(
+                    select(Device)
+                    .where(Device.user_id == identity.user.id)
+                    .order_by(Device.created_at)
+                    .limit(100)
+                )
+            ]
+        }
+
+    @app.get("/api/projects/{project_id}/members")
+    def project_members(
+        project_id: uuid.UUID,
+        request: Request,
+        db: DB,
+        offset: int = Query(0, ge=0),
+        limit: int = Query(100, ge=1, le=100),
+    ):
+        identity = actor(request, db)
+        hub.manage_members(db, identity, project_id)
+        rows = db.execute(
+            select(Membership, User)
+            .join(User, Membership.user_id == User.id)
+            .where(Membership.project_id == project_id)
+            .order_by(User.login)
+            .offset(offset)
+            .limit(limit)
+        )
+        return {
+            "items": [
+                {**user_view(u), "membership_role": m.role, "membership_status": m.status} for m, u in rows
+            ]
+        }
+
+    @app.get("/api/projects/{project_id}/member-devices")
+    def project_devices(
+        project_id: uuid.UUID,
+        request: Request,
+        db: DB,
+        offset: int = Query(0, ge=0),
+        limit: int = Query(100, ge=1, le=100),
+    ):
+        identity = actor(request, db)
+        hub.manage_members(db, identity, project_id)
+        rows = db.execute(
+            select(Device, User.login)
+            .join(User, Device.user_id == User.id)
+            .join(Membership, Membership.user_id == User.id)
+            .where(Membership.project_id == project_id)
+            .order_by(Device.created_at)
+            .offset(offset)
+            .limit(limit)
+        )
+        return {"items": [device_view(d, login) for d, login in rows]}
+
+    @app.get("/api/projects/{project_id}/grants")
+    def project_grants(project_id: uuid.UUID, request: Request, db: DB):
+        identity = actor(request, db)
+        hub.manage_members(db, identity, project_id)
+        return {
+            "items": [
+                grant_view(g)
+                for g in db.scalars(
+                    select(Grant)
+                    .where(Grant.project_id == project_id)
+                    .order_by(Grant.created_at.desc())
+                    .limit(100)
+                )
+            ]
+        }
+
+    @app.post("/api/auth/select-project")
+    def select_project(body: S.StartSession, request: Request, db: DB):
+        identity = actor(request, db, grant_id=body.grant_id)
+        grant = db.get(Grant, body.grant_id) if body.grant_id else None
+        if not grant or grant.user_id != identity.user.id or grant.device_id != identity.device.id:
+            raise HubError("GRANT_NOT_ACCESSIBLE", 404)
+        result = hub.issue_session(db, identity.user, identity.device, grant)
+        db.execute(
+            update(AuthSession)
+            .where(AuthSession.family_id == identity.session.family_id)
+            .values(state="revoked")
+        )
+        return result
+
+    @app.post("/api/auth/project-sessions")
+    def project_session(body: S.StartSession, request: Request, db: DB):
+        # Independent project families let desktop bridges coexist without changing others.
+        identity = actor(request, db, grant_id=body.grant_id)
+        grant = db.get(Grant, body.grant_id) if body.grant_id else None
+        if not grant or grant.user_id != identity.user.id or grant.device_id != identity.device.id:
+            raise HubError("GRANT_NOT_ACCESSIBLE", 404)
+        return hub.issue_session(db, identity.user, identity.device, grant)
+
+    @app.get("/api/projects/{project_id}/progress")
+    def project_progress(
+        project_id: uuid.UUID,
+        request: Request,
+        db: DB,
+        after: int = Query(0, ge=0, le=9223372036854775807),
+        limit: int = Query(50, ge=1, le=100),
+    ):
+        hub.project(db, actor(request, db), project_id)
+        return progress.page(db, project_id, after, limit)
+
+    @app.get("/api/projects/{project_id}/documents/repository")
+    def document_repository(project_id: uuid.UUID, request: Request, db: DB):
+        identity = actor(request, db)
+        manager = bool(db.scalar(text("SELECT hub.can_manage_documents(:p)"), {"p": project_id}))
+        hub.project(db, identity, project_id, "documents:manage" if manager else "documents:read")
+        return documents.repository_view(db, project_id, manager=manager)
+
+    @app.put("/api/projects/{project_id}/documents/repository")
+    def configure_documents(project_id: uuid.UUID, body: S.DocumentRepositoryInput, request: Request, db: DB):
+        identity = actor(request, db)
+        documents.require_manager(hub, db, identity, project_id)
+        return mutate(
+            request,
+            db,
+            identity,
+            body,
+            lambda: documents.configure(hub, db, identity, project_id, body, request.state.request_id),
+        )
+
+    @app.post("/api/projects/{project_id}/documents/syncs")
+    def sync_documents(project_id: uuid.UUID, body: S.Empty, request: Request, db: DB):
+        identity = actor(request, db)
+        documents.require_manager(hub, db, identity, project_id)
+        rate_limit(security_sessions, hub.secret, f"documents-sync:{project_id}", 30, 3600)
+        return mutate(
+            request,
+            db,
+            identity,
+            body,
+            lambda: documents.enqueue(hub, db, identity, project_id, request.state.request_id),
+        )
+
+    @app.post("/api/projects/{project_id}/documents/search")
+    def search_documents(project_id: uuid.UUID, body: S.DocumentSearch, request: Request, db: DB):
+        identity = actor(request, db)
+        hub.project(db, identity, project_id, "documents:read")
+        rate_limit(security_sessions, hub.secret, f"documents-read:{identity.user.id}", 180, 60)
+        return documents.search(db, project_id, body)
+
+    @app.post("/api/projects/{project_id}/documents/read")
+    def read_document(project_id: uuid.UUID, body: S.DocumentRead, request: Request, db: DB):
+        identity = actor(request, db)
+        hub.project(db, identity, project_id, "documents:read")
+        rate_limit(security_sessions, hub.secret, f"documents-read:{identity.user.id}", 180, 60)
+        return documents.read(db, project_id, body)
+
+    @app.post("/api/projects/{project_id}/progress")
+    def report_progress(project_id: uuid.UUID, body: S.ProgressReport, request: Request, db: DB):
+        identity = actor(request, db)
+        hub.project(db, identity, project_id, "tasks:write")
+        rate_limit(security_sessions, hub.secret, f"progress:{identity.user.id}", 120, 60)
+        return mutate(
+            request,
+            db,
+            identity,
+            body,
+            lambda: progress.report(hub, db, identity, project_id, body, request.state.request_id),
+        )
+
+    @app.get("/api/projects/{project_id}/progress/stream")
+    def stream_progress(
+        project_id: uuid.UUID,
+        request: Request,
+        after: int = Query(0, ge=0, le=9223372036854775807),
+    ):
+        # No dependency transaction or identity lock stays open while the stream waits.
+        value = token(request)
+        _, thumb = proof(request, value)
+        with sessions.begin() as db:
+            hub.lock_session(db, value, thumb, project_ids=[project_id], exclusive=False)
+            hub.project(db, hub.authenticate(db, value, thumb), project_id)
+
+        def batch(cursor):
+            with sessions.begin() as db:
+                hub.lock_session(db, value, thumb, project_ids=[project_id], exclusive=False)
+                hub.project(db, hub.authenticate(db, value, thumb), project_id)
+                return progress.page(db, project_id, cursor, 100)
+
+        async def events():
+            cursor, last_ping, ready = after, 0, False
+            while not await request.is_disconnected():
+                try:
+                    result = await asyncio.to_thread(batch, cursor)
+                except HubError as exc:
+                    yield "event: access_status\ndata: " + json.dumps({"code": exc.code}) + "\n\n"
+                    return
+                for entry in result["items"]:
+                    yield f"id: {entry['sequence']}\nevent: progress\ndata: {json.dumps(entry)}\n\n"
+                    cursor = int(entry["sequence"])
+                if not result["has_more"] and not ready:
+                    yield "event: ready\ndata: {}\n\n"
+                    ready = True
+                if time.monotonic() - last_ping >= 10:
+                    yield ": heartbeat\n\n"
+                    last_ping = time.monotonic()
+                if not result["has_more"]:
+                    await asyncio.sleep(2)
+
+        return StreamingResponse(
+            events(), media_type="text/event-stream", headers={"X-Accel-Buffering": "no"}
+        )
+
+    @app.post("/api/auth/logout")
+    def logout(body: S.Empty, request: Request, db: DB):
+        identity = actor(request, db)
+        db.execute(
+            update(AuthSession)
+            .where(AuthSession.family_id == identity.session.family_id)
+            .values(state="revoked")
+        )
+        db.execute(delete(Enrollment).where(Enrollment.device_id == identity.device.id))
+        hub.audit(db, identity.user.id, "session.logged_out", identity.session.id, request.state.request_id)
+        return {"logged_out": True}
+
+    @app.post("/api/me/email-challenges")
+    def bind_email_challenge(body: S.EmailChangeRequest, request: Request, db: DB):
+        identity = actor(request, db)
+        rate_limit(security_sessions, hub.secret, f"bind-email:{identity.user.id}", 5, 3600)
+        return email_change_start(hub, db, identity, body, request.state.request_id)
+
+    @app.post("/api/me/email-verifications")
+    def bind_email_verification(body: S.VerifyEmail, request: Request, db: DB):
+        identity = actor(request, db)
+        return email_change_complete(hub, db, identity, body, request.state.request_id)
+
+    static = Path(__file__).parent / "static"
+    app.mount("/assets", StaticFiles(directory=static), name="assets")
+
+    @app.get("/", include_in_schema=False)
+    def console():
+        return FileResponse(static / "index.html")
+
+    return app

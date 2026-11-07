@@ -1,0 +1,43 @@
+[build-system]
+requires = ["hatchling>=1.27,<2"]
+build-backend = "hatchling.build"
+
+[project]
+name = "agent-hub"
+version = "0.3.2"
+description = "Project-scoped identities, approvals and device sessions for the Agent collaboration framework"
+requires-python = ">=3.12"
+dependencies = [
+  "fastapi>=0.115,<1",
+  "uvicorn>=0.34,<1",
+  "sqlalchemy>=2.0.40,<2.1",
+  "psycopg[binary]>=3.2,<4",
+  "alembic>=1.15,<2",
+  "pydantic-settings>=2.8,<3",
+  "argon2-cffi>=23.1,<26",
+  "PyJWT[crypto]>=2.10,<3",
+  "email-validator>=2.2,<3",
+  "httpx>=0.28,<1",
+  "typer>=0.15,<1",
+  "cryptography>=44,<51",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8.3,<10", "ruff>=0.11,<1"]
+
+[project.scripts]
+agent-hub = "agent_hub.cli:app"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/agent_hub"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-ra"
+
+[tool.ruff]
+line-length = 110
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]

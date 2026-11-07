@@ -1,0 +1,22 @@
+{
+  "name": "agent-hub-desktop",
+  "productName": "Agent Hub",
+  "version": "0.5.0",
+  "private": true,
+  "description": "Agent Hub desktop login, project MCP bridge and progress notifications",
+  "main": "main.cjs",
+  "scripts": {
+    "start": "electron .",
+    "test": "node --test tests/*.test.cjs",
+    "package:win": "node scripts/package-win.cjs",
+    "installer:win": "node scripts/build-installer.cjs"
+  },
+  "devDependencies": {
+    "electron": "45.2.3",
+    "electron-builder": "26.18.0",
+    "rcedit": "4.0.1"
+  },
+  "overrides": {
+    "minimatch@>=7.0.0 <11.0.1": "11.0.1"
+  }
+}

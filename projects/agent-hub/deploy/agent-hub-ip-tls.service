@@ -1,0 +1,11 @@
+[Unit]
+Description=Renew Agent Hub IP certificate and reload its HTTPS gateway
+Wants=network-online.target
+After=network-online.target docker.service
+Requires=docker.service
+
+[Service]
+Type=oneshot
+ExecStart=/bin/sh /opt/agent-hub/application/current/deploy/renew-ip-tls.sh
+TimeoutStartSec=300
+Nice=10

@@ -1,0 +1,31 @@
+# Local credentials and server inventory
+服务器总册_明文.md
+管理员凭证_明文.md
+**/.env
+**/.env.*
+!**/.env.example
+**/*private*.pem
+**/device.pem
+**/device-key.json
+**/credentials.json
+**/vault.bin
+**/bindings/*.json
+**/.mcp.json
+**/*-key.pem
+**/*.p12
+**/*.pfx
+# Runtime and development output
+.venv/
+**/.venv/
+**/__pycache__/
+**/*.py[cod]
+**/*.egg-info/
+**/.pytest_cache/
+**/.ruff_cache/
+**/.coverage
+**/htmlcov/
+**/build/
+**/dist/
+.local/
+**/.local/
+**/node_modules/

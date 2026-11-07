@@ -1,0 +1,524 @@
+import {Client, messages} from './api.js';
+
+const root = document.querySelector('#app');
+const modal = document.querySelector('#modal');
+const notice = document.querySelector('#notice');
+const names = {active:'正常', approved:'已批准', pending:'待审批', pending_email:'待验证邮箱',
+  pending_approval:'待审批', revoked:'已撤销', suspended:'已冻结', disabled:'已停用', issued:'已签发', denied:'已拒绝'};
+const caps = {'project:read':'项目资料', 'documents:read':'读取文档', 'documents:propose':'文档提案',
+  'tasks:claim':'认领任务', 'tasks:write':'提交进展', 'tasks:publish':'发布任务', 'documents:manage':'管理文档源',
+  'members:manage':'成员管理', 'grants:request':'授权申请', 'audit:read':'项目审计'};
+const osDefault = /Mac/i.test(navigator.platform) ? 'macos' : 'windows';
+const messagesForDocument = code => messages[code] || code;
+const loginOptions = {required:true,pattern:'[a-z0-9][a-z0-9_.\\-]{2,79}',minlength:3,maxlength:80,
+  title:'3–80 位小写字母或数字，可含 . _ -，以字母或数字开头，支持纯数字。',
+  hint:'3–80 位小写字母或数字，可含 . _ -，支持纯数字。'};
+
+function h(tag, attrs = {}, ...children) {
+  const node = document.createElement(tag);
+  for (const [key, value] of Object.entries(attrs)) {
+    if (key.startsWith('on')) node.addEventListener(key.slice(2).toLowerCase(), value);
+    else if (key === 'class') node.className = value;
+    else if (key === 'value') node.value = value;
+    else if (value !== undefined && value !== null && value !== false) node.setAttribute(key, value === true ? '' : String(value));
+  }
+  for (const child of children.flat(Infinity)) if (child !== null && child !== undefined && child !== false)
+    node.append(child instanceof Node ? child : document.createTextNode(String(child)));
+  return node;
+}
+const pill = value => h('span', {class:`pill ${value}`}, names[value] || value);
+const textPair = (title, detail) => h('div', {}, h('strong', {}, title), detail && h('small', {class:'mono'}, detail));
+const values = form => Object.fromEntries(new FormData(form));
+const short = value => value ? value.slice(0, 8) : '—';
+const date = value => value ? new Date(value).toLocaleString('zh-CN', {hour12:false}) : '—';
+
+function field(name, title, options = {}) {
+  const {full, hint, items, ...attrs} = options;
+  const control = items ? h('select', {name, ...attrs}, items.map(([value, label]) => h('option', {value}, label)))
+    : h('input', {name, ...attrs});
+  if (attrs.value !== undefined) control.value = attrs.value;
+  return h('label', {class:full ? 'full' : ''}, title, control, hint && h('small', {}, hint));
+}
+function toast(text, error = false) {
+  notice.textContent = text; notice.className = error ? 'error' : ''; notice.hidden = false;
+  clearTimeout(toast.timer); toast.timer = setTimeout(() => { notice.hidden = true; }, error ? 11000 : 6500);
+}
+async function run(button, action) {
+  button.disabled = true;
+  try { await action(); } catch (error) { app.report(error); }
+  finally { button.disabled = false; }
+}
+function button(label, action, variant = '') {
+  const node = h('button', {type:'button', class:variant}, label);
+  node.addEventListener('click', () => run(node, action)); return node;
+}
+function submit(form, label, action, variant = 'primary') {
+  const node = h('button', {type:'submit', class:variant}, label);
+  const feedback = h('p',{class:'danger-note',role:'alert',hidden:true});
+  form.append(feedback);
+  form.addEventListener('input', () => {
+    feedback.hidden = true;
+    form.querySelectorAll('[aria-invalid="true"]').forEach(control => control.removeAttribute('aria-invalid'));
+  });
+  form.addEventListener('submit', event => {
+    event.preventDefault(); feedback.hidden = true;
+    run(node, async () => {
+      try { await action(values(form)); }
+      catch (error) {
+        feedback.textContent = error.message; feedback.hidden = false;
+        for (const issue of error.issues || []) {
+          const control = form.elements.namedItem(issue.field);
+          if (control instanceof HTMLElement) control.setAttribute('aria-invalid','true');
+        }
+        const invalid = form.querySelector('[aria-invalid="true"]');
+        if (invalid) invalid.focus();
+        throw error;
+      }
+    });
+  });
+  return node;
+}
+function table(title, headers, rows, actions = []) {
+  return h('section', {class:'table-card'}, h('div', {class:'table-title'}, h('h2', {}, title), h('div', {class:'row-actions'}, actions)),
+    rows.length ? h('div', {class:'table-wrap'}, h('table', {}, h('thead', {}, h('tr', {}, headers.map(title => h('th', {}, title)))),
+      h('tbody', {}, rows.map(row => h('tr', {}, row.map(cell => h('td', {}, cell)))))))
+      : h('div', {class:'empty'}, '这里暂时没有记录。', h('br'), '完成相应配置后，记录会显示在这里。'));
+}
+function dialog(title, description, form, actionLabel, action) {
+  modal.querySelector('#modal-body').replaceChildren(h('h2', {}, title), h('p', {}, description), form);
+  form.append(h('div', {class:'actions end'}, button('取消', () => modal.close()), submit(form, actionLabel, async data => {
+    await action(data); modal.close(); toast('已保存'); await app.renderView();
+  })));
+  modal.showModal();
+}
+
+class Console {
+  constructor() { this.client = new Client(); this.currentView = 'overview'; this.project = null; this.user = null; this.offset = 0; this.renderVersion = 0; }
+  api(method, path, data, options) { return this.client.request(method, path, data, options); }
+  get isRoot() { return this.user?.platform_role === 'superadmin'; }
+  report(error) {
+    if (['PROJECT_ACCESS_REVOKED','ACCOUNT_INACTIVE','SESSION_REVOKED','SESSION_EXPIRED_OR_REVOKED','REFRESH_REPLAY_FAMILY_REVOKED','DEVICE_APPROVAL_REQUIRED'].includes(error.code) && this.user) {
+      this.client.clear(); this.user = null; this.project = null; modal.close(); this.login(error.message);
+    }
+    toast(error.message || '操作暂时未完成，请稍后重试。', true);
+  }
+  async start() {
+    try { const status = await this.client.init(); status.setup_required ? this.setup() : this.login(); }
+    catch (error) { root.replaceChildren(h('main', {class:'loading'}, h('h1', {}, '暂时无法打开后台'), h('p', {}, error.message))); }
+  }
+  authLayout(content) {
+    root.replaceChildren(h('main', {class:'auth-layout'}, h('aside', {class:'auth-aside'},
+      h('div', {class:'brand'}, h('span', {class:'brand-mark'}, 'A'), h('div', {}, 'Agent Hub', h('small', {}, 'PROJECT COLLABORATION'))),
+      h('div', {}, h('div', {class:'eyebrow'}, 'YOUR WORK, CONNECTED'), h('h1', {}, '让项目知识与协作，', h('br'), '跟随每一位执行者。'),
+        h('p', {}, '统一管理项目、人员和设备，明确每一次授权，让不同设备上的工作有序衔接。')),
+      h('div', {class:'footnote'}, '项目有边界 · 授权可追溯 · 工作可交接')),
+      h('section', {class:'auth-main'}, content)));
+  }
+  configFields(data = {}) {
+    return h('div', {class:'fields'},
+      field('public_url','服务地址', {type:'url', value:data.public_url || '', placeholder:'https://agent.example.com', full:true,
+        hint:'可以稍后填写；HTTPS 入口就绪后，由部署流程启用该地址。'}),
+      field('smtp_host','SMTP 服务器', {required:true, value:data.smtp_host || '', placeholder:'smtp.example.com'}),
+      field('smtp_port','端口', {type:'number', required:true, min:1, max:65535, value:data.smtp_port || 587}),
+      field('smtp_from','发信邮箱', {type:'email', required:true, value:data.smtp_from || '', placeholder:'noreply@example.com'}),
+      field('smtp_transport','连接加密', {items:[['starttls','STARTTLS（通常为 587）'],['tls','TLS（通常为 465）'],['local','仅本机邮件中继']], value:data.smtp_transport || 'starttls'}),
+      field('smtp_username','SMTP 账号', {value:data.smtp_username || '', autocomplete:'off'}),
+      field('smtp_password','SMTP 密码 / 授权码', {type:'password', autocomplete:'new-password',
+        placeholder:data.smtp_password_set ? '已保存；留空保留' : '请输入发信授权码', hint:'加密保存，后台不会回显。'}));
+  }
+  configBody(data, version) {
+    return {...data, expected_version:version, public_url:data.public_url || null, smtp_port:Number(data.smtp_port),
+      smtp_password:data.smtp_password || null};
+  }
+  setup() {
+    const content = h('div', {class:'auth-form'}, h('div', {class:'eyebrow'}, 'INITIAL SETUP'),
+      h('div', {class:'intro'}, h('h1', {}, '配置你的协作空间'), h('p', {}, '连接发信服务，验证邮箱并建立第一个超级管理员账号。')));
+    let configuration = {version:0}, attempt = null;
+    const tokenInput = field('setup_token','一次性初始化码', {type:'password', required:true, autocomplete:'off', full:true,
+      hint:'从部署服务器 /opt/agent-hub/application/setup-token 获取。'});
+    const token = () => {
+      const value = tokenInput.querySelector('input').value.trim();
+      if (!value) throw new Error('请先输入服务器上的一次性初始化码。');
+      return value;
+    };
+    const config = h('form', {}, this.configFields(configuration));
+    const configNotice = h('div', {class:'hint'}, '填写并保存后，下一步将向超管邮箱发送验证码。');
+    const load = button('读取已保存设置', async () => {
+      configuration = await this.api('GET','/api/setup/configuration',undefined,{setup:token()});
+      config.querySelector('.fields').replaceWith(this.configFields(configuration));
+      configNotice.textContent = configuration.mail_configured ? '发信设置已读取，可以继续验证超管邮箱。' : '请补充发信设置。';
+    });
+    config.append(h('div', {class:'actions'}, submit(config,'保存发信设置',async data => {
+      configuration = await this.api('PUT','/api/setup/configuration',this.configBody(data,configuration.version),{setup:token()});
+      config.elements.smtp_password.value = ''; configNotice.textContent = '发信设置已保存，请继续验证超管邮箱。'; toast('发信设置已加密保存');
+    }),load),configNotice);
+    const signup = h('form', {}, h('div', {class:'fields'},
+      field('login','超管登录名',{...loginOptions,placeholder:'例如 root 或 641725631',autocomplete:'username'}),
+      field('email','超管邮箱',{type:'email',required:true,autocomplete:'email'}),
+      field('password','超管密码',{type:'password',required:true,minlength:12,maxlength:256,autocomplete:'new-password',full:true,hint:'至少 12 个字符。'}),
+      field('device_name','本设备名称',{required:true,value:'管理工作站'}),
+      field('os','设备系统',{items:[['windows','Windows'],['macos','macOS']],value:osDefault})));
+    const codeForm = h('form', {hidden:true}, h('div',{class:'fields single'},field('code','邮箱验证码',{required:true,pattern:'[0-9]{8}',inputmode:'numeric',autocomplete:'one-time-code'})));
+    signup.append(h('div',{class:'actions'},submit(signup,'发送邮箱验证码',async data => {
+      if (!configuration.mail_configured) throw new Error('请先保存或读取发信设置。');
+      attempt = await this.api('POST','/api/setup/challenges',data,{setup:token()});
+      codeForm.hidden = false; toast('验证码已发送，请查看超管邮箱。'); codeForm.elements.code.focus();
+    })));
+    codeForm.append(h('div',{class:'actions'},submit(codeForm,'验证邮箱并建立超管',async data => {
+      const session = await this.api('POST','/api/setup/complete',{attempt_id:attempt.attempt_id,code:data.code},{setup:token()});
+      tokenInput.querySelector('input').value = ''; signup.elements.password.value = ''; codeForm.elements.code.value = '';
+      this.client.setSession(session); await this.enter(); toast('超级管理员已建立，当前设备已批准。');
+    })));
+    content.append(h('section',{class:'card'},tokenInput), h('section',{class:'card'},h('div',{class:'card-title'},h('span',{class:'step'},'1'),h('h2',{},'发信服务与服务地址')),config),
+      h('section',{class:'card'},h('div',{class:'card-title'},h('span',{class:'step'},'2'),h('h2',{},'建立超级管理员')),signup,codeForm));
+    if (!this.client.status.setup_enabled) content.prepend(h('p',{class:'danger-note'},'部署端尚未启用初始化码，请先完成服务器应用配置。'));
+    this.authLayout(content);
+  }
+  login(message = '') {
+    const content = h('div',{class:'auth-form narrow'},h('div',{class:'eyebrow'},'WELCOME BACK'),h('h1',{},'登录协作后台'),
+      h('p',{},'超级管理员的新设备通过密码和邮箱验证码确认。其他账号的新设备按审批流程登录。'));
+    if (message) content.append(h('p',{class:'danger-note'},message));
+    const form = h('form',{},h('div',{class:'fields single'},field('login','登录名',{required:true,autocomplete:'username'}),
+      field('password','密码',{type:'password',required:true,autocomplete:'current-password'}),
+      field('device_name','设备名称',{required:true,value:'管理工作站'}),field('os','设备系统',{items:[['windows','Windows'],['macos','macOS']],value:osDefault})));
+    form.append(h('div',{class:'actions'},submit(form,'登录',async data => {
+      this.client.enrollment = await this.api('POST','/api/auth/enrollments',data);
+      form.elements.password.value = '';
+      if (this.client.enrollment.device_status === 'approved' && !this.client.enrollment.email_verification_required) {
+        this.client.setSession(await this.api('POST','/api/auth/sessions',{}, {enrollment:this.client.enrollment.enrollment_token}));
+        await this.enter();
+      } else this.pendingDevice();
+    })));
+    content.append(h('section',{class:'card'},form),h('p',{class:'footer-note'},'浏览器保存本设备的签名密钥。访问凭证仅保留在当前页面内存中。'));
+    this.authLayout(content);
+  }
+  pendingDevice() {
+    const enrolled = this.client.enrollment;
+    const options = {enrollment:enrolled.enrollment_token};
+    let challenge = null;
+    const selfConfirm = enrolled.device_approval_mode === 'root_email';
+    const state = h('p',{},selfConfirm ? '这是超级管理员账号。完成本设备的邮箱验证后即可登录。' :
+      enrolled.email_verification_required ? '请先验证邮箱，再等待超级管理员批准这台设备。' : '请等待超级管理员批准这台设备。');
+    const content = h('div',{class:'auth-form narrow'},h('div',{class:'eyebrow'},'DEVICE VERIFICATION'),h('h1',{},'验证当前设备'),
+      h('section',{class:'card'},state,h('p',{class:'mono'},`设备：${enrolled.device_id}`)));
+    const card = content.querySelector('.card');
+    if (enrolled.email_verification_required) {
+      const code = h('form',{},field('code','邮箱验证码',{required:true,pattern:'[0-9]{8}',inputmode:'numeric',autocomplete:'one-time-code'}));
+      code.append(h('div',{class:'actions'},button('发送验证码',async () => {
+        challenge = await this.api('POST','/api/devices/email-challenges',{},options); toast('验证码已发送至账号绑定邮箱。');
+      }),submit(code,'验证邮箱',async data => {
+        if (!challenge) throw new Error('请先发送验证码。');
+        const result = await this.api('POST','/api/devices/email-verifications',{challenge_id:challenge.challenge_id,code:data.code},options);
+        if (!result.device_approval_required) {
+          this.client.setSession(await this.api('POST','/api/auth/sessions',{},options)); await this.enter(); return;
+        }
+        state.textContent = '邮箱验证通过，请等待超级管理员批准设备。'; toast('邮箱验证通过');
+      })));
+      card.append(code);
+    }
+    card.append(h('div',{class:'actions'},button(selfConfirm ? '检查验证并登录' : '检查审批并继续',async () => {
+      const status = await this.api('GET','/api/devices/enrollment',undefined,options);
+      if (status.email_verification_required) throw new Error('邮箱验证尚未完成。');
+      if (status.status !== 'approved') throw new Error('设备仍在等待超级管理员审批。');
+      this.client.setSession(await this.api('POST','/api/auth/sessions',{},options)); await this.enter();
+    },'primary'),button('返回登录',() => { this.client.clear(); this.login(); })));
+    this.authLayout(content);
+  }
+  async enter() {
+    const info = await this.api('GET','/api/me'); this.user = info.user; this.device = info.device_id;
+    this.grants = (await this.api('GET','/api/me/grants')).items;
+    if (!this.isRoot && !info.grant_id && this.grants.length) {
+      this.client.setSession(await this.api('POST','/api/auth/select-project',{grant_id:this.grants[0].id}));
+    }
+    this.projects = (await this.api('GET','/api/projects')).items;
+    this.project = this.projects.find(p => p.id === this.project?.id) || this.projects[0] || null;
+    this.currentView = 'overview'; this.shell(); await this.renderView();
+  }
+  shell() {
+    const navigation = [['overview','工作台'],['projects','项目管理'],['documents','项目文档'],...(this.isRoot ? [['users','人员管理'],['devices','设备管理'],['approvals','授权审批'],['settings','系统设置']] : [['devices','我的设备']]),['audit','操作记录']];
+    const nav = h('nav',{class:'nav','aria-label':'主要导航'},navigation.map(([key,label]) => button(label,async () => {
+      this.currentView = key; this.offset = 0; await this.renderView();
+    })));
+    for (let i = 0; i < navigation.length; i++) nav.children[i].dataset.view = navigation[i][0];
+    const picker = h('select',{class:'project-picker','aria-label':'当前项目'},h('option',{value:''},'选择项目'));
+    if (this.isRoot) this.projects.forEach(p => picker.append(h('option',{value:p.id},p.name)));
+    else this.grants.forEach(g => picker.append(h('option',{value:g.project_id,'data-grant':g.id},g.project_name)));
+    picker.value = this.project?.id || '';
+    picker.addEventListener('change',() => run(picker,async () => {
+      if (!picker.value) return;
+      if (!this.isRoot) {
+        const grant = this.grants.find(g => g.project_id === picker.value);
+        this.client.setSession(await this.api('POST','/api/auth/select-project',{grant_id:grant.id}));
+        this.projects = (await this.api('GET','/api/projects')).items;
+      }
+      this.project = this.projects.find(p => p.id === picker.value); this.offset = 0; await this.renderView();
+    }));
+    this.body = h('main',{class:'workspace-body'});
+    root.replaceChildren(h('div',{class:'shell'},h('aside',{class:'sidebar'},
+      h('div',{class:'brand'},h('span',{class:'brand-mark'},'A'),h('div',{},'Agent Hub',h('small',{},'协作管理'))),
+      h('div',{},h('div',{class:'nav-label'},'工作空间'),nav),
+      h('div',{class:'sidebar-bottom'},h('strong',{},this.isRoot ? '超级管理员' : this.user.admin_eligible ? '项目管理员' : '项目成员'),h('br'),this.user.login,h('br'),'每次操作都会校验当前授权。')),
+      h('section',{class:'workspace'},h('header',{class:'topbar'},h('span',{class:'muted'},'项目协作 / 管理控制台'),h('div',{class:'topbar-right'},picker,
+        h('span',{class:'badge'},this.user.login.slice(0,2).toUpperCase()),button('退出',async () => {
+          await this.api('POST','/api/auth/logout',{}); this.client.clear(); this.user = null; this.project = null; this.login();
+        },'quiet small'))),this.body)));
+  }
+  heading(title, description, actions = []) {
+    return h('div',{class:'page-heading'},h('div',{},h('div',{class:'eyebrow'},'AGENT HUB / CONSOLE'),h('h1',{},title),h('p',{},description)),h('div',{class:'row-actions'},actions));
+  }
+  async renderView() {
+    const version = ++this.renderVersion, view = this.currentView, body = this.body;
+    document.querySelectorAll('[data-view]').forEach(node => node.classList.toggle('active',node.dataset.view === view));
+    body.replaceChildren(h('p',{class:'muted'},'正在读取…'));
+    try {
+      const content = await this[view === 'projects' ? 'projectView' : view]();
+      if (version === this.renderVersion && body === this.body) body.replaceChildren(...content);
+    } catch (error) {
+      if (version === this.renderVersion && body === this.body) body.replaceChildren(h('p',{class:'danger-note'},error.message));
+      throw error;
+    }
+  }
+  async overview() {
+    const approvals = this.isRoot ? (await this.api('GET','/api/admin/approvals')).items : [];
+    const devices = (await this.api('GET',this.isRoot ? '/api/admin/devices' : '/api/me/devices')).items;
+    const stat = (label, value, detail) => h('article',{class:'stat'},h('div',{class:'stat-label'},label),h('strong',{},value),h('span',{class:'hint'},detail));
+    return [this.heading('工作台','管理项目访问，处理设备和授权申请。'),
+      h('div',{class:'stats'},stat('当前可见项目',this.projects.length,this.isRoot ? '由超级管理员创建与分配' : '仅显示当前授权范围'),
+        stat('待处理申请',approvals.length,this.isRoot ? '设备批准与项目授权' : '由超级管理员审批'),stat('已批准设备',devices.filter(d => d.status === 'approved').length,'设备密钥与登录凭证共同校验')),
+      h('div',{class:'split'},table('项目一览',['项目','状态'],this.projects.map(p => [textPair(p.name,p.slug),pill('active')])),
+        h('section',{class:'card'},h('h2',{},'当前账号'),h('div',{class:'detail-list'},
+          h('div',{},h('span',{},'登录名'),h('strong',{},this.user.login)),h('div',{},h('span',{},'账号角色'),h('span',{},this.isRoot ? '超级管理员' : '项目成员 / 管理员')),
+          h('div',{},h('span',{},'邮箱'),h('span',{},this.user.email || '未绑定')),h('div',{},h('span',{},'邮箱验证'),pill(this.user.email_verified ? 'approved' : 'pending_email')),
+          h('div',{},h('span',{},'当前设备'),h('span',{class:'mono'},short(this.device)))))),
+      h('div',{class:'help-block'},h('strong',{},'当前开放：'), ' 人员、项目、设备审批、授权、发信设置和 GitHub 文档检索。任务交接与工作上传卸载将在后续接入。')];
+  }
+  async documents() {
+    const title = this.heading('项目文档','从指定 GitHub 分支建立 Markdown 索引；读取结果带文件路径和提交号。',[button('刷新状态',() => this.renderView())]);
+    if (!this.project) return [title,h('section',{class:'card empty'},'请先选择项目；项目只能由超级管理员创建。')];
+    const projectId = this.project.id, base = `/api/projects/${projectId}/documents`;
+    const data = await this.api('GET',`${base}/repository`), parts = [title];
+    const status = data.latest_sync;
+    const states = {queued:'排队中',running:'同步中',succeeded:'同步成功',failed:'同步失败',cancelled:'已取消'};
+    parts.push(h('section',{class:'card'},h('h2',{},'当前索引'),
+      h('p',{},data.configured ? `${data.repository_url} · ${data.branch}` : '尚未配置文档仓库。'),
+      h('p',{class:'mono'},data.git_commit ? `提交 ${data.git_commit}` : '尚无可用索引'),
+      h('p',{class:'hint'},`文档 ${data.document_count || 0} 篇 · 跳过 ${data.skipped_count || 0} 篇 · 最近同步 ${date(data.indexed_at)}`),
+      status && h('p',{},`同步任务：${states[status.status] || status.status}${status.error_code ? ` · ${messagesForDocument(status.error_code)}` : ''}`),
+      data.can_manage && data.configured && button('同步文档',async () => {
+        await this.api('POST',`${base}/syncs`,{});toast('同步任务已排队，点击“刷新状态”查看结果。');await this.renderView();
+      },'primary')));
+    if (data.can_manage) {
+      const form = h('form',{},h('div',{class:'fields single'},
+        field('repository_url','GitHub 仓库地址',{type:'url',required:true,value:data.repository_url || '',placeholder:'https://github.com/你的组织/你的仓库'}),
+        field('branch','分支',{required:true,maxlength:200,value:data.branch || 'main'}),
+        h('label',{class:'full'},'允许索引的目录或 Markdown 文件（每行一项）',h('textarea',{name:'include_paths',required:true,rows:4},(data.include_paths || ['docs','AGENTS.md','install.md']).join('\n'))),
+        field('token','GitHub 只读凭证（公共仓库可留空）',{type:'password',autocomplete:'new-password',maxlength:2048,
+          hint:data.token_set ? '已有加密凭证；留空保留。更换仓库时需重新填写凭证或选择清除。' : '私有仓库使用仅授权该仓库 Contents: read 的凭证。'}),
+        field('clear_token','凭证处理',{items:[['keep','保留现有凭证'],['clear','清除凭证，使用公共访问']]})));
+      form.append(h('div',{class:'actions'},submit(form,'保存文档源',async values => {
+        const body = {expected_version:data.version,repository_url:values.repository_url.trim(),branch:values.branch.trim(),
+          include_paths:values.include_paths.split(/\r?\n/).map(p => p.trim()).filter(Boolean),clear_token:values.clear_token === 'clear'};
+        if (values.token) body.token = values.token;
+        await this.api('PUT',`${base}/repository`,body);toast('文档源已保存，请点击“同步文档”建立索引。');await this.renderView();
+      })));
+      parts.push(h('section',{class:'card'},h('h2',{},'文档源设置'),form,h('p',{class:'hint'},'保存配置会清除旧索引。仅处理指定范围内的 UTF-8 Markdown；不执行仓库脚本。')));
+    }
+    const canRead = this.isRoot || this.grants.some(g => g.project_id === projectId && g.capabilities.includes('documents:read'));
+    if (!data.snapshot_id || !canRead) return parts;
+    const resultBox = h('div',{}), searchForm = h('form',{},field('query','关键词（留空列出文档）',{maxlength:200,placeholder:'支持中文、路径和正文片段'}));
+    let requestNumber = 0;
+    const find = async (query,offset=0) => {
+      const request = ++requestNumber;
+      const result = await this.api('POST',`${base}/search`,{query,offset,limit:20,snapshot_id:data.snapshot_id});
+      if (request !== requestNumber || this.project?.id !== projectId || this.currentView !== 'documents') return;
+      resultBox.replaceChildren(table('匹配文档',['文档','正文片段','操作'],result.items.map(doc => [textPair(doc.title,doc.path),
+        h('p',{class:'document-excerpt'},doc.excerpt),button('读取',async () => {
+          const document = await this.api('POST',`${base}/read`,{path:doc.path,snapshot_id:doc.snapshot_id});
+          if (this.project?.id !== projectId || this.currentView !== 'documents') return;
+          modal.replaceChildren(h('div',{class:'modal-heading'},h('h2',{},document.title),button('关闭',() => modal.close(),'quiet')),
+            h('p',{class:'mono'},`${document.path} · ${document.git_commit}`),h('pre',{class:'document-content'},document.content));
+          modal.showModal();
+        },'small')])));
+      if (result.has_more || offset) resultBox.append(h('div',{class:'actions'},
+        offset > 0 && button('上一页',() => find(query,Math.max(0,offset-20)),'small'),
+        result.has_more && button('下一页',() => find(query,result.next_offset),'small')));
+    };
+    searchForm.append(submit(searchForm,'搜索文档',values => find(values.query)));
+    parts.push(h('section',{class:'card'},h('h2',{},'检索文档'),h('p',{class:'hint'},'按文字片段匹配，结果按路径排序。'),searchForm,resultBox));
+    await find('');return parts;
+  }
+  async projectView() {
+    const actions = this.isRoot ? [button('新建项目',() => this.createProject(),'primary')] : [];
+    const parts = [this.heading('项目管理','项目由超级管理员创建，管理员在分配范围内管理成员。',actions),
+      table('项目列表',['项目','项目 ID','操作'],this.projects.map(p => [textPair(p.name,p.slug),h('span',{class:'mono'},p.id),
+        button('查看成员',async () => { this.project = p; this.shell(); await this.renderView(); },'small')]))];
+    if (!this.project) return [...parts,h('p',{class:'help-block'},this.projects.length ? '请从列表选择一个项目。' : this.isRoot ? '点击“新建项目”创建第一个项目。' : '当前没有获授权项目。请联系超级管理员创建项目并签发授权。')];
+    const canManage = this.isRoot || this.grants.some(g => g.project_id === this.project.id && g.capabilities.includes('members:manage'));
+    if (!canManage) return [...parts,h('p',{class:'help-block'},`当前项目：${this.project.name}。当前账号没有成员管理权限。`)];
+    const members = (await this.api('GET',`/api/projects/${this.project.id}/members?offset=${this.offset}`)).items;
+    const actions2 = [button('添加成员',() => this.inviteMember(),'primary small'),button('申请项目授权',() => this.requestGrant(),'small')];
+    if (this.isRoot) actions2.push(button('分配管理员',() => this.assignAdmin(),'small'));
+    const memberTable = table(`${this.project.name} · 成员`,['人员','项目角色','成员状态','账号状态','操作'],members.map(u => [
+      textPair(u.login,u.email || u.id),u.membership_role === 'administrator' ? '项目管理员' : '普通成员',pill(u.membership_status),pill(u.status),
+      h('div',{class:'row-actions'},u.membership_status === 'active' && (this.isRoot || u.membership_role !== 'administrator') ? button('移出项目',async () => {
+        if (!confirm(`移出 ${u.login} 后，该项目现有授权将立即失效。继续？`)) return;
+        await this.api('POST',`/api/projects/${this.project.id}/members/${u.id}/revoke`,{}); toast('成员已移出，项目授权已撤销。'); await this.renderView();
+      },'danger small') : this.isRoot && u.membership_status === 'revoked' ? button('恢复成员关系',async () => {
+        await this.api('POST',`/api/admin/projects/${this.project.id}/members/${u.id}/restore`,{}); toast('成员关系已恢复，仍需重新签发授权。'); await this.renderView();
+      },'small') : '—')]),actions2);
+    if (members.length === 100 || this.offset) memberTable.append(this.pagination(members.length));
+    parts.push(memberTable);
+    const grants = (await this.api('GET',`/api/projects/${this.project.id}/grants`)).items;
+    parts.push(table('近期项目授权',['人员 / 设备','能力','状态','到期'],grants.map(g => [textPair(short(g.user_id),short(g.device_id)),g.capabilities.map(c => caps[c] || c).join('、'),pill(g.status),date(g.expires_at)])));
+    return parts;
+  }
+  pagination(count) {
+    return h('div',{class:'pagination'},h('div',{class:'row-actions'},this.offset > 0 && button('上一页',async () => { this.offset -= 100; await this.renderView(); },'small'),
+      h('span',{class:'hint'},`第 ${Math.floor(this.offset / 100) + 1} 页`),count === 100 && button('下一页',async () => { this.offset += 100; await this.renderView(); },'small')));
+  }
+  async allPages(path) {
+    const items = [];
+    for (let offset = 0; ; offset += 100) {
+      const page = (await this.api('GET',`${path}?offset=${offset}&limit=100`)).items;
+      items.push(...page);
+      if (page.length < 100) return items;
+    }
+  }
+  async users() {
+    const users = (await this.api('GET',`/api/admin/users?offset=${this.offset}`)).items;
+    const view = table('账号列表',['人员','账号角色','邮箱验证','状态','操作'],users.map(u => [textPair(u.login,u.email || u.id),
+      u.platform_role === 'superadmin' ? '超级管理员' : u.admin_eligible ? '管理员账号' : '普通成员',pill(u.email_verified ? 'approved' : 'pending_email'),pill(u.status),
+      u.platform_role === 'superadmin' ? '—' : u.status === 'pending_email' ? '等待邮箱验证' : h('div',{class:'row-actions'},...(u.status === 'active' ? [['suspended','冻结'],['disabled','停用']] : [['active','恢复']]).map(([status,label]) => button(label,async () => {
+        if (!confirm(`${label} ${u.login}？已有会话与授权会失效，恢复后也需重新签发授权。`)) return;
+        await this.api('POST',`/api/admin/users/${u.id}/status`,{status}); toast('账号状态已更新'); await this.renderView();
+      },status === 'active' ? 'small' : 'danger small')))]));
+    if (users.length === 100 || this.offset) view.append(this.pagination(users.length));
+    return [this.heading('人员管理','管理全局人员状态；管理员账号必须绑定并验证邮箱。',[button('创建管理员',() => this.createAdmin(),'primary')]),view];
+  }
+  async devices() {
+    const devices = (await this.api('GET',this.isRoot ? `/api/admin/devices?offset=${this.offset}` : '/api/me/devices')).items;
+    const view = table(this.isRoot ? '设备列表' : '我的设备',['设备','账号 / 指纹','邮箱验证','状态','操作'],devices.map(d => [textPair(d.name,d.os),
+      textPair(d.login,short(d.thumbprint)),pill(d.email_verified ? 'approved' : 'pending_email'),pill(d.status),
+      this.isRoot && d.id !== this.device && d.status !== 'revoked' ? button('撤销设备',async () => {
+        if (!confirm(`撤销 ${d.name}？该设备现有会话与项目授权将失效。`)) return;
+        await this.api('POST',`/api/admin/devices/${d.id}/revoke`,{}); toast('设备已撤销'); await this.renderView();
+      },'danger small') : d.id === this.device ? '当前设备' : '—']));
+    if (this.isRoot && (devices.length === 100 || this.offset)) view.append(this.pagination(devices.length));
+    return [this.heading(this.isRoot ? '设备管理' : '我的设备','新设备需要独立审批；绑定邮箱的账号还需完成邮箱验证码验证。',
+      [button('绑定 / 更换我的邮箱',() => this.changeEmail())]),view];
+  }
+  async approvals() {
+    const [result, users, devices] = await Promise.all([
+      this.allPages('/api/admin/approvals'), this.allPages('/api/admin/users'), this.allPages('/api/admin/devices')
+    ]);
+    const items = result;
+    const details = a => {
+      const user = users.find(u => u.id === a.subject_id), requester = users.find(u => u.id === a.requester_id);
+      const device = devices.find(d => d.id === a.payload.device_id), project = this.projects.find(p => p.id === a.payload.project_id);
+      const row = (label, value) => h('div',{},h('span',{},label),h('strong',{class:'mono'},value));
+      return h('div',{class:'detail-list'},row('申请账号',user?.login || short(a.subject_id)),
+        row('提交人',requester?.login || short(a.requester_id)),row('设备',device ? `${device.name} · ${device.os}` : short(a.payload.device_id)),
+        device && row('设备指纹',device.thumbprint),a.kind !== 'device' && [row('项目',project?.name || short(a.payload.project_id)),
+          row('授权能力',(a.payload.capabilities || []).map(c => caps[c] || c).join('、')),
+          row('授权期限',`${a.payload.duration_days} 天`)]);
+    };
+    return [this.heading('授权审批','核对申请的设备、项目与能力，按当前版本批准或拒绝。',[button('刷新申请',() => this.renderView())]),
+      ...items.map(a => h('article',{class:'approval'},h('div',{class:'approval-head'},h('div',{},h('h2',{},a.kind === 'device' ? '新设备登录申请' : '项目授权申请'),
+        h('span',{class:'hint'},`申请 ${short(a.id)} · 到期 ${date(a.expires_at)}`)),pill(a.status)),
+        details(a),h('div',{class:'actions'},button('批准申请',async () => {
+          if (!confirm('确认批准当前显示的申请范围？')) return;
+          await this.api('POST',`/api/admin/approvals/${a.id}/decision`,{approve:true,expected_version:a.version,expected_hash:a.payload_hash});
+          toast('申请已批准'); await this.renderView();
+        },'primary'),button('拒绝申请',async () => {
+          await this.api('POST',`/api/admin/approvals/${a.id}/decision`,{approve:false,expected_version:a.version,expected_hash:a.payload_hash});
+          toast('申请已拒绝'); await this.renderView();
+        },'danger')))),!items.length && h('section',{class:'card empty'},'当前没有待审批申请。')];
+  }
+  async settings() {
+    const data = await this.api('GET','/api/admin/settings');
+    const form = h('form',{},this.configFields(data));
+    form.append(h('div',{class:'actions'},submit(form,'保存设置',async values => {
+      await this.api('PUT','/api/admin/settings',this.configBody(values,data.version)); toast('系统设置已加密保存'); await this.renderView();
+    }),button('发送测试邮件',async () => {
+      const result = await this.api('POST','/api/admin/settings/test-email',{}); toast(`测试邮件已发送至 ${result.recipient}`);
+    })));
+    return [this.heading('系统设置','维护服务地址和发信服务。仅超级管理员可以查看或修改。',
+      [button('更换超管邮箱',() => this.changeEmail())]),
+      h('section',{class:'card'},h('h2',{},'发信与服务地址'),form),h('div',{class:'help-block'},
+        h('strong',{},'服务地址状态：'),data.public_url || '尚未填写',h('br'),'当前接入地址：',data.active_origin,
+        h('br'),'服务地址保存后，需在部署端完成 DNS 与 HTTPS 入口启用。发信设置保存后立即用于验证码邮件。')];
+  }
+  async audit() {
+    if (!this.isRoot && !this.project) return [this.heading('操作记录','查看账号管理和项目授权的操作记录。'),h('p',{class:'help-block'},'请先选择有审计权限的项目。')];
+    const items = (await this.api('GET',`/api/audit${this.isRoot ? '' : `?project_id=${this.project.id}`}`)).items;
+    return [this.heading('操作记录','显示最近 100 条记录，不包含密码、验证码或原始凭证。'),
+      table('近期操作',['时间','动作','对象','说明'],items.map(e => [date(e.created_at),e.action,h('span',{class:'mono'},short(e.object_id)),JSON.stringify(e.details)]))];
+  }
+  createProject() {
+    dialog('创建项目','只有超级管理员可以创建项目。项目标识用于稳定引用。',h('form',{},h('div',{class:'fields single'},
+      field('name','项目名称',{required:true,maxlength:200}),field('slug','项目标识',{required:true,pattern:'[a-z][a-z0-9\\-]{1,79}',placeholder:'例如 agent-platform'}))),
+      '创建项目',async data => { await this.api('POST','/api/admin/projects',data); this.projects = (await this.api('GET','/api/projects')).items; this.shell(); });
+  }
+  createAdmin() {
+    dialog('创建管理员','新账号必须先验证邮箱和设备，再分配项目与授权。',h('form',{},h('div',{class:'fields single'},
+      field('login','登录名',{...loginOptions}),field('email','邮箱',{type:'email',required:true}),
+      field('password','初始密码',{type:'password',required:true,minlength:12,maxlength:256,autocomplete:'new-password'}))),
+      '创建管理员',data => this.api('POST','/api/admin/users/admins',data));
+  }
+  inviteMember() {
+    dialog('添加普通成员','新建普通成员账号并加入当前项目；设备和项目授权仍需超级管理员审批。',h('form',{},h('div',{class:'fields single'},
+      field('login','登录名',{...loginOptions}),field('email','邮箱（可选）',{type:'email'}),
+      field('password','初始密码',{type:'password',required:true,minlength:12,maxlength:256,autocomplete:'new-password'}))),
+      '添加成员',data => this.api('POST',`/api/projects/${this.project.id}/member-invitations`,{new_user:{...data,email:data.email || null}}));
+  }
+  async assignAdmin() {
+    const users = (await this.allPages('/api/admin/users')).filter(u => u.admin_eligible && u.email_verified && u.status === 'active' && u.platform_role !== 'superadmin');
+    if (!users.length) throw new Error('请先创建管理员，并让其完成邮箱与设备验证。');
+    dialog('分配项目管理员','分配管理员角色后，仍需为其设备签发项目授权。',h('form',{},field('user_id','管理员账号',{items:users.map(u => [u.id,`${u.login} · ${u.email}`]),required:true})),
+      '分配管理员',data => this.api('PUT',`/api/admin/projects/${this.project.id}/administrators`,data));
+  }
+  async requestGrant() {
+    const members = (await this.allPages(`/api/projects/${this.project.id}/members`)).filter(u => u.membership_status === 'active' && u.status === 'active');
+    const memberIds = new Set(members.map(u => u.id));
+    const devices = (await this.allPages(`/api/projects/${this.project.id}/member-devices`)).filter(d => d.status === 'approved' && memberIds.has(d.user_id));
+    if (!devices.length) throw new Error('请先让成员完成设备验证和审批。');
+    const form = h('form',{},h('div',{class:'fields single'},
+      field('device_id','成员设备',{items:devices.map(d => [d.id,`${d.login} · ${d.name}`]),required:true}),
+      field('duration_days','授权天数',{type:'number',min:1,max:90,value:30,required:true})));
+    const checks = h('div',{class:'capabilities'});
+    function updateCapabilities() {
+      const device = devices.find(d => d.id === form.elements.device_id.value);
+      const member = members.find(m => m.id === device.user_id);
+      checks.replaceChildren(...Object.entries(caps).filter(([cap]) => member.membership_role === 'administrator' || !['tasks:publish','members:manage','grants:request','audit:read'].includes(cap))
+        .map(([cap,label]) => h('label',{},h('input',{type:'checkbox',name:'capability',value:cap,checked:cap === 'project:read'}),label)));
+    }
+    form.append(h('h3',{},'授权能力'),checks); updateCapabilities(); form.elements.device_id.addEventListener('change',updateCapabilities);
+    dialog(this.isRoot ? '签发项目授权' : '申请项目授权',this.isRoot ? '授权将绑定选定人员、设备和当前项目。' : '申请提交后需由超级管理员批准；当前不会获得额外权限。',form,
+      this.isRoot ? '批准并签发' : '提交申请',data => {
+        const device = devices.find(d => d.id === data.device_id);
+        return this.api('POST',this.isRoot ? '/api/admin/grants' : '/api/grant-requests',{
+          project_id:this.project.id,user_id:device.user_id,device_id:device.id,duration_days:Number(data.duration_days),
+          capabilities:[...checks.querySelectorAll('input:checked')].map(c => c.value)});
+      });
+  }
+  changeEmail() {
+    let challenge;
+    const form = h('form',{},h('div',{class:'fields single'},field('email','新邮箱',{type:'email',required:true}),
+      field('password','当前账号密码',{type:'password',required:true,autocomplete:'current-password'})));
+    const verify = h('form',{hidden:true},field('code','新邮箱验证码',{required:true,pattern:'[0-9]{8}',inputmode:'numeric',autocomplete:'one-time-code'}));
+    form.append(h('div',{class:'actions'},submit(form,'发送新邮箱验证码',async data => {
+      challenge = await this.api('POST','/api/me/email-challenges',data); form.elements.password.value = '';
+      verify.hidden = false; toast('验证码已发送至新邮箱。');
+    })));
+    verify.append(h('div',{class:'actions end'},button('取消',() => modal.close()),submit(verify,'验证并更换邮箱',async data => {
+      this.client.setSession(await this.api('POST','/api/me/email-verifications',{challenge_id:challenge.challenge_id,code:data.code}));
+      modal.close(); await this.enter(); toast('邮箱已更新，当前设备已验证。');
+    })));
+    modal.querySelector('#modal-body').replaceChildren(h('h2',{},'绑定或更换邮箱'),h('p',{},
+      '验证新邮箱后，其他设备需要重新验证邮箱，已有项目授权需要超级管理员重新签发。当前设备会获得新的登录会话。'),form,verify);
+    modal.showModal();
+  }
+}
+
+const app = new Console();
+await app.start();

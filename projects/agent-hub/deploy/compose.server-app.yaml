@@ -1,0 +1,107 @@
+# Server application. Uses the existing private server database.
+# Run with both the database and application server-only environment files.
+name: agent-hub-app
+
+x-hub-environment: &hub-environment
+  HUB_SECRET: ${HUB_SECRET:?Use the server-only environment file}
+  HUB_ENVIRONMENT: ${HUB_ENVIRONMENT:-development}
+  HUB_PUBLIC_URL: ${HUB_PUBLIC_URL:-http://127.0.0.1:8765}
+  HUB_MAIL_MODE: smtp
+
+services:
+  migrate:
+    build:
+      context: ..
+      target: runtime
+    image: agent-hub:0.3.2
+    environment:
+      <<: *hub-environment
+      HUB_DATABASE_URL: postgresql+psycopg://hub_owner:${HUB_OWNER_PASSWORD}@postgres:5432/agent_hub
+    command: [agent-hub, migrate]
+    mem_limit: 512m
+    cpus: "1.0"
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    networks:
+      - application
+      - database
+
+  api:
+    build:
+      context: ..
+      target: runtime
+    image: agent-hub:0.3.2
+    environment:
+      <<: *hub-environment
+      HUB_DATABASE_URL: postgresql+psycopg://hub_runtime:${HUB_RUNTIME_PASSWORD}@postgres:5432/agent_hub
+      HUB_BOOTSTRAP_TOKEN: ${HUB_BOOTSTRAP_TOKEN:?Use the server-only application environment file}
+      FORWARDED_ALLOW_IPS: ${HUB_TRUSTED_PROXY_IPS:-127.0.0.1}
+    command: [agent-hub, serve, --host, 0.0.0.0, --port, "8765"]
+    ports:
+      - 127.0.0.1:8765:8765
+    read_only: true
+    tmpfs:
+      - /tmp
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    restart: unless-stopped
+    init: true
+    mem_limit: 512m
+    cpus: "1.0"
+    pids_limit: 128
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: "3"
+    networks:
+      - application
+      - database
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    healthcheck:
+      test: [CMD, python, -c, "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8765/healthz')"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
+  document-worker:
+    image: agent-hub:0.3.2
+    environment:
+      <<: *hub-environment
+      HUB_DATABASE_URL: postgresql+psycopg://hub_document_worker:${HUB_INDEXER_PASSWORD:?Use the server-only database environment file}@postgres:5432/agent_hub
+    command: [agent-hub, document-worker]
+    read_only: true
+    tmpfs:
+      - /tmp
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    restart: unless-stopped
+    init: true
+    mem_limit: 384m
+    cpus: "0.5"
+    pids_limit: 64
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: "3"
+    networks:
+      - application
+      - database
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+
+networks:
+  application: {}
+  database:
+    external: true
+    name: agent-hub-database

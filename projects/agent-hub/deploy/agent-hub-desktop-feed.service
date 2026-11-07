@@ -1,0 +1,9 @@
+[Unit]
+Description=Verify Agent Hub desktop release signature and expiry
+After=docker.service
+Requires=docker.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/docker exec agent-hub-app-api-1 agent-hub check-desktop-feed
+TimeoutStartSec=30

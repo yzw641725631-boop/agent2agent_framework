@@ -1,0 +1,45 @@
+# IP HTTPS gateway. Run only on the server after issuing the IP certificate.
+# HUB_EDGE_IMAGE is a verified nginx image pinned by digest in the server .env.
+name: agent-hub-edge
+
+services:
+  https:
+    image: ${HUB_EDGE_IMAGE:?Use the server-only edge environment file}
+    container_name: agent-hub-edge
+    user: "10001:10001"
+    entrypoint: [nginx]
+    command: [-g, "daemon off;"]
+    ports:
+      - "${HUB_EDGE_BIND:-0.0.0.0}:${HUB_HTTPS_PORT:-18180}:8443"
+    volumes:
+      - ./nginx.ip.conf:/etc/nginx/nginx.conf:ro
+      - ${HUB_TLS_DIRECTORY:-/opt/agent-hub/edge/tls}:/etc/agent-hub/tls:ro
+      - ${HUB_DESKTOP_UPDATE_DIRECTORY:-/opt/agent-hub/edge/desktop-updates}:/srv/agent-hub/desktop-updates:ro
+    read_only: true
+    tmpfs:
+      - /tmp:size=32m,mode=1777
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    restart: unless-stopped
+    mem_limit: 128m
+    cpus: "0.5"
+    pids_limit: 64
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: "3"
+    healthcheck:
+      test: [CMD, wget, --quiet, --no-check-certificate, --spider, "https://127.0.0.1:8443/healthz"]
+      interval: 20s
+      timeout: 5s
+      retries: 3
+    networks:
+      - application
+
+networks:
+  application:
+    external: true
+    name: agent-hub-app_application

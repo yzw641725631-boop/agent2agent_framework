@@ -1,0 +1,154 @@
+'use strict';
+const crypto = require('node:crypto');
+
+const messages = {
+  SERVICE_BUSY:'服务正在处理并发请求，请稍后重试。',
+  DEVICE_APPLICATION_DENIED:'当前设备申请已被拒绝，请联系超级管理员处理。',
+  DOCUMENT_INDEX_NOT_READY:'文档索引尚未建立，请联系项目管理员同步。',
+  DOCUMENT_INDEX_VERSION_CHANGED:'文档索引已更新，请重新搜索并使用新的 snapshot_id。',
+  DOCUMENT_NOT_FOUND:'该路径不在当前项目文档索引中。',
+  INVALID_CREDENTIALS:'账号或密码不正确。', DEVICE_APPROVAL_REQUIRED:'请等待超级管理员批准本设备。',
+  EMAIL_VERIFICATION_REQUIRED:'请先验证本设备邮箱。', INVALID_EMAIL_CODE:'验证码不正确。',
+  RATE_LIMITED:'操作过于频繁，请稍后重试。', PROJECT_NOT_ACCESSIBLE:'当前没有这个项目的访问权限。',
+  PROJECT_ACCESS_REVOKED:'项目权限已撤销，已停止对应 MCP 操作，请保留工作等待收尾。',
+  ACCOUNT_INACTIVE:'账号已冻结或停用。', DEVICE_NOT_ALLOWED:'设备已撤销，或不能用于此账号。',
+  ENROLLMENT_EXPIRED:'本次设备登记已过期，请重新登录。', INVALID_REQUEST:'输入格式不正确，请检查必填项。',
+  INVALID_SESSION:'会话已失效，请重新登录。', SESSION_REVOKED:'会话已撤销，请重新登录。',
+  SESSION_EXPIRED_OR_REVOKED:'会话已过期或撤销，请重新登录。',
+  DEVICE_KEY_MISMATCH:'设备身份不匹配，请重新登录。',
+  REFRESH_REPLAY_FAMILY_REVOKED:'会话已撤销，请重新登录。',
+  MAIL_CONNECTION_FAILED:'邮件连接中断，请稍后重新发送。',
+  MAIL_AUTHENTICATION_FAILED:'发信账号认证失败，请在后台核对 SMTP 设置。',
+  MAIL_DELIVERY_FAILED:'邮件未能发送，请检查后台的发信设置。',
+  EMAIL_CHALLENGE_EXPIRED:'验证码已过期，请重新发送。',
+};
+class HubError extends Error {
+  constructor(code, message, details={}) {
+    super(message || messages[code] || `操作未完成（${code}）`);
+    this.code=code; this.details=details;
+  }
+}
+function origin(value) {
+  let url;
+  try { url=new URL(value); } catch { throw new HubError('INVALID_ORIGIN','请填写完整的 HTTPS 服务器地址。'); }
+  if (url.username || url.password || url.search || url.hash || url.pathname!=='/' ||
+      (url.protocol!=='https:' && !(url.protocol==='http:' && ['127.0.0.1','localhost'].includes(url.hostname)))) {
+    throw new HubError('INVALID_ORIGIN','远程服务器使用 HTTPS；地址不能包含路径、密码或参数。');
+  }
+  return url.origin;
+}
+function identity() {
+  const pair=crypto.generateKeyPairSync('ec',{namedCurve:'prime256v1'});
+  const publicKey=pair.publicKey.export({format:'jwk'});
+  return {privateKey:pair.privateKey.export({format:'pem',type:'pkcs8'}),
+    jwk:{kty:publicKey.kty,crv:publicKey.crv,x:publicKey.x,y:publicKey.y}};
+}
+function proof(key, canonical, method, path, token) {
+  const head=Buffer.from(JSON.stringify({typ:'dpop+jwt',alg:'ES256',jwk:key.jwk})).toString('base64url');
+  const claims={htm:method,htu:canonical+path.split('?')[0],iat:Math.floor(Date.now()/1000),jti:crypto.randomUUID()};
+  if (token) claims.ath=crypto.createHash('sha256').update(token).digest('base64url');
+  const payload=Buffer.from(JSON.stringify(claims)).toString('base64url');
+  const signature=crypto.sign('sha256',Buffer.from(`${head}.${payload}`),
+    {key:key.privateKey,dsaEncoding:'ieee-p1363'}).toString('base64url');
+  return `${head}.${payload}.${signature}`;
+}
+class Remote {
+  constructor(profile, persist, transport=fetch) {
+    this.profile=profile; this.persist=persist; this.transport=transport; this.refreshing=new Map();
+    this.base=origin(profile.origin); this.canonical=this.base;this.lifetime=new AbortController();
+  }
+  close(){this.lifetime.abort();}
+  checkOpen(){if(this.lifetime.signal.aborted)throw new HubError('LOGIN_REQUIRED','本次登录已结束，请重新登录。');}
+  async init() {
+    this.checkOpen();
+    let response;
+    try{
+      response=await this.transport(this.base+'/api/setup/status',{
+        redirect:'error',signal:AbortSignal.any([this.lifetime.signal,AbortSignal.timeout(12000)]),headers:{Accept:'application/json'},
+      });
+    }catch{this.checkOpen();throw new HubError('NETWORK_UNAVAILABLE','服务器连接中断，请检查网络后重试。');}
+    this.checkOpen();
+    if (!response.ok) throw new HubError('UNAVAILABLE','服务器暂时不可用。');
+    const data=await response.json(); this.canonical=origin(data.active_origin);
+    return data;
+  }
+  async raw(method,path,body,token,{idempotency,signal,stream=false}={}) {
+    this.checkOpen();
+    if (!/^\/api\/[A-Za-z0-9_/?=&.%:-]+$/.test(path) || path.includes('..') || path.includes('%')) {
+      throw new HubError('INVALID_API_PATH');
+    }
+    const headers={DPoP:proof(this.profile.identity,this.canonical,method,path,token),
+      Accept:stream?'text/event-stream':'application/json'};
+    if (token) headers.Authorization=`DPoP ${token}`;
+    if (!['GET','HEAD'].includes(method)) headers['Idempotency-Key']=idempotency || crypto.randomUUID();
+    if (body!==undefined) headers['Content-Type']='application/json';
+    let response;
+    try {
+      response=await this.transport(this.base+path,{method,headers,redirect:'error',
+        body:body===undefined?undefined:JSON.stringify(body),signal:AbortSignal.any([this.lifetime.signal,signal || AbortSignal.timeout(18000)])});
+    } catch (error) {
+      this.checkOpen();
+      if (signal?.aborted) throw error;
+      throw new HubError('NETWORK_UNAVAILABLE','服务器连接中断。已保留本机配置，请恢复网络后重试。');
+    }
+    this.checkOpen();
+    if (response.ok && stream) return response;
+    let data;
+    try { data=await response.json(); } catch { throw new HubError('INVALID_RESPONSE','服务器返回了无法识别的响应。'); }
+    this.checkOpen();
+    if (!response.ok) throw new HubError(data.code || 'REQUEST_FAILED',undefined,{
+      normal_operations_allowed:data.normal_operations_allowed,
+      required_action:data.required_action,closeout_available:data.closeout_available,
+    });
+    return data;
+  }
+  async refresh(slot='platform') {
+    if (this.refreshing.has(slot)) return this.refreshing.get(slot);
+    const action=(async()=>{
+      const session=this.profile.sessions[slot];
+      if (!session) throw new HubError('LOGIN_REQUIRED','请先在桌面端登录。');
+      const updated=await this.raw('POST','/api/auth/refresh',{},session.refresh_token);
+      this.checkOpen();
+      if(this.profile.sessions[slot]!==session)throw new HubError('LOGIN_REQUIRED','此会话已更换，请重新检查授权。');
+      this.profile.sessions[slot]=updated;
+      await this.persist(); return updated;
+    })();
+    this.refreshing.set(slot,action);
+    try { return await action; } finally { this.refreshing.delete(slot); }
+  }
+  async request(method,path,body,{slot='platform',...options}={}) {
+    this.checkOpen();
+    let session=this.profile.sessions[slot];
+    if (!session) throw new HubError('LOGIN_REQUIRED','请先在桌面端登录。');
+    if (Date.parse(session.expires_at)<Date.now()+15000) session=await this.refresh(slot);
+    const idempotency=options.idempotency || crypto.randomUUID();
+    try { return await this.raw(method,path,body,session.access_token,{...options,idempotency}); }
+    catch (error) {
+      if (error.code!=='SESSION_EXPIRED_OR_REVOKED') throw error;
+      const latest=this.profile.sessions[slot];
+      if(!latest)throw new HubError('LOGIN_REQUIRED','此会话已结束，请重新登录。');
+      session=latest!==session?latest:await this.refresh(slot);
+      return this.raw(method,path,body,session.access_token,{...options,idempotency});
+    }
+  }
+}
+async function* parseEvents(body,{onActivity=()=>{}}={}) {
+  const decoder=new TextDecoder(); let buffered='';
+  for await (const chunk of body) {
+    onActivity();
+    buffered+=decoder.decode(chunk,{stream:true}).replaceAll('\r','');
+    if (buffered.length>512*1024) throw new HubError('INVALID_EVENT_STREAM');
+    let end;
+    while ((end=buffered.indexOf('\n\n'))!==-1) {
+      const block=buffered.slice(0,end); buffered=buffered.slice(end+2);
+      let event='message',id,data=[];
+      for (const line of block.split('\n')) {
+        if (line.startsWith('event:')) event=line.slice(6).trim();
+        if (line.startsWith('id:')) id=line.slice(3).trim();
+        if (line.startsWith('data:')) data.push(line.slice(5).trimStart());
+      }
+      if (data.length) yield {event,id,data:JSON.parse(data.join('\n'))};
+    }
+  }
+}
+module.exports={Remote,HubError,origin,identity,proof,parseEvents};

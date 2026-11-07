@@ -1,0 +1,15 @@
+\getenv owner_password HUB_OWNER_PASSWORD
+\getenv runtime_password HUB_RUNTIME_PASSWORD
+\getenv indexer_password HUB_INDEXER_PASSWORD
+\getenv database_name POSTGRES_DB
+CREATE ROLE hub_owner LOGIN PASSWORD :'owner_password'
+    NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOBYPASSRLS;
+CREATE ROLE hub_runtime LOGIN PASSWORD :'runtime_password'
+    NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOBYPASSRLS;
+CREATE ROLE hub_indexer NOLOGIN;
+CREATE ROLE hub_document_worker LOGIN PASSWORD :'indexer_password'
+    NOSUPERUSER NOCREATEDB NOCREATEROLE INHERIT NOBYPASSRLS;
+GRANT hub_indexer TO hub_owner, hub_document_worker;
+ALTER DATABASE :"database_name" OWNER TO hub_owner;
+REVOKE CREATE ON SCHEMA public FROM PUBLIC;
+GRANT USAGE, CREATE ON SCHEMA public TO hub_owner;
