@@ -26,6 +26,8 @@ async function main(){
   });
   const app=path.join(target,'resources/app');await fs.mkdir(app,{recursive:true});
   for(const item of ['main.cjs','preload.cjs','core','renderer','assets'])await fs.cp(path.join(root,item),path.join(app,item),{recursive:true});
+  await fs.cp(path.resolve(root,'../../skills/agent-hub'),path.join(app,'skills/agent-hub'),{recursive:true});
+  for(const dependency of ['smol-toml','jsonc-parser'])await fs.cp(path.join(root,'node_modules',dependency),path.join(app,'node_modules',dependency),{recursive:true});
   await fs.mkdir(path.join(app,'scripts'));await fs.copyFile(path.join(root,'scripts/icon.cjs'),path.join(app,'scripts/icon.cjs'));
   await fs.writeFile(path.join(app,'package.json'),JSON.stringify({name:manifest.name,productName:manifest.productName,version:manifest.version,private:true,main:manifest.main},null,2));
   await fs.copyFile(path.join(root,'README.md'),path.join(target,'使用说明.md'));

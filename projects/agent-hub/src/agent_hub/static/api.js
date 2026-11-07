@@ -5,6 +5,14 @@ const encode = value => btoa(String.fromCharCode(...new Uint8Array(value)))
 const json = value => encode(encoder.encode(JSON.stringify(value)));
 
 export const messages = {
+  TASK_NOT_FOUND:'任务不存在或不在当前项目。', TASK_ALREADY_CLAIMED:'任务已被认领，请等待释放或租约到期。',
+  TASK_NOT_CLAIMABLE:'请先完成准入或当前评审流程。', TASK_VERSION_CONFLICT:'任务已变化，请刷新后重试。',
+  TASK_LEASE_EXPIRED:'认领已到期，请重新核验任务。', TASK_LEASE_STALE:'执行凭证已失效，请重新读取任务。',
+  TASK_LEASE_NOT_OWNED:'此认领属于其他执行者。', TASK_PATH_OUT_OF_SCOPE:'改动路径超出任务允许范围。',
+  TASK_GATE_ORDER_INVALID:'流程关口或提交版本不匹配，请刷新任务。',
+  TASK_INDEPENDENT_REVIEW_REQUIRED:'须由其他人员评审；超管自审需要填写至少 10 个字符的原因。',
+  TASK_LATEST_CHECKPOINT_REQUIRED:'请先保存本次认领的最新检查点日志。',
+  TASK_CHILDREN_INCOMPLETE:'仍有未完成子任务，不能确认父任务完成。',
   SERVICE_BUSY: '服务正在处理并发请求，请稍后重试。',
   DEVICE_APPLICATION_DENIED: '当前设备申请已被拒绝，请联系超级管理员处理。',
   DOCUMENT_REPOSITORY_NOT_CONFIGURED: '请先保存文档源设置。', DOCUMENT_INDEX_NOT_READY: '尚无可用索引，请先同步文档。',

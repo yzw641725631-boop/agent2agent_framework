@@ -8,6 +8,7 @@ const {Broker,equalSecret}=require('./broker.cjs');
 const {dispatch:dispatchMcp}=require('./mcp.cjs');
 const workspaces=require('./workspaces.cjs');
 const {Management}=require('./management.cjs');
+const {SetupConnection}=require('./setup-connection.cjs');
 const {version}=require('../package.json');
 
 const stopped=new Set(['PROJECT_ACCESS_REVOKED','ACCOUNT_INACTIVE','DEVICE_NOT_ALLOWED','SESSION_REVOKED',
@@ -24,6 +25,7 @@ class Controller extends EventEmitter {
     this.issuance=new Map();this.projectOperations=new Set();this.closed=false;this.draining=false;
     this.broker=new Broker(directory,request=>this.dispatch(request));
     this.management=new Management(this);
+    this.setup=new SetupConnection(this);
   }
   get profile(){return this.vault.data.profiles[this.vault.data.current] || null;}
   persist(){return this.vault.save();}
@@ -68,6 +70,8 @@ class Controller extends EventEmitter {
       emailRequired:!!p?.enrollment?.email_verification_required,approval:p?.enrollment?.device_status || null,
       deviceApprovalMode:p?.enrollment?.device_approval_mode || 'superadmin',
       managementEnabled:visible && !!p?.management,
+      setupEnabled:!!this.setup.binding,
+      setupAccountMatches:visible && !!this.setup.binding && !!this.setup.matches(this.setup.binding),
       projects:visible?this.projects:[],bindings:(visible?p?.bindings || []:[]).map(b=>({id:b.id,projectId:b.projectId,projectName:b.projectName,
         workspace:b.workspace,status:b.status,message:b.message || '',configuration:this.configuration(b),
         installed:b.installed || null})),
@@ -75,6 +79,7 @@ class Controller extends EventEmitter {
   }
   async start(){
     await this.broker.start();
+    await this.setup.restore();
     const p=this.profile;
     if(!p)return this.state();
     this.remote=new Remote(p,()=>this.persist(),this.transport);
@@ -155,6 +160,7 @@ class Controller extends EventEmitter {
       }
     }
     this.connection='active';this.message='';await this.persist();
+    await this.setup.claim();
   }
   async refresh(){
     if(!this.remote || !this.profile?.sessions.platform)throw new HubError('LOGIN_REQUIRED');
@@ -196,7 +202,7 @@ class Controller extends EventEmitter {
     this.ensureCurrent(profile,remote);
     const result=await remote.request('GET',`/api/projects/${projectId}/context`,undefined,{slot});
     this.ensureCurrent(profile,remote);
-    return {...result,capabilities:profile.user.platform_role==='superadmin'?['project:read','tasks:write','documents:read']:result.capabilities};
+    return {...result,capabilities:profile.user.platform_role==='superadmin' && !result.capabilities.length?['project:read','tasks:write','documents:read']:result.capabilities};
   }
   descriptorPath(binding){return path.join(this.directory,'bindings',binding.id+'.json');}
   configuration(binding){
@@ -258,6 +264,7 @@ class Controller extends EventEmitter {
   }
   async dispatch(request){
     if(!request || !uuid(request.binding) || !request.args || Array.isArray(request.args) || typeof request.args!=='object')throw new HubError('INVALID_BRIDGE_REQUEST');
+    if(this.setup.owns(request.binding))return this.setup.dispatch(request);
     if(this.management.owns(request.binding))return this.management.dispatch(request);
     const b=this.binding(request.binding);
     if(!equalSecret(request.secret,b.secret))throw new HubError('BRIDGE_AUTHENTICATION_FAILED','本机连接认证失败。');
@@ -299,6 +306,13 @@ class Controller extends EventEmitter {
       if(action==='hub_get_project'){
         if(Object.keys(args).length)throw new HubError('INVALID_REQUEST');
         return {...context,workspace:b.workspace};
+      }
+      const taskRequest=require('./task-tools.cjs').request(action,args,context.capabilities,b.projectId);
+      if(taskRequest){
+        const result=await remote.request(taskRequest.method,taskRequest.path,taskRequest.body,
+          {slot,idempotency:taskRequest.operation_id});
+        this.ensureCurrent(profile,remote);
+        return result;
       }
       if(action==='hub_list_progress'){
         if(Object.keys(args).some(k=>!['after','limit'].includes(k)) ||

@@ -13,7 +13,7 @@ services:
     build:
       context: ..
       target: runtime
-    image: agent-hub:0.3.2
+    image: agent-hub:0.4.0
     environment:
       <<: *hub-environment
       HUB_DATABASE_URL: postgresql+psycopg://hub_owner:${HUB_OWNER_PASSWORD}@postgres:5432/agent_hub
@@ -32,7 +32,7 @@ services:
     build:
       context: ..
       target: runtime
-    image: agent-hub:0.3.2
+    image: agent-hub:0.4.0
     environment:
       <<: *hub-environment
       HUB_DATABASE_URL: postgresql+psycopg://hub_runtime:${HUB_RUNTIME_PASSWORD}@postgres:5432/agent_hub
@@ -71,7 +71,7 @@ services:
       retries: 5
 
   document-worker:
-    image: agent-hub:0.3.2
+    image: agent-hub:0.4.0
     environment:
       <<: *hub-environment
       HUB_DATABASE_URL: postgresql+psycopg://hub_document_worker:${HUB_INDEXER_PASSWORD:?Use the server-only database environment file}@postgres:5432/agent_hub

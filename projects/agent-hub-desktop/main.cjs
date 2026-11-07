@@ -50,10 +50,10 @@ async function start(){
   }
   const startupAvailable=app.isPackaged && process.platform==='win32';
   const startupOptions=enabled=>({openAtLogin:enabled,
-    path:vault.data.desktopLauncher || process.execPath,args:['--hidden']});
+    path:vault.data.desktopLauncher || process.execPath,args:['--hidden','--user-data-dir='+directory]});
   const desktopInfo=()=>({...desktop.preferences(vault.data),notificationsSupported:Notification.isSupported(),
     startupAvailable,startAtLogin:startupAvailable?
-      app.getLoginItemSettings({path:startupOptions(false).path,args:['--hidden']}).openAtLogin:false});
+      app.getLoginItemSettings({path:startupOptions(false).path,args:startupOptions(false).args}).openAtLogin:false});
   const controller=new Controller({vault,directory,executable:process.execPath,
     bridgeScript:path.join(__dirname,'core/bridge.cjs'),updater});
   session.defaultSession.setPermissionRequestHandler((_webContents,_permission,callback)=>callback(false));
@@ -140,6 +140,10 @@ async function start(){
     state:()=>controller.state(),login:data=>controller.login(data),sendEmail:()=>controller.sendEmail(),
     verifyEmail:data=>controller.verifyEmail(data.code),checkApproval:()=>controller.checkApproval(),
     refresh:()=>controller.refresh(),logout:()=>controller.logout(),
+    taskQuery:data=>{
+      if(!['hub_list_tasks','hub_get_task','hub_list_worklogs'].includes(data.tool))throw new HubError('INVALID_DESKTOP_REQUEST');
+      return controller.invokeProject(controller.binding(data.bindingId),data.tool,data.args || {});
+    },
     chooseWorkspace:async()=>{
       const result=await dialog.showOpenDialog(window,{title:'选择这个项目的工作目录',properties:['openDirectory']});
       selectedWorkspace=result.canceled?null:result.filePaths[0];return selectedWorkspace;
@@ -156,6 +160,9 @@ async function start(){
       clipboard.writeText(JSON.stringify(configuration,null,2));return {copied:true};
     },
     disconnectManagement:()=>controller.management.disable(),
+    enableSetup:()=>controller.setup.enable(),
+    disableSetup:()=>controller.setup.disable(),
+    resetSetup:async()=>{await controller.setup.disable();return controller.setup.enable();},
     install:data=>controller.installConfiguration(data),
     copyConfiguration:data=>{clipboard.writeText(JSON.stringify(controller.configuration(controller.binding(data.id)),null,2));return {copied:true};},
     copySessionRule:()=>{clipboard.writeText(sessionRule);return {copied:true};},
@@ -184,7 +191,7 @@ async function start(){
         message:error instanceof HubError?error.message:'操作未完成，原配置和工作目录已保留。'};}
     };
     if(['state','appInfo','updateInfo','desktopSettings','testNotification','copyConfiguration',
-      'copySessionRule','copySessionHook','openAdmin','checkUpdate'].includes(action))return invoke();
+      'copySessionRule','copySessionHook','openAdmin','checkUpdate','taskQuery'].includes(action))return invoke();
     if(restarting || quitting)return {ok:false,code:'CLIENT_UPDATE_REQUIRED',message:'桌面端正在切换版本。'};
     const result=mutation.then(invoke,invoke);mutation=result.then(()=>{});return result;
   });
@@ -192,7 +199,10 @@ async function start(){
     tray=new Tray(appIcon.resize({width:32,height:32}));tray.setToolTip('Agent Hub · 项目协作');
     refreshTray();tray.on('double-click',show);
   }
-  app.on('second-instance',show);app.on('activate',show);
+  app.on('second-instance',()=>{
+    const action=mutation.then(()=>controller.setup.consumeRequest());
+    mutation=action.catch(()=>{});action.then(show,show);
+  });app.on('activate',show);
   app.on('before-quit',event=>{
     if(quitting)return;
     event.preventDefault();quitting=true;tray?.destroy();
@@ -200,6 +210,7 @@ async function start(){
   });
   app.on('window-all-closed',()=>{if(isolatedTest)app.quit();});
   await controller.start();
+  await controller.setup.consumeRequest();
   await show();
   if(boot?.pending)await updater.activate(boot.pending);
   updater?.check({fresh:true}).catch(()=>{});

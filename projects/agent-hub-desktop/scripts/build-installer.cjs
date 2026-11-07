@@ -33,6 +33,10 @@ async function main() {
   await fs.writeFile(path.join(root, config.directories.output, 'installer.json'), JSON.stringify(result, null, 2));
   const pkg = await readJson(path.join(bundle, 'resources', 'app', 'package.json'));
   if (pkg.version !== version) throw new Error('Installer version mismatch');
+  const releases=path.resolve(root,'../../releases');await fs.mkdir(releases,{recursive:true});
+  await fs.writeFile(path.join(releases,'windows-x64.json'),JSON.stringify({schema:1,platform:'win-x64',version,
+    installer:{url:`https://47.109.23.86:18180/desktop-updates/win-x64/AgentHub-Setup-${version}.exe`,bytes:result.bytes,sha256:result.sha256},
+    files_sha256:integrity.files_sha256},null,2)+'\n');
   process.stdout.write(JSON.stringify(result) + '\n');
 }
 main().catch(error => { process.stderr.write(error.message + '\n'); process.exitCode = 1; });

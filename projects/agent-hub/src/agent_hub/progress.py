@@ -16,6 +16,10 @@ def view(entry):
         "detail": entry.detail,
         "task_reference": entry.task_reference,
         "git_commit": entry.git_commit,
+        "kind": entry.kind,
+        "task_id": str(entry.task_id) if entry.task_id else None,
+        "run_id": str(entry.run_id) if entry.run_id else None,
+        "worklog_id": str(entry.worklog_id) if entry.worklog_id else None,
         "created_at": entry.created_at.isoformat(),
     }
 
@@ -40,3 +44,12 @@ def page(db, project_id, after, limit):
     ))
     return {"items": [view(entry) for entry in entries],
             "cursor": str(entries[-1].sequence if entries else after), "has_more": len(entries) == limit}
+
+
+def recent(db, project_id, before, limit):
+    query = select(ProjectProgress).where(ProjectProgress.project_id == project_id)
+    if before:
+        query = query.where(ProjectProgress.sequence < before)
+    entries = list(db.scalars(query.order_by(ProjectProgress.sequence.desc()).limit(limit)))
+    return {"items": [view(entry) for entry in entries],
+            "before": str(entries[-1].sequence if entries else before), "has_more": len(entries) == limit}

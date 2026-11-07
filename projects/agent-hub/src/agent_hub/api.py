@@ -15,7 +15,8 @@ from sqlalchemy import delete, select, text, update
 from sqlalchemy.exc import DBAPIError
 from sqlalchemy.exc import TimeoutError as PoolTimeout
 
-from . import documents, progress
+from . import documents, progress, tasks
+from . import __version__
 from . import schemas as S
 from .administration import Setup, device_view, email_change_complete, email_change_start, grant_view
 from .config import Settings, get_settings
@@ -25,7 +26,7 @@ from .mail_outbox import MailOutbox
 from .mail_outbox import enqueue as enqueue_mail
 from .models import Approval, Audit, AuthSession, Device, Enrollment, Grant, Membership, Project, User
 from .security import HubError, check_proof, now, rate_limit
-from .service import Hub, approval_view, require_root, user_view
+from .service import ADMIN_CAPS, Hub, approval_view, require_root, user_view
 
 
 def create_app(
@@ -78,7 +79,7 @@ def create_app(
             if security_factory is None:
                 security_sessions.kw["bind"].dispose()
 
-    app = FastAPI(title="Agent Hub", version="0.3.2", lifespan=lifespan)
+    app = FastAPI(title="Agent Hub", version=__version__, lifespan=lifespan)
     app.state.sessions, app.state.mailer, app.state.hub = sessions, mail, hub
     app.state.security_sessions, app.state.deliveries = security_sessions, deliveries
 
@@ -222,7 +223,7 @@ def create_app(
 
     @app.get("/healthz")
     def health():
-        return {"status": "ok", "phase": "P2-documents", "version": "0.3.2"}
+        return {"status": "ok", "phase": "P3-tasks", "version": __version__}
 
     @app.post("/api/auth/enrollments")
     def enroll(body: S.Enroll, request: Request, db: DB):
@@ -364,7 +365,7 @@ def create_app(
             "id": str(p.id),
             "slug": p.slug,
             "name": p.name,
-            "capabilities": identity.grant.capabilities if identity.grant else [],
+            "capabilities": sorted(ADMIN_CAPS) if identity.user.platform_role == "superadmin" else identity.grant.capabilities,
         }
 
     @app.put("/api/admin/projects/{project_id}/administrators")
@@ -744,6 +745,88 @@ def create_app(
     ):
         hub.project(db, actor(request, db), project_id)
         return progress.page(db, project_id, after, limit)
+
+    @app.get("/api/projects/{project_id}/tasks")
+    def task_list(project_id: uuid.UUID, request: Request, db: DB,
+                  offset: int = Query(0, ge=0, le=100000), limit: int = Query(50, ge=1, le=100)):
+        identity = actor(request, db)
+        hub.project(db, identity, project_id)
+        return tasks.page(db, project_id, offset, limit)
+
+    @app.get("/api/projects/{project_id}/activity")
+    def recent_activity(project_id: uuid.UUID, request: Request, db: DB,
+                        before: int = Query(0, ge=0, le=9223372036854775807), limit: int = Query(20, ge=1, le=100)):
+        identity = actor(request, db)
+        hub.project(db, identity, project_id)
+        return progress.recent(db, project_id, before, limit)
+
+    @app.get("/api/projects/{project_id}/tasks/{task_id}")
+    def task_detail(project_id: uuid.UUID, task_id: uuid.UUID, request: Request, db: DB):
+        identity = actor(request, db)
+        hub.project(db, identity, project_id)
+        return tasks.detail(db, project_id, task_id)
+
+    @app.post("/api/projects/{project_id}/tasks")
+    def create_task(project_id: uuid.UUID, body: S.NewTask, request: Request, db: DB):
+        identity = actor(request, db)
+        hub.project(db, identity, project_id, "tasks:publish")
+        return mutate(request, db, identity, body,
+                      lambda: tasks.create(hub, db, identity, project_id, body, request.state.request_id))
+
+    @app.post("/api/projects/{project_id}/tasks/{task_id}/claim")
+    def claim_task(project_id: uuid.UUID, task_id: uuid.UUID, body: S.TaskClaim, request: Request, db: DB):
+        identity = actor(request, db)
+        hub.project(db, identity, project_id, "tasks:claim")
+        hub.project(db, identity, project_id, "tasks:write")
+        return mutate(request, db, identity, body,
+                      lambda: tasks.claim(hub, db, identity, project_id, task_id, body, request.state.request_id))
+
+    @app.post("/api/projects/{project_id}/tasks/{task_id}/heartbeat")
+    def heartbeat_task(project_id: uuid.UUID, task_id: uuid.UUID, body: S.LeaseInput, request: Request, db: DB):
+        identity = actor(request, db)
+        hub.project(db, identity, project_id, "tasks:claim")
+        return mutate(request, db, identity, body,
+                      lambda: tasks.heartbeat(hub, db, identity, project_id, task_id, body))
+
+    @app.post("/api/projects/{project_id}/tasks/{task_id}/release")
+    def release_task(project_id: uuid.UUID, task_id: uuid.UUID, body: S.TaskRelease, request: Request, db: DB):
+        identity = actor(request, db)
+        hub.project(db, identity, project_id, "tasks:claim")
+        return mutate(request, db, identity, body,
+                      lambda: tasks.release(hub, db, identity, project_id, task_id, body, request.state.request_id))
+
+    @app.post("/api/projects/{project_id}/tasks/{task_id}/worklogs")
+    def write_worklog(project_id: uuid.UUID, task_id: uuid.UUID, body: S.WorklogInput, request: Request, db: DB):
+        identity = actor(request, db)
+        hub.project(db, identity, project_id, "tasks:write")
+        rate_limit(security_sessions, hub.secret, f"worklog:{identity.user.id}", 120, 60)
+        return mutate(request, db, identity, body,
+                      lambda: tasks.write_log(hub, db, identity, project_id, task_id, body, request.state.request_id))
+
+    @app.get("/api/projects/{project_id}/tasks/{task_id}/worklogs")
+    def worklog_list(project_id: uuid.UUID, task_id: uuid.UUID, request: Request, db: DB,
+                     offset: int = Query(0, ge=0, le=100000), limit: int = Query(20, ge=1, le=50)):
+        identity = actor(request, db)
+        hub.project(db, identity, project_id)
+        result = tasks.logs(db, project_id, task_id, offset, limit)
+        result["visibility"] = "project" if identity.user.platform_role == "superadmin" or "logs:read" in identity.grant.capabilities else "own"
+        return result
+
+    @app.post("/api/projects/{project_id}/tasks/{task_id}/submit")
+    def submit_task(project_id: uuid.UUID, task_id: uuid.UUID, body: S.TaskSubmit, request: Request, db: DB):
+        identity = actor(request, db)
+        hub.project(db, identity, project_id, "tasks:write")
+        return mutate(request, db, identity, body,
+                      lambda: tasks.submit(hub, db, identity, project_id, task_id, body, request.state.request_id))
+
+    @app.post("/api/projects/{project_id}/tasks/{task_id}/decisions")
+    def decide_task(project_id: uuid.UUID, task_id: uuid.UUID, body: S.GateDecision, request: Request, db: DB):
+        identity = actor(request, db)
+        hub.project(db, identity, project_id, {"review":"tasks:review", "test":"tasks:test"}.get(body.gate, "tasks:publish"))
+        if body.gate not in tasks.ADMISSION:
+            hub.project(db, identity, project_id, "logs:read")
+        return mutate(request, db, identity, body,
+                      lambda: tasks.decide(hub, db, identity, project_id, task_id, body, request.state.request_id))
 
     @app.get("/api/projects/{project_id}/documents/repository")
     def document_repository(project_id: uuid.UUID, request: Request, db: DB):

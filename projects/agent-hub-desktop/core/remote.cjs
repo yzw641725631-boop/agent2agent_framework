@@ -2,6 +2,14 @@
 const crypto = require('node:crypto');
 
 const messages = {
+  TASK_NOT_FOUND:'任务不存在或不在当前项目。',TASK_ALREADY_CLAIMED:'任务已被认领，请等待释放或租约过期。',
+  TASK_NOT_CLAIMABLE:'任务还不能认领，请先完成准入确认或当前评审流程。',
+  TASK_LEASE_STALE:'任务已交接或提交，当前执行凭证失效，请重新读取任务。',
+  TASK_LEASE_EXPIRED:'认领已过期，请重新核验和认领任务。',TASK_LEASE_NOT_OWNED:'这个开发租约属于其他执行者。',
+  TASK_VERSION_CONFLICT:'任务状态已变化，请刷新后重试。',TASK_GATE_ORDER_INVALID:'流程关口或提交版本不匹配，请刷新任务。',
+  TASK_INDEPENDENT_REVIEW_REQUIRED:'须由其他人员评审。单人项目需超管填写明确的自审原因。',
+  TASK_LATEST_CHECKPOINT_REQUIRED:'请先保存本次认领的最新检查点日志。',TASK_PATH_OUT_OF_SCOPE:'变更路径超出任务焦点范围。',
+  TASK_CHILDREN_INCOMPLETE:'还有未完成的子任务，不能确认父任务完成。',
   SERVICE_BUSY:'服务正在处理并发请求，请稍后重试。',
   DEVICE_APPLICATION_DENIED:'当前设备申请已被拒绝，请联系超级管理员处理。',
   DOCUMENT_INDEX_NOT_READY:'文档索引尚未建立，请联系项目管理员同步。',
@@ -99,6 +107,8 @@ class Remote {
     if (!response.ok) throw new HubError(data.code || 'REQUEST_FAILED',undefined,{
       normal_operations_allowed:data.normal_operations_allowed,
       required_action:data.required_action,closeout_available:data.closeout_available,
+      current_version:data.current_version,task_status:data.task_status,run_id:data.run_id,
+      lease_until:data.lease_until,path:data.path,
     });
     return data;
   }

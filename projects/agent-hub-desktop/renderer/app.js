@@ -3,9 +3,12 @@ const root=document.getElementById('app');
 const notice=document.getElementById('notice');
 const modal=document.getElementById('dialog');
 let state,info={},releaseState,view='overview',selectedFolder=null;
+let taskBinding=null,taskVersion=0,taskTimer,openTaskBinding=null,taskDialogVersion=0;
+modal.addEventListener('close',()=>{taskDialogVersion++;openTaskBinding=null;});
+const taskLabels={draft:'待准入',ready:'待认领',in_progress:'开发中',review:'待评审',testing:'待测试',release_ready:'待发布确认',completed:'已完成'};
 const labels={active:'已连接',pending:'等待验证 / 审批',offline:'连接中断',blocked:'已拦截',signed_out:'未登录',
   reauth_required:'需要重新登录',running:'执行中',checkpoint:'检查点',completed:'已完成',approved:'已批准'};
-const titles={overview:'协作概览',workspaces:'项目与 MCP',activity:'项目动态',connection:'账号与设备',desktop:'桌面设置'};
+const titles={overview:'协作概览',workspaces:'项目与 MCP',tasks:'任务与日志',activity:'项目动态',connection:'账号与设备',desktop:'桌面设置'};
 function el(tag,props={},...children){
   const element=document.createElement(tag);
   for(const [key,value] of Object.entries(props)){
@@ -158,6 +161,62 @@ function overview(){
       button('查看全部',()=>{view='activity';render();},'quiet')),events(5)),
       el('section',{class:'card'},el('div',{class:'card-head'},text('h2','本机连接'),state.projects.length?button('绑定项目',bindDialog,'primary'):null),bindings(3))));
 }
+function tasksScreen(){
+  const bindings=state.bindings.filter(b=>b.status==='active');
+  taskBinding=bindings.some(b=>b.id===taskBinding)?taskBinding:bindings[0]?.id;
+  const selector=el('select',{'aria-label':'任务所属连接'},bindings.map(b=>el('option',{value:b.id},b.projectName+' · '+b.workspace)));
+  selector.value=taskBinding || '';
+  selector.addEventListener('change',()=>{taskBinding=selector.value;closeDialog();openTaskBinding=null;render();});
+  const rows=el('div',{}),sync=text('p','正在读取…','note'),generation=taskVersion,bindingId=taskBinding;
+  const current=()=>view==='tasks' && taskVersion===generation && taskBinding===bindingId && state.bindings.some(b=>b.id===bindingId && b.status==='active');
+  let offset=0;
+  const load=async()=>{
+    if(!current())return;
+    try{
+      const data=await invoke('taskQuery',{bindingId,tool:'hub_list_tasks',args:{offset,limit:50}});
+      if(!current())return;
+      rows.replaceChildren(...data.items.map(task=>el('article',{class:'binding'},
+        el('div',{class:'row between'},text('h3',task.title),text('span',taskLabels[task.status],'pill')),
+        text('p',`${task.scope.repository} · ${task.scope.platform} · ${task.scope.paths.join('、')}`,'note'),
+        text('p',task.active_run_id?'认领到期 '+new Date(task.lease_until).toLocaleString('zh-CN'):'当前没有开发租约','note'),
+        button('查看日志与流程',()=>taskDetail(bindingId,task.id,generation)))));
+      if(!data.items.length)rows.append(empty('没有任务','在网站后台创建，或通过项目 MCP 让架构师拆解任务。'));
+      rows.append(el('div',{class:'actions'},
+        offset?button('上一页',async()=>{offset=Math.max(0,offset-50);await load();}):null,
+        data.has_more?button('下一页',async()=>{offset=data.next_offset;await load();}):null));
+      sync.textContent='最近同步 '+new Date().toLocaleTimeString('zh-CN')+' · 每 5 秒刷新';
+    }catch(error){if(current())sync.textContent=error.message;}
+    finally{if(current()){clearTimeout(taskTimer);taskTimer=setTimeout(load,5000);}}
+  };
+  if(bindingId)load();
+  return el('div',{},heading('TASKS & HANDOFF','任务与工作日志','查看与网站共用的任务、执行角色和流程记录。Agent 通过项目 MCP 认领与提交。'),
+    el('section',{class:'card'},bindings.length?el('div',{},field('项目连接',selector),sync,rows):
+      empty('先连接项目','前往“项目与 MCP”绑定获准项目的工程目录。')),
+    text('p','人员认领、创建任务和流程确认可在网站“任务与日志”操作。日志尚不包含代码快照。','note'),
+    button('打开网站后台',()=>invoke('openAdmin')));
+}
+async function taskDetail(bindingId,taskId,generation,offset=0){
+  const ticket=++taskDialogVersion,account=state.user?.id;
+  const current=()=>view==='tasks' && ticket===taskDialogVersion && account===state.user?.id && taskBinding===bindingId && state.bindings.some(b=>b.id===bindingId && b.status==='active');
+  const data=await invoke('taskQuery',{bindingId,tool:'hub_get_task',args:{task_id:taskId}});
+  const logs=await invoke('taskQuery',{bindingId,tool:'hub_list_worklogs',args:{task_id:taskId,offset,limit:20}});
+  if(!current())return;
+  const task=data.task;openTaskBinding=bindingId;
+  openDialog(text('h2',task.title),text('p',(taskLabels[task.status] || task.status)+' · 版本 '+task.version),
+    text('pre',task.description+'\n\n验收：'+task.acceptance),
+    text('h3',logs.visibility==='project'?'共享工作日志':'本人工作日志'),
+    ...logs.items.map(log=>el('details',{},text('summary',new Date(log.created_at).toLocaleString('zh-CN')+' · '+log.summary+' · '+log.outcome),
+      text('pre',`${log.notes}\n\n改动：${log.changed_paths.join('、')}\n验证：${log.tests}\n下一步：${log.next_steps}`),
+      text('p','Git 引用：'+(log.git_commit || '未提供')+'（未核验）','mono'),text('p','回执：'+log.receipt_hash,'mono'))),
+    !logs.items.length?text('p','没有当前账号可见的日志。','note'):null,
+    el('div',{class:'actions'},offset?button('较新日志',()=>taskDetail(bindingId,taskId,generation,Math.max(0,offset-20))):null,
+      logs.has_more?button('较早日志',()=>taskDetail(bindingId,taskId,generation,logs.next_offset)):null),
+    text('h3','执行身份'),...data.runs.map(run=>text('p',`${run.role} · ${run.harness} · ${run.user_id.slice(0,8)} / ${run.device_id.slice(0,8)} · ${run.state}`)),
+    text('h3','可见流程证据'),...data.decisions.map(d=>el('details',{},text('summary',`${d.gate} · ${d.approved?'通过':'退回'}`),
+      text('pre',d.evidence+(d.override_reason?'\n自审原因：'+d.override_reason:'')))),
+    text('p','当前保存日志原文和提交引用；代码快照备份、自动逐轮钩子仍待接入。','note'),
+    el('div',{class:'actions end'},button('刷新',()=>taskDetail(bindingId,taskId,generation,offset)),button('关闭',()=>{openTaskBinding=null;closeDialog();},'primary')));
+}
 function workspaces(){return el('div',{},heading('PROJECT CONNECTIONS','项目与 MCP','每个连接绑定一个项目和一个工作目录。服务端在每次 MCP 调用时检查当前权限。'),
   state.user?.platform_role==='superadmin'?el('section',{class:'card management-card'},
     el('div',{class:'card-head'},text('h2','让 Agent 创建项目'),button('管理 MCP 配置',managementDialog,'primary')),
@@ -184,6 +243,13 @@ function desktopScreen(){
         (releaseState?.latest_version?' · 发布版本 v'+releaseState.latest_version:'')),
       text('p',releaseState?.message || '安装版支持直接下载、校验并重启到新版。','note'),
       onlineUpdateButton()),
+    el('section',{class:'card'},text('h2','Agent 一键安装连接'),
+      text('p',state.setupEnabled?(state.setupAccountMatches?'已启用，连接绑定当前登录账号。':'已启用；首次登录后绑定账号，切换账号需要重新授权。'):'由一键安装入口启用并配置，可让 Agent 检查登录、列出项目和接入工程。'),
+      el('div',{class:'actions'},
+        !state.setupEnabled?button('启用安装连接',async()=>{await invoke('enableSetup');await update();toast('已启用，请运行仓库安装入口自动配置开发工具。',true);},'primary'):null,
+        state.setupEnabled?button('重新授权（旧连接失效）',async()=>{await invoke('resetSetup');await update();toast('已重新授权，请重新运行安装入口更新 MCP 配置。',true);}):null,
+        state.setupEnabled?button('停用安装连接',async()=>{await invoke('disableSetup');await update();toast('安装连接已停用，已有项目连接保持各自授权。',true);},'danger'):null),
+      text('p','账号密码和验证码在桌面端填写。安装连接用于接入；开发使用绑定到具体工程的项目连接。','note')),
     el('section',{class:'card settings'},
       toggle('closeToTray','关闭窗口后在托盘运行','点击右上角关闭按钮仅隐藏窗口；退出后台请使用托盘菜单。'),
       toggle('notifications','接收消息推送','收到其他设备的项目进度、补齐的离线消息和连接权限变化时提醒。'),
@@ -199,7 +265,7 @@ function desktopScreen(){
 function connection(){return el('div',{},heading('ACCOUNT & DEVICE','账号与设备','项目授权由服务器管理。桌面窗口关闭后，托盘后台会继续提供 MCP 连接。'),
   el('section',{class:'card'},el('div',{class:'card-head'},text('h2',state.login),pill(state.connection)),
     el('dl',{class:'account-details'},text('dt','服务器'),text('dd',state.origin,'mono'),text('dt','账号角色'),
-      text('dd',state.user?.platform_role==='superadmin'?'超级管理员':state.user?.platform_role==='admin'?'管理员':'项目成员'),
+      text('dd',state.user?.platform_role==='superadmin'?'超级管理员':state.user?.admin_eligible?'管理员账号':'项目成员'),
       text('dt','设备 ID'),text('dd',state.deviceId || '—','mono'),text('dt','客户端版本'),text('dd',info.version || '0.1.0')),
     el('div',{class:'actions'},button('刷新授权与连接',async()=>{await invoke('refresh');await update();toast('授权和连接状态已刷新。',true);},'primary'),
       releaseState?button('检查客户端更新',checkUpdate):null,
@@ -235,6 +301,10 @@ function renderUpdate(){
 }
 function render(){
   if(!state)return;
+  clearTimeout(taskTimer);taskVersion++;
+  if(openTaskBinding && (view!=='tasks' || !state.bindings.some(b=>b.id===openTaskBinding && b.status==='active'))){
+    openTaskBinding=null;modal.replaceChildren();closeDialog();
+  }
   const authenticated=state.connection==='active' || (state.connection==='offline' && !!state.user);
   const sidebar=el('aside',{class:'sidebar'},el('div',{class:'brand'},
     el('img',{src:'../assets/agent-hub.png',alt:'',class:'brand-icon'}),
@@ -248,7 +318,7 @@ function render(){
   let content;
   if(view==='desktop')content=desktopScreen();
   else if(!authenticated)content=state.connection==='pending'?pendingScreen():loginScreen();
-  else content=view==='overview'?overview():view==='workspaces'?workspaces():view==='activity'?
+  else content=view==='overview'?overview():view==='workspaces'?workspaces():view==='tasks'?tasksScreen():view==='activity'?
     el('div',{},heading('PROJECT ACTIVITY','项目动态','记录来自服务器。断线恢复后按游标补齐，重复记录会自动合并。'),el('section',{class:'card'},events())):connection();
   root.replaceChildren(el('div',{class:'layout'},sidebar,el('main',{class:'content'},
     el('header',{class:'topbar'},text('div',authenticated || view==='desktop'?titles[view]:'欢迎使用 Agent Hub'),

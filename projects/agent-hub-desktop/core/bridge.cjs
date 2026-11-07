@@ -6,7 +6,7 @@ const { HubError } = require('./remote.cjs');
 const { dispatch, error } = require('./mcp.cjs');
 const { version } = require('../package.json');
 
-async function binding(file) {
+async function binding(file, expectedId) {
   try {
     const info = await fs.lstat(file);
     if (!info.isFile() || info.size > 8192) throw new Error('Invalid binding descriptor');
@@ -15,6 +15,7 @@ async function binding(file) {
         typeof descriptor.binding !== 'string' || typeof descriptor.secret !== 'string') {
       throw new Error('Invalid binding descriptor');
     }
+    if (expectedId && descriptor.binding !== expectedId) throw new HubError('CONNECTION_CHANGED', '安装连接已重新授权。请重新运行安装配置，再加载 MCP。');
     return descriptor;
   } catch (failure) {
     if (failure.code === 'ENOENT') throw new HubError('LOGIN_REQUIRED', '请在桌面端登录并启用对应的 MCP 连接。');
@@ -34,11 +35,11 @@ async function sessionCheck(file) {
   process.stdout.write(JSON.stringify({ hookSpecificOutput: { hookEventName: 'SessionStart', additionalContext: message } }) + '\n');
 }
 
-async function relay(request, file) {
+async function relay(request, file, options = {}) {
   if (request?.jsonrpc === '2.0' && typeof request.method === 'string' && !Object.hasOwn(request, 'id')) return null;
-  const invoke = async (action, args) => call(await binding(file), { action, args });
+  const invoke = async (action, args) => call(await binding(file, options.expectedId), { action, args });
   try {
-    const descriptor = await binding(file);
+    const descriptor = await binding(file, options.expectedId);
     if (descriptor.protocol === 'desktop-mcp-v1') {
       const response = await call(descriptor, { action: 'mcp', args: { request } });
       const result = response?.result;
@@ -53,7 +54,13 @@ async function relay(request, file) {
       if (request?.method === 'initialize') return { installed_version: version, message: failure.message };
       throw failure;
     };
-    return dispatch(request, async () => { throw failure; }, check);
+    const unavailable = async (action) => {
+      if (options.scope === 'setup' && action === 'metadata') return { capabilities: ['setup'] };
+      if (options.scope === 'setup' && action === 'hub_connection_status') return { ready: false,
+        code: failure.code || 'DESKTOP_OFFLINE', message: failure.message };
+      throw failure;
+    };
+    return dispatch(request, unavailable, check, { scope: options.scope || 'project' });
   }
   return dispatch(request, invoke);
 }
@@ -62,6 +69,10 @@ async function run(argv = process.argv.slice(2)) {
   const index = argv.indexOf('--binding');
   if (index < 0 || !argv[index + 1]) throw new Error('Missing --binding');
   const file = argv[index + 1];
+  const idIndex = argv.indexOf('--connection-id');
+  const options = { scope: argv.includes('--setup') ? 'setup' : 'project',
+    expectedId: idIndex < 0 ? undefined : argv[idIndex + 1] };
+  if (options.scope === 'setup' && !/^[a-f0-9]{8}(-[a-f0-9]{4}){3}-[a-f0-9]{12}$/i.test(options.expectedId || '')) throw new Error('Missing setup connection identity');
   if (argv.includes('--session-check')) return sessionCheck(file);
   let buffer = '', queue = Promise.resolve();
   process.stdin.setEncoding('utf8');
@@ -81,7 +92,7 @@ async function run(argv = process.argv.slice(2)) {
         let request;
         try { request = JSON.parse(line); }
         catch { emit(error(null, -32700, 'Parse error')); return; }
-        try { emit(await relay(request, file)); }
+        try { emit(await relay(request, file, options)); }
         catch (failure) { emit(error(request?.id ?? null, -32000, failure.code || 'Desktop bridge unavailable')); }
       });
     }

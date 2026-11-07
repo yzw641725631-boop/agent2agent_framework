@@ -1,0 +1,69 @@
+'use strict';
+const {HubError}=require('./remote.cjs');
+const uuid=value=>typeof value==='string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
+const id={type:'string',format:'uuid'}, epoch={type:'integer',minimum:1};
+const harness={type:'string',enum:['human','claude-code','codex','cursor','qoder','workbuddy','codebuddy','trae']};
+const page={offset:{type:'integer',minimum:0,maximum:100000},limit:{type:'integer',minimum:1,maximum:50}};
+const lease={run_id:id,lease_epoch:epoch};
+const scope={type:'object',properties:{repository:{type:'string',minLength:1,maxLength:200},
+  platform:{type:'string',minLength:1,maxLength:80},paths:{type:'array',minItems:1,maxItems:40,items:{type:'string',maxLength:800}}},
+  required:['repository','platform','paths'],additionalProperties:false};
+function define(name,title,description,properties,required,{route='',write=false,cap=null}={}){
+  return {name,title,description,inputSchema:{type:'object',properties:{...properties,...(write?{operation_id:id}:{})},
+    required:[...required,...(write?['operation_id']:[])],additionalProperties:false},
+    annotations:{readOnlyHint:!write,...(write?{destructiveHint:false,idempotentHint:true}:{})},route,write,cap};
+}
+const definitions=[
+  define('hub_list_tasks','列出协作任务','列出当前绑定项目的正式任务与状态；进度报告不等于任务完成。',page,[]),
+  define('hub_get_task','读取任务及执行角色','读取正式任务、焦点范围、租约、执行身份和可见的流程证据。role 不授予权限。',{task_id:id},['task_id'],{route:':task'}),
+  define('hub_list_worklogs','读取任务工作日志','默认读取最近日志，按需翻页。logs:read 可读取同事原文，否则仅返回本人日志。代码和 Git 提交真实性未由此备份或验证。',
+    {task_id:id,...page},['task_id'],{route:':task/worklogs'}),
+  define('hub_create_task','拆解并创建任务','创建草稿任务，可指定同项目 parent_id。必须依次确认需求、设计、可行性才能认领。范围是声明，不能代替仓库授权或本地文件隔离。',
+    {parent_id:id,title:{type:'string',minLength:1,maxLength:200},description:{type:'string',minLength:1,maxLength:8000},
+      acceptance:{type:'string',minLength:1,maxLength:8000},scope},['title','description','acceptance','scope'],{write:true,cap:'tasks:publish'}),
+  define('hub_claim_task','原子认领开发任务','一次仅一个主开发者。人和 Agent 共用同一认领规则。为当前执行者生成 instance_id；成功后保存 run.id 和 lease_epoch。10 分钟租约，约每 2 分钟心跳。',
+    {task_id:id,instance_id:id,harness},['task_id','instance_id','harness'],{route:':task/claim',write:true,cap:'tasks:claim'}),
+  define('hub_heartbeat_task','续租任务','使用认领结果中的 run_id 与 lease_epoch 续租。过期或被替换后停止提交，重新核验任务。新一次心跳使用新的 operation_id，网络重试保留原 ID。',
+    {task_id:id,...lease},['task_id','run_id','lease_epoch'],{route:':task/heartbeat',write:true,cap:'tasks:claim'}),
+  define('hub_release_task','释放本轮认领','先记录未完成工作，再释放本人有效租约，供其他执行者认领。不会删除本地文件或推送 Git。',
+    {task_id:id,...lease,reason:{type:'string',minLength:1,maxLength:1000}},['task_id','run_id','lease_epoch','reason'],{route:':task/release',write:true,cap:'tasks:claim'}),
+  define('hub_write_worklog','保存逐轮工作日志','每轮代码变更后，使用有效租约保存变更、验证、阻塞和下一步；返回不可覆盖的日志与 SHA256 回执。仅存日志和 Git 引用，不备份代码。只申报任务范围内的相对路径。',
+    {task_id:id,...lease,summary:{type:'string',minLength:1,maxLength:300},notes:{type:'string',minLength:1,maxLength:16000},
+      changed_paths:{type:'array',maxItems:100,items:{type:'string',maxLength:800}},tests:{type:'string',minLength:1,maxLength:8000},
+      next_steps:{type:'string',minLength:1,maxLength:4000},outcome:{type:'string',enum:['checkpoint','blocked','failed']},
+      git_commit:{type:'string',pattern:'^[a-fA-F0-9]{40,64}$'}},
+    ['task_id','run_id','lease_epoch','summary','notes','tests','next_steps'],{route:':task/worklogs',write:true,cap:'tasks:write'}),
+  define('hub_submit_task','提交当前检查点待评审','仅能提交本有效认领的最新 checkpoint 日志。提交结束开发租约，进入评审；不会自动 Git push、合并或部署。',
+    {task_id:id,...lease,worklog_id:id,expected_version:epoch},['task_id','run_id','lease_epoch','worklog_id','expected_version'],{route:':task/submit',write:true,cap:'tasks:write'}),
+  define('hub_decide_task','记录流程关口决定','依次执行 requirements、design、feasibility、认领开发、提交、review、test、release。后 3 项须绑定当前 submission_id，并拥有 logs:read 和对应权限。作者不能独立评审自己的工作；超管自审须明确 override_reason。release 是平台完成确认，不代表已部署。',
+    {task_id:id,gate:{type:'string',enum:['requirements','design','feasibility','review','test','release']},approved:{type:'boolean'},
+      expected_version:epoch,worklog_id:id,evidence:{type:'string',minLength:1,maxLength:8000},
+      override_reason:{type:'string',maxLength:1000},instance_id:id,harness},
+    ['task_id','gate','approved','expected_version','evidence','instance_id','harness'],{route:':task/decisions',write:true,cap:'decision'}),
+];
+function allowed(def,caps,args){
+  if(!def.cap)return true;
+  if(def.cap==='decision'){
+    if(!args)return caps.includes('tasks:publish') || (caps.includes('logs:read') && caps.some(c=>['tasks:review','tasks:test'].includes(c)));
+    const cap={review:'tasks:review',test:'tasks:test'}[args.gate] || 'tasks:publish';
+    return caps.includes(cap) && (['requirements','design','feasibility'].includes(args.gate) || caps.includes('logs:read'));
+  }
+  return caps.includes(def.cap) && (def.name!=='hub_claim_task' || caps.includes('tasks:write'));
+}
+function tools(caps){return definitions.filter(d=>allowed(d,caps)).map(({route,write,cap,...tool})=>tool);}
+function request(name,args,caps,projectId){
+  const def=definitions.find(d=>d.name===name);
+  if(!def)return null;
+  if(!args || typeof args!=='object' || Array.isArray(args) || Object.keys(args).some(k=>!Object.hasOwn(def.inputSchema.properties,k)) ||
+    def.inputSchema.required.some(k=>!Object.hasOwn(args,k)) ||
+    ['task_id','run_id','worklog_id','parent_id','instance_id','operation_id'].some(k=>args[k]!==undefined && !uuid(args[k])) ||
+    ['offset','limit','lease_epoch','expected_version'].some(k=>args[k]!==undefined && (!Number.isSafeInteger(args[k]) ||
+      args[k]<(k==='offset'?0:1) || (k==='offset' && args[k]>100000) || (k==='limit' && args[k]>50))))throw new HubError('INVALID_REQUEST');
+  if(!allowed(def,caps,args))throw new HubError('CAPABILITY_REQUIRED','缺少本次任务操作或读取日志所需授权。');
+  const {task_id,operation_id,...body}=args;
+  const route=def.route.replace(':task',task_id || '');
+  const base=`/api/projects/${projectId}/tasks${route?'/'+route:''}`;
+  const query=!def.write && Object.keys(body).length?'?'+new URLSearchParams(body).toString():'';
+  return {method:def.write?'POST':'GET',path:base+query,body:def.write?body:undefined,operation_id};
+}
+module.exports={tools,request};

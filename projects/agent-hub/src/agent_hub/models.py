@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime
 
-from sqlalchemy import BigInteger, DateTime, ForeignKey, Index, Integer, String, Text, UniqueConstraint, func
+from sqlalchemy import BigInteger, DateTime, ForeignKey, ForeignKeyConstraint, Index, Integer, String, Text, UniqueConstraint, func
 from sqlalchemy import Identity as AutoIdentity
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
@@ -199,7 +199,95 @@ class ProjectProgress(Base):
     detail: Mapped[str] = mapped_column(Text, default="")
     task_reference: Mapped[str] = mapped_column(String(128), default="")
     git_commit: Mapped[str | None] = mapped_column(String(64))
+    kind: Mapped[str] = mapped_column(String(40), default="report", server_default="report")
+    task_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))
+    run_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))
+    worklog_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class Task(Identity, Base):
+    __tablename__ = "tasks"
+    __table_args__ = (
+        UniqueConstraint("id", "project_id"),
+        ForeignKeyConstraint(["parent_id", "project_id"], ["tasks.id", "tasks.project_id"]),
+        Index("ix_tasks_project_created", "project_id", "created_at", "id"),
+    )
+    project_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("projects.id"))
+    parent_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))
+    created_by: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id"))
+    title: Mapped[str] = mapped_column(String(200))
+    description: Mapped[str] = mapped_column(Text)
+    acceptance: Mapped[str] = mapped_column(Text)
+    scope: Mapped[dict] = mapped_column(JSONB)
+    status: Mapped[str] = mapped_column(String(24), default="draft")
+    admission_step: Mapped[int] = mapped_column(Integer, default=0)
+    version: Mapped[int] = mapped_column(Integer, default=1)
+    lease_epoch: Mapped[int] = mapped_column(Integer, default=0)
+    active_run_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))
+    lease_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    submission_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))
+
+
+class TaskRun(Identity, Base):
+    __tablename__ = "task_runs"
+    __table_args__ = (
+        UniqueConstraint("id", "task_id", "project_id"),
+        ForeignKeyConstraint(["task_id", "project_id"], ["tasks.id", "tasks.project_id"]),
+        Index("ix_task_runs_task", "project_id", "task_id", "created_at"),
+    )
+    project_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("projects.id"))
+    task_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True))
+    user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id"))
+    device_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("devices.id"))
+    instance_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True))
+    harness: Mapped[str] = mapped_column(String(24))
+    role: Mapped[str] = mapped_column(String(24))
+    lease_epoch: Mapped[int] = mapped_column(Integer)
+    state: Mapped[str] = mapped_column(String(24), default="active")
+    ended_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class Worklog(Identity, Base):
+    __tablename__ = "worklogs"
+    __table_args__ = (
+        ForeignKeyConstraint(["run_id", "task_id", "project_id"],
+                             ["task_runs.id", "task_runs.task_id", "task_runs.project_id"]),
+        Index("ix_worklogs_task", "project_id", "task_id", "created_at", "id"),
+    )
+    project_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("projects.id"))
+    task_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True))
+    run_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True))
+    author_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id"))
+    device_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("devices.id"))
+    lease_epoch: Mapped[int] = mapped_column(Integer)
+    summary: Mapped[str] = mapped_column(String(300))
+    notes: Mapped[str] = mapped_column(Text)
+    changed_paths: Mapped[list] = mapped_column(JSONB)
+    tests: Mapped[str] = mapped_column(Text)
+    next_steps: Mapped[str] = mapped_column(Text)
+    outcome: Mapped[str] = mapped_column(String(24))
+    git_commit: Mapped[str | None] = mapped_column(String(64))
+    receipt_hash: Mapped[str] = mapped_column(String(64))
+
+
+class TaskDecision(Identity, Base):
+    __tablename__ = "task_decisions"
+    __table_args__ = (
+        ForeignKeyConstraint(["task_id", "project_id"], ["tasks.id", "tasks.project_id"]),
+        Index("ix_task_decisions_task", "project_id", "task_id", "created_at"),
+    )
+    project_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("projects.id"))
+    task_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True))
+    author_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id"))
+    device_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("devices.id"))
+    run_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))
+    worklog_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))
+    gate: Mapped[str] = mapped_column(String(24))
+    approved: Mapped[bool] = mapped_column()
+    evidence: Mapped[str] = mapped_column(Text)
+    override_reason: Mapped[str] = mapped_column(Text)
+    task_version: Mapped[int] = mapped_column(Integer)
 
 
 class DocumentRepository(Base):

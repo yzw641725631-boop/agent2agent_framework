@@ -1,7 +1,7 @@
 {
   "name": "agent-hub-desktop",
   "productName": "Agent Hub",
-  "version": "0.5.0",
+  "version": "0.6.1",
   "private": true,
   "description": "Agent Hub desktop login, project MCP bridge and progress notifications",
   "main": "main.cjs",
@@ -18,5 +18,9 @@
   },
   "overrides": {
     "minimatch@>=7.0.0 <11.0.1": "11.0.1"
+  },
+  "dependencies": {
+    "jsonc-parser": "3.3.1",
+    "smol-toml": "1.9.1"
   }
 }

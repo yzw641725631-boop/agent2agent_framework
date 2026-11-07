@@ -26,7 +26,8 @@ from .models import (
 from .security import HubError, digest, hash_password, now, payload_hash, verify_password
 from .site import SiteSettings
 
-MEMBER_CAPS = {"project:read", "documents:read", "documents:propose", "tasks:claim", "tasks:write"}
+MEMBER_CAPS = {"project:read", "documents:read", "documents:propose", "tasks:claim", "tasks:write",
+               "tasks:review", "tasks:test", "logs:read"}
 ADMIN_CAPS = MEMBER_CAPS | {
     "tasks:publish",
     "members:manage",

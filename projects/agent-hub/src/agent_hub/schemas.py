@@ -1,9 +1,10 @@
+import json
 import re
 from typing import Annotated, Literal
 from urllib.parse import urlsplit
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, EmailStr, Field, SecretStr, StringConstraints, field_validator
+from pydantic import BaseModel, ConfigDict, EmailStr, Field, SecretStr, StringConstraints, field_validator, model_validator
 
 Login = Annotated[str, StringConstraints(pattern=r"^[a-z0-9][a-z0-9_.-]{2,79}$")]
 
@@ -96,6 +97,107 @@ class ProgressReport(Input):
     def meaningful_summary(cls, value):
         if not value.strip():
             raise ValueError("A progress summary is required")
+        return value.strip()
+
+
+Harness = Literal["human", "claude-code", "codex", "cursor", "qoder", "workbuddy", "codebuddy", "trae"]
+
+
+class TaskScope(Input):
+    repository: str = Field(min_length=1, max_length=200)
+    platform: str = Field(min_length=1, max_length=80)
+    paths: list[str] = Field(min_length=1, max_length=40)
+
+    @field_validator("paths")
+    @classmethod
+    def relative_paths(cls, values):
+        # Scope is an admission declaration, not a substitute for Git permissions.
+        return sorted({document_path(value) for value in values})
+
+
+class NewTask(Input):
+    parent_id: UUID | None = None
+    title: str = Field(min_length=1, max_length=200)
+    description: str = Field(min_length=1, max_length=8000)
+    acceptance: str = Field(min_length=1, max_length=8000)
+    scope: TaskScope
+
+    @model_validator(mode="after")
+    def bounded_record(self):
+        if len(json.dumps(self.model_dump(mode="json"), ensure_ascii=False).encode("utf-8")) > 65536:
+            raise ValueError("Task record exceeds 64 KiB")
+        return self
+
+    @field_validator("title", "description", "acceptance")
+    @classmethod
+    def not_blank(cls, value):
+        if not value.strip():
+            raise ValueError("A nonblank value is required")
+        return value.strip()
+
+
+class TaskClaim(Input):
+    instance_id: UUID
+    harness: Harness
+
+
+class LeaseInput(Input):
+    run_id: UUID
+    lease_epoch: int = Field(ge=1)
+
+
+class WorklogInput(LeaseInput):
+    summary: str = Field(min_length=1, max_length=300)
+    notes: str = Field(min_length=1, max_length=16000)
+    changed_paths: list[str] = Field(default_factory=list, max_length=100)
+    tests: str = Field(min_length=1, max_length=8000)
+    next_steps: str = Field(min_length=1, max_length=4000)
+    outcome: Literal["checkpoint", "blocked", "failed"] = "checkpoint"
+    git_commit: str | None = Field(default=None, pattern=r"^[a-fA-F0-9]{40,64}$")
+
+    @model_validator(mode="after")
+    def bounded_record(self):
+        if len(json.dumps(self.model_dump(mode="json"), ensure_ascii=False).encode("utf-8")) > 65536:
+            raise ValueError("Worklog record exceeds 64 KiB")
+        return self
+
+    @field_validator("summary", "notes", "tests", "next_steps")
+    @classmethod
+    def not_blank(cls, value):
+        if not value.strip():
+            raise ValueError("A nonblank value is required")
+        return value.strip()
+
+    @field_validator("changed_paths")
+    @classmethod
+    def relative_paths(cls, values):
+        return sorted({document_path(value) for value in values})
+
+
+class TaskSubmit(LeaseInput):
+    worklog_id: UUID
+    expected_version: int = Field(ge=1)
+
+
+class TaskRelease(LeaseInput):
+    reason: str = Field(min_length=1, max_length=1000)
+
+
+class GateDecision(Input):
+    gate: Literal["requirements", "design", "feasibility", "review", "test", "release"]
+    approved: bool
+    expected_version: int = Field(ge=1)
+    worklog_id: UUID | None = None
+    evidence: str = Field(min_length=1, max_length=8000)
+    override_reason: str = Field(default="", max_length=1000)
+    instance_id: UUID
+    harness: Harness
+
+    @field_validator("evidence")
+    @classmethod
+    def not_blank(cls, value):
+        if not value.strip():
+            raise ValueError("Evidence is required")
         return value.strip()
 
 
