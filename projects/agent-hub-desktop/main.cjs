@@ -140,8 +140,27 @@ async function start(){
     state:()=>controller.state(),login:data=>controller.login(data),sendEmail:()=>controller.sendEmail(),
     verifyEmail:data=>controller.verifyEmail(data.code),checkApproval:()=>controller.checkApproval(),
     refresh:()=>controller.refresh(),logout:()=>controller.logout(),
+    localWork:()=>{
+      if(controller.connection==='signed_out')throw new HubError('LOGIN_REQUIRED');
+      return controller.work.list();
+    },
+    exportCheckpoint:async data=>{
+      if(controller.connection==='signed_out')throw new HubError('LOGIN_REQUIRED');
+      if(typeof data.id!=='string' || !/^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/i.test(data.id))throw new HubError('INVALID_DESKTOP_REQUEST');
+      const result=await dialog.showOpenDialog(window,{title:'选择检查点导出的父目录（会新建独立文件夹）',properties:['openDirectory']});
+      if(result.canceled)return {cancelled:true};
+      return controller.work.export(data.id,path.join(result.filePaths[0],'agent-hub-checkpoint-'+data.id));
+    },
+    removeExportedCheckpoint:async data=>{
+      if(controller.connection==='signed_out')throw new HubError('LOGIN_REQUIRED');
+      const result=await dialog.showMessageBox(window,{type:'question',title:'移除已导出的本机副本',
+        message:'只清理已共享日志对应的加密检查点。',detail:'清理前会重新核验导出文件与原始检查点。请妥善保存导出目录，服务器尚未备份代码。',
+        buttons:['取消','核验导出并移除本机副本'],defaultId:0,cancelId:0});
+      if(result.response!==1)return {cancelled:true};
+      return controller.work.removeExported(data.id);
+    },
     taskQuery:data=>{
-      if(!['hub_list_tasks','hub_get_task','hub_list_worklogs'].includes(data.tool))throw new HubError('INVALID_DESKTOP_REQUEST');
+      if(!['hub_list_tasks','hub_get_task','hub_list_worklogs','hub_read_worklog'].includes(data.tool))throw new HubError('INVALID_DESKTOP_REQUEST');
       return controller.invokeProject(controller.binding(data.bindingId),data.tool,data.args || {});
     },
     chooseWorkspace:async()=>{

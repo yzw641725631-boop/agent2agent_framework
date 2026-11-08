@@ -8,7 +8,7 @@ modal.addEventListener('close',()=>{taskDialogVersion++;openTaskBinding=null;});
 const taskLabels={draft:'待准入',ready:'待认领',in_progress:'开发中',review:'待评审',testing:'待测试',release_ready:'待发布确认',completed:'已完成'};
 const labels={active:'已连接',pending:'等待验证 / 审批',offline:'连接中断',blocked:'已拦截',signed_out:'未登录',
   reauth_required:'需要重新登录',running:'执行中',checkpoint:'检查点',completed:'已完成',approved:'已批准'};
-const titles={overview:'协作概览',workspaces:'项目与 MCP',tasks:'任务与日志',activity:'项目动态',connection:'账号与设备',desktop:'桌面设置'};
+const titles={overview:'协作概览',workspaces:'项目与 MCP',tasks:'任务与日志',checkpoints:'本机检查点',activity:'项目动态',connection:'账号与设备',desktop:'桌面设置'};
 function el(tag,props={},...children){
   const element=document.createElement(tag);
   for(const [key,value] of Object.entries(props)){
@@ -192,8 +192,28 @@ function tasksScreen(){
   return el('div',{},heading('TASKS & HANDOFF','任务与工作日志','查看与网站共用的任务、执行角色和流程记录。Agent 通过项目 MCP 认领与提交。'),
     el('section',{class:'card'},bindings.length?el('div',{},field('项目连接',selector),sync,rows):
       empty('先连接项目','前往“项目与 MCP”绑定获准项目的工程目录。')),
-    text('p','人员认领、创建任务和流程确认可在网站“任务与日志”操作。日志尚不包含代码快照。','note'),
+    text('p','代码任务通过工程 MCP 认领和保存；创建任务与流程确认在网站操作。日志和改动清单共享，代码检查点保存在本机。','note'),
     button('打开网站后台',()=>invoke('openAdmin')));
+}
+function checkpointsScreen(){
+  const rows=el('div',{}),account=state.user?.id;
+  invoke('localWork').then(data=>{
+    if(view!=='checkpoints' || state.user?.id!==account || !rows.isConnected)return;
+    const names={pending:'待上传',shared:'日志已共享',blocked:'上传被拦截，工作保留',local_only:'仅本机后台观察'};
+    rows.replaceChildren(...data.items.map(item=>el('article',{class:'binding'},
+      el('div',{class:'row between'},text('h3',item.summary),text('span',names[item.state] || item.state,'pill')),
+      text('p',`${new Date(item.created_at).toLocaleString('zh-CN')} · ${item.files} 个变更文件`,'note'),
+      text('p',item.message,'note'),item.last_error?text('p',item.last_error,'warning'):null,
+      button('导出检查点',async()=>{const result=await invoke('exportCheckpoint',{id:item.local_checkpoint_id});
+        if(!result.cancelled){toast('已导出到 '+result.directory+'。先单独检出基线，再核对清单恢复。',true);render();}}),
+      item.can_remove?button('移除已导出的本机副本',async()=>{const result=await invoke('removeExportedCheckpoint',{id:item.local_checkpoint_id});
+        if(!result.cancelled){toast('导出内容核验通过，本机加密副本已清理。',true);render();}}):null)));
+    if(!data.items.length)rows.append(empty('还没有本机检查点','通过项目 MCP 准备代码任务并确认规则后，后台观察变更；每轮保存工作日志时另留独立检查点。'));
+    if(data.unreadable_records)rows.prepend(text('p',`${data.unreadable_records} 个加密记录暂时无法读取，原文件已保留。请保留本机凭证并检查存储状态。`,'warning'));
+  }).catch(error=>{rows.replaceChildren(text('p',error.message,'warning'));});
+  return el('div',{},heading('LOCAL CHECKPOINTS','本机检查点与待发记录','检查点通过系统凭证保护加密。代码当前保存在这台电脑；“日志已共享”表示服务器确认了日志及文件哈希清单。'),
+    el('section',{class:'card'},el('div',{class:'actions'},button('刷新',render)),
+      ...(state.workRuns || []).filter(r=>r.observation_error).map(r=>text('p','后台观察未完成：'+r.observation_error+' · '+r.task_id,'warning')),rows));
 }
 async function taskDetail(bindingId,taskId,generation,offset=0){
   const ticket=++taskDialogVersion,account=state.user?.id;
@@ -205,9 +225,18 @@ async function taskDetail(bindingId,taskId,generation,offset=0){
   openDialog(text('h2',task.title),text('p',(taskLabels[task.status] || task.status)+' · 版本 '+task.version),
     text('pre',task.description+'\n\n验收：'+task.acceptance),
     text('h3',logs.visibility==='project'?'共享工作日志':'本人工作日志'),
-    ...logs.items.map(log=>el('details',{},text('summary',new Date(log.created_at).toLocaleString('zh-CN')+' · '+log.summary+' · '+log.outcome),
-      text('pre',`${log.notes}\n\n改动：${log.changed_paths.join('、')}\n验证：${log.tests}\n下一步：${log.next_steps}`),
-      text('p','Git 引用：'+(log.git_commit || '未提供')+'（未核验）','mono'),text('p','回执：'+log.receipt_hash,'mono'))),
+    ...logs.items.map(log=>{
+      const body=el('div',{}),details=el('details',{},text('summary',new Date(log.created_at).toLocaleString('zh-CN')+' · '+log.summary+' · '+log.outcome),body);
+      let loaded=false;
+      details.addEventListener('toggle',async()=>{
+        if(!details.open || loaded)return;loaded=true;
+        try{const full=await invoke('taskQuery',{bindingId,tool:'hub_read_worklog',args:{task_id:taskId,worklog_id:log.id}});
+          if(!current() || !details.isConnected)return;
+          body.replaceChildren(text('pre',`${full.notes}\n\n改动：${full.changed_paths.join('、')}\n验证：${full.tests}\n下一步：${full.next_steps}`),
+            text('p','Git 引用：'+(full.git_commit || '未提供')+'（上游未核验）','mono'),text('p','回执：'+full.receipt_hash,'mono'));
+        }catch(error){loaded=false;body.replaceChildren(text('p',error.message,'warning'));}
+      });return details;
+    }),
     !logs.items.length?text('p','没有当前账号可见的日志。','note'):null,
     el('div',{class:'actions'},offset?button('较新日志',()=>taskDetail(bindingId,taskId,generation,Math.max(0,offset-20))):null,
       logs.has_more?button('较早日志',()=>taskDetail(bindingId,taskId,generation,logs.next_offset)):null),
@@ -318,7 +347,7 @@ function render(){
   let content;
   if(view==='desktop')content=desktopScreen();
   else if(!authenticated)content=state.connection==='pending'?pendingScreen():loginScreen();
-  else content=view==='overview'?overview():view==='workspaces'?workspaces():view==='tasks'?tasksScreen():view==='activity'?
+  else content=view==='overview'?overview():view==='workspaces'?workspaces():view==='tasks'?tasksScreen():view==='checkpoints'?checkpointsScreen():view==='activity'?
     el('div',{},heading('PROJECT ACTIVITY','项目动态','记录来自服务器。断线恢复后按游标补齐，重复记录会自动合并。'),el('section',{class:'card'},events())):connection();
   root.replaceChildren(el('div',{class:'layout'},sidebar,el('main',{class:'content'},
     el('header',{class:'topbar'},text('div',authenticated || view==='desktop'?titles[view]:'欢迎使用 Agent Hub'),

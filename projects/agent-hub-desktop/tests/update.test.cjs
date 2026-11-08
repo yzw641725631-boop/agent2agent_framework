@@ -210,7 +210,7 @@ test('project MCP initializes its release check and blocks operations until it p
   let status = { installed_version: '0.9.0', latest_version: next, can_continue: false,
     code: 'CLIENT_UPDATE_REQUIRED', message: 'updating' };
   const requests = [];
-  const controller = new Controller({ vault, updater: { check: async options => {
+  const controller = new Controller({ vault, directory:os.tmpdir(), updater: { check: async options => {
     requests.push(options);
     return status;
   } } });

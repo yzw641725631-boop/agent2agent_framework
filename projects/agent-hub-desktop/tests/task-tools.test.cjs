@@ -8,7 +8,7 @@ const taskId=crypto.randomUUID(),projectId=crypto.randomUUID(),operationId=crypt
 const all=['tasks:publish','tasks:claim','tasks:write','tasks:review','tasks:test','logs:read'];
 
 test('task discovery separates read, claim, log and review permissions',async()=>{
-  assert.deepEqual(tasks.tools([]).map(t=>t.name),['hub_list_tasks','hub_get_task','hub_list_worklogs']);
+  assert.deepEqual(tasks.tools([]).map(t=>t.name),['hub_list_tasks','hub_get_task','hub_list_worklogs','hub_read_worklog','hub_get_policy','hub_list_local_work']);
   assert.ok(!tasks.tools(['tasks:claim']).some(t=>t.name==='hub_claim_task'));
   assert.ok(!tasks.tools(['tasks:review']).some(t=>t.name==='hub_decide_task'));
   assert.ok(tasks.tools(['tasks:review','logs:read']).some(t=>t.name==='hub_decide_task'));
@@ -35,7 +35,7 @@ test('worklog and lease calls carry explicit identities and stable retry keys',(
   assert.equal(request.operation_id,operationId);
   assert.deepEqual(request.body,{run_id:args.run_id,lease_epoch:3});
   const read=tasks.request('hub_list_worklogs',{task_id:taskId,offset:20,limit:20},[],projectId);
-  assert.equal(read.path,`/api/projects/${projectId}/tasks/${taskId}/worklogs?offset=20&limit=20`);
+  assert.equal(read.path,`/api/projects/${projectId}/tasks/${taskId}/worklog-index?offset=20&limit=20`);
   assert.equal(read.body,undefined);
   assert.equal(tasks.request('unknown',{},all,projectId),null);
 });

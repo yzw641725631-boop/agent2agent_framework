@@ -1,0 +1,106 @@
+{
+  "checked_at_utc": "2026-11-07T23:42:56.061478+00:00",
+  "purpose": "Upstream revision pointers for design comparison; not integration or performance certification",
+  "repositories": [
+    {
+      "repository": "obra/superpowers",
+      "url": "https://github.com/obra/superpowers",
+      "default_branch": "main",
+      "archived": false,
+      "license_spdx": "MIT",
+      "head_sha": "22f0b463e7a5e579904dd6211a520321035526f7",
+      "commit_time": "2026-11-03T22:17:07Z",
+      "commit_url": "https://github.com/obra/superpowers/commit/22f0b463e7a5e579904dd6211a520321035526f7"
+    },
+    {
+      "repository": "github/spec-kit",
+      "url": "https://github.com/github/spec-kit",
+      "default_branch": "main",
+      "archived": false,
+      "license_spdx": "MIT",
+      "head_sha": "c43849408ac0de2ca6a52f14eaae71449776057b",
+      "commit_time": "2026-11-07T04:09:21Z",
+      "commit_url": "https://github.com/github/spec-kit/commit/c43849408ac0de2ca6a52f14eaae71449776057b"
+    },
+    {
+      "repository": "Fission-AI/OpenSpec",
+      "url": "https://github.com/Fission-AI/OpenSpec",
+      "default_branch": "main",
+      "archived": false,
+      "license_spdx": "MIT",
+      "head_sha": "0fa4a9705c20ef1c571fe3ded74435733e4b73a1",
+      "commit_time": "2026-11-07T00:36:11Z",
+      "commit_url": "https://github.com/Fission-AI/OpenSpec/commit/0fa4a9705c20ef1c571fe3ded74435733e4b73a1"
+    },
+    {
+      "repository": "gastownhall/beads",
+      "url": "https://github.com/gastownhall/beads",
+      "default_branch": "main",
+      "archived": false,
+      "license_spdx": "MIT",
+      "head_sha": "3a068dbef8e2daf45868424316f4ca4207cc6749",
+      "commit_time": "2026-11-07T22:02:03Z",
+      "commit_url": "https://github.com/gastownhall/beads/commit/3a068dbef8e2daf45868424316f4ca4207cc6749"
+    },
+    {
+      "repository": "Dicklesworthstone/mcp_agent_mail_rust",
+      "url": "https://github.com/Dicklesworthstone/mcp_agent_mail_rust",
+      "default_branch": "main",
+      "archived": false,
+      "license_spdx": "NOASSERTION",
+      "head_sha": "5afa2d79052878abf525b5259b13cb07ea84551a",
+      "commit_time": "2026-11-07T22:52:12Z",
+      "commit_url": "https://github.com/Dicklesworthstone/mcp_agent_mail_rust/commit/5afa2d79052878abf525b5259b13cb07ea84551a"
+    },
+    {
+      "repository": "thedotmack/claude-mem",
+      "url": "https://github.com/thedotmack/claude-mem",
+      "default_branch": "main",
+      "archived": false,
+      "license_spdx": "Apache-2.0",
+      "head_sha": "3ab6e1a215c7bbcf716b9d8d763aa78bacba52a0",
+      "commit_time": "2026-11-07T21:03:50Z",
+      "commit_url": "https://github.com/thedotmack/claude-mem/commit/3ab6e1a215c7bbcf716b9d8d763aa78bacba52a0"
+    },
+    {
+      "repository": "mem0ai/mem0",
+      "url": "https://github.com/mem0ai/mem0",
+      "default_branch": "main",
+      "archived": false,
+      "license_spdx": "Apache-2.0",
+      "head_sha": "f1791daa86d469249c9b002f62644d58a1eb96a0",
+      "commit_time": "2026-11-06T16:53:06Z",
+      "commit_url": "https://github.com/mem0ai/mem0/commit/f1791daa86d469249c9b002f62644d58a1eb96a0"
+    },
+    {
+      "repository": "a2aproject/A2A",
+      "url": "https://github.com/a2aproject/A2A",
+      "default_branch": "main",
+      "archived": false,
+      "license_spdx": "Apache-2.0",
+      "head_sha": "9fff3e08ab33bb7674e7d98fc7c08ae8592bb4bd",
+      "commit_time": "2026-11-05T09:16:14Z",
+      "commit_url": "https://github.com/a2aproject/A2A/commit/9fff3e08ab33bb7674e7d98fc7c08ae8592bb4bd"
+    },
+    {
+      "repository": "github/github-mcp-server",
+      "url": "https://github.com/github/github-mcp-server",
+      "default_branch": "main",
+      "archived": false,
+      "license_spdx": "MIT",
+      "head_sha": "99d6d6503a7b2a133e2f8a595d6d0ba24b4086d3",
+      "commit_time": "2026-11-04T13:23:03Z",
+      "commit_url": "https://github.com/github/github-mcp-server/commit/99d6d6503a7b2a133e2f8a595d6d0ba24b4086d3"
+    },
+    {
+      "repository": "pgvector/pgvector",
+      "url": "https://github.com/pgvector/pgvector",
+      "default_branch": "master",
+      "archived": false,
+      "license_spdx": "NOASSERTION",
+      "head_sha": "724588a5504b0e9c462e3126563370e8d50a01eb",
+      "commit_time": "2026-11-05T07:03:58Z",
+      "commit_url": "https://github.com/pgvector/pgvector/commit/724588a5504b0e9c462e3126563370e8d50a01eb"
+    }
+  ]
+}

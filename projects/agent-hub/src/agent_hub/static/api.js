@@ -5,6 +5,11 @@ const encode = value => btoa(String.fromCharCode(...new Uint8Array(value)))
 const json = value => encode(encoder.encode(JSON.stringify(value)));
 
 export const messages = {
+  WORK_CONTEXT_REQUIRED:'请在项目 MCP 准备开工规则。', WORK_CONTEXT_ACK_REQUIRED:'请读取并确认全部当前规则。',
+  WORK_CONTEXT_STALE:'规则或任务范围已更新，请重新准备。', WORK_CONTEXT_ACK_MISMATCH:'规则哈希或确认列表不匹配。',
+  WORK_CHANGE_EVIDENCE_REQUIRED:'代码任务需要桌面端采集实际改动。', WORK_EVIDENCE_CHANGED:'检查点已变化，请保存最新日志。',
+  WORK_CHANGE_PATHS_MISMATCH:'申报路径与实际改动清单不一致。', WORK_PATH_PROTECTED:'修改了受保护路径。',
+  POLICY_VERSION_CONFLICT:'规则已有新版本，请刷新后重试。', WORKLOG_NOT_ACCESSIBLE:'没有这条日志的访问权限。',
   TASK_NOT_FOUND:'任务不存在或不在当前项目。', TASK_ALREADY_CLAIMED:'任务已被认领，请等待释放或租约到期。',
   TASK_NOT_CLAIMABLE:'请先完成准入或当前评审流程。', TASK_VERSION_CONFLICT:'任务已变化，请刷新后重试。',
   TASK_LEASE_EXPIRED:'认领已到期，请重新核验任务。', TASK_LEASE_STALE:'执行凭证已失效，请重新读取任务。',

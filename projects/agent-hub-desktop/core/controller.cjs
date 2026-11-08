@@ -9,6 +9,7 @@ const {dispatch:dispatchMcp}=require('./mcp.cjs');
 const workspaces=require('./workspaces.cjs');
 const {Management}=require('./management.cjs');
 const {SetupConnection}=require('./setup-connection.cjs');
+const {WorkRuntime}=require('./work-runtime.cjs');
 const {version}=require('../package.json');
 
 const stopped=new Set(['PROJECT_ACCESS_REVOKED','ACCOUNT_INACTIVE','DEVICE_NOT_ALLOWED','SESSION_REVOKED',
@@ -26,6 +27,7 @@ class Controller extends EventEmitter {
     this.broker=new Broker(directory,request=>this.dispatch(request));
     this.management=new Management(this);
     this.setup=new SetupConnection(this);
+    this.work=new WorkRuntime(this);
   }
   get profile(){return this.vault.data.profiles[this.vault.data.current] || null;}
   persist(){return this.vault.save();}
@@ -75,11 +77,15 @@ class Controller extends EventEmitter {
       projects:visible?this.projects:[],bindings:(visible?p?.bindings || []:[]).map(b=>({id:b.id,projectId:b.projectId,projectName:b.projectName,
         workspace:b.workspace,status:b.status,message:b.message || '',configuration:this.configuration(b),
         installed:b.installed || null})),
-      events:(visible?p?.events || []:[]).slice(-100).reverse(),version};
+      events:(visible?p?.events || []:[]).slice(-100).reverse(),
+      workRuns:visible?Object.values(p?.workRuns || {}).map(r=>({task_id:r.task_id,run_id:r.run_id,binding_id:r.binding_id,
+        acknowledged:r.acknowledged,policy_version:r.policy.version,stopped:r.stopped || null,
+        observation_error:r.observation_error || null,last_activity:r.last_activity})):[],version};
   }
   async start(){
     await this.broker.start();
     await this.setup.restore();
+    this.work.start();
     const p=this.profile;
     if(!p)return this.state();
     this.remote=new Remote(p,()=>this.persist(),this.transport);
@@ -276,6 +282,23 @@ class Controller extends EventEmitter {
     return this.invokeProject(b,request.action,request.args);
   }
   async invokeProject(b,action,args){
+    const localActions={hub_prepare_work:'prepare',hub_acknowledge_work:'acknowledge',hub_check_changes:'check',
+      hub_list_local_work:'list'};
+    const prepared=args?.run_id && this.profile?.workRuns?.[args.run_id];
+    const method=localActions[action] || (prepared && action==='hub_write_worklog'?'save':
+      prepared && action==='hub_submit_task'?'submit':null);
+    if(method){
+      if(this.closed || this.binding(b.id)!==b || !this.profile?.sessions.platform || this.connection==='signed_out')throw new HubError('LOGIN_REQUIRED');
+      require('./task-tools.cjs').validate(action,args);
+      const operation=this.work[method](b,args);
+      this.projectOperations.add(operation);
+      try{return await operation;}finally{this.projectOperations.delete(operation);}
+    }
+    const result=await this.invokeProjectRemote(b,action,args);
+    if(action==='hub_release_task' && prepared){prepared.stopped='released';await this.persist();}
+    return result;
+  }
+  async invokeProjectRemote(b,action,args,{internal=false}={}){
     if(this.draining)throw new HubError('CLIENT_UPDATE_REQUIRED','桌面端正在切换版本，请等待重启。');
     if(this.updater && action!=='metadata'){
       const update=await this.updater.check();
@@ -286,15 +309,16 @@ class Controller extends EventEmitter {
     if(this.connection==='offline')throw new HubError('NETWORK_UNAVAILABLE','服务器连接正在恢复，请稍后重试。');
     if(b.status==='blocked')throw new HubError(b.errorCode || 'PROJECT_ACCESS_REVOKED');
     if(this.binding(b.id)!==b)throw new HubError('LOGIN_REQUIRED');
-    const operation=this.projectRequest(b,action,args);
+    const operation=this.projectRequest(b,action,args,{internal});
     this.projectOperations.add(operation);
     try{return await operation;}finally{this.projectOperations.delete(operation);}
   }
   async drainProjectOperations(){
     this.draining=true;
     await Promise.allSettled(this.projectOperations);
+    await this.work.drain();
   }
-  async projectRequest(b,action,args){
+  async projectRequest(b,action,args,{internal=false}={}){
     const profile=this.profile,remote=this.remote;
     try{
       const context=await this.context(b.projectId);
@@ -307,7 +331,7 @@ class Controller extends EventEmitter {
         if(Object.keys(args).length)throw new HubError('INVALID_REQUEST');
         return {...context,workspace:b.workspace};
       }
-      const taskRequest=require('./task-tools.cjs').request(action,args,context.capabilities,b.projectId);
+      const taskRequest=require('./task-tools.cjs').request(action,args,context.capabilities,b.projectId,{internal});
       if(taskRequest){
         const result=await remote.request(taskRequest.method,taskRequest.path,taskRequest.body,
           {slot,idempotency:taskRequest.operation_id});
@@ -437,6 +461,7 @@ class Controller extends EventEmitter {
     this.message=complete?'':'本机已退出，部分服务器会话撤销或连接清理未确认。';this.emitState();
     return {serverLogoutComplete:complete};
   }
-  async close(){this.closed=true;this.cancelRecovery();this.stopWatches();this.remote?.close();await this.broker.close();await this.vault.pending;}
+  async close(){this.closed=true;this.work.stop();this.cancelRecovery();this.stopWatches();this.remote?.close();
+    await Promise.allSettled(this.projectOperations);await this.work.drain();await this.broker.close();await this.vault.pending;}
 }
 module.exports={Controller};

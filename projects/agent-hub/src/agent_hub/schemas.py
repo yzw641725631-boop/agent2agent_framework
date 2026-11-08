@@ -121,6 +121,7 @@ class NewTask(Input):
     description: str = Field(min_length=1, max_length=8000)
     acceptance: str = Field(min_length=1, max_length=8000)
     scope: TaskScope
+    execution_mode: Literal["observed", "declaration"] = "observed"
 
     @model_validator(mode="after")
     def bounded_record(self):
@@ -146,6 +147,83 @@ class LeaseInput(Input):
     lease_epoch: int = Field(ge=1)
 
 
+class ProjectRule(Input):
+    id: str = Field(pattern=r"^P-[A-Z0-9-]{1,40}$")
+    text: str = Field(min_length=1, max_length=800)
+
+
+class PolicyInput(Input):
+    expected_version: int = Field(ge=0)
+    protected_paths: list[str] = Field(default_factory=list, max_length=40)
+    forbidden_features: list[str] = Field(default_factory=list, max_length=20)
+    rules: list[ProjectRule] = Field(default_factory=list, max_length=20)
+    change_reason: str = Field(min_length=10, max_length=1000)
+
+    @field_validator("protected_paths")
+    @classmethod
+    def safe_paths(cls, values):
+        return sorted({document_path(v) for v in values})
+
+    @field_validator("forbidden_features")
+    @classmethod
+    def features(cls, values):
+        if any(not v.strip() or len(v) > 100 for v in values):
+            raise ValueError("Each feature must contain 1 to 100 characters")
+        return sorted(set(values))
+
+    @field_validator("rules")
+    @classmethod
+    def unique_rules(cls, values):
+        if len({r.id for r in values}) != len(values) or any(not r.text.strip() for r in values):
+            raise ValueError("Rule IDs must be unique and text must not be blank")
+        return values
+
+
+class ContextAcknowledgment(LeaseInput):
+    context_id: UUID
+    content_hash: str = Field(pattern=r"^[a-f0-9]{64}$")
+    rule_ids: list[str] = Field(max_length=40)
+
+
+class ChangedFile(Input):
+    path: str = Field(min_length=1, max_length=800)
+    status: Literal["added", "modified", "deleted"]
+    sha256: str | None = Field(default=None, pattern=r"^[a-f0-9]{64}$")
+    bytes: int = Field(ge=0, le=4194304)
+    mode: Literal["100644", "100755", "000000"]
+
+    @field_validator("path")
+    @classmethod
+    def safe_path(cls, value):
+        return document_path(value)
+
+    @model_validator(mode="after")
+    def deleted_content(self):
+        if self.status == "deleted":
+            if self.sha256 or self.bytes or self.mode != "000000":
+                raise ValueError("Deleted entries cannot have content")
+        elif not self.sha256 or self.mode == "000000":
+            raise ValueError("File content hash and mode required")
+        return self
+
+
+class ChangeEvidence(Input):
+    schema_version: Literal[1] = 1
+    source: Literal["desktop-git-observer"] = "desktop-git-observer"
+    base_commit: str = Field(pattern=r"^[a-f0-9]{40,64}$")
+    head_commit: str = Field(pattern=r"^[a-f0-9]{40,64}$")
+    files: list[ChangedFile] = Field(max_length=100)
+
+    @field_validator("files")
+    @classmethod
+    def unique_paths(cls, values):
+        if len({f.path.lower() for f in values}) != len(values):
+            raise ValueError("Duplicate paths")
+        if sum(f.bytes for f in values) > 16777216:
+            raise ValueError("Snapshot exceeds 16 MiB")
+        return sorted(values, key=lambda f: f.path)
+
+
 class WorklogInput(LeaseInput):
     summary: str = Field(min_length=1, max_length=300)
     notes: str = Field(min_length=1, max_length=16000)
@@ -154,6 +232,8 @@ class WorklogInput(LeaseInput):
     next_steps: str = Field(min_length=1, max_length=4000)
     outcome: Literal["checkpoint", "blocked", "failed"] = "checkpoint"
     git_commit: str | None = Field(default=None, pattern=r"^[a-fA-F0-9]{40,64}$")
+    context_id: UUID | None = None
+    change_evidence: ChangeEvidence | None = None
 
     @model_validator(mode="after")
     def bounded_record(self):
@@ -177,6 +257,7 @@ class WorklogInput(LeaseInput):
 class TaskSubmit(LeaseInput):
     worklog_id: UUID
     expected_version: int = Field(ge=1)
+    evidence_hash: str | None = Field(default=None, pattern=r"^[a-f0-9]{64}$")
 
 
 class TaskRelease(LeaseInput):

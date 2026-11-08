@@ -1,0 +1,119 @@
+{
+  "date": "2026-11-08",
+  "tiktoken_version": "0.14.0",
+  "normalization": "UTF-8 text, CRLF to LF",
+  "billing_usage": false,
+  "warning": "Not model-specific usage; excludes system prompts, host serialization, history, tools outputs, reasoning, caching and billing rules.",
+  "items": [
+    {
+      "label": "install.md",
+      "characters": 36389,
+      "utf8_bytes": 65897,
+      "tokens": {
+        "o200k_base": 19121,
+        "cl100k_base": 23555
+      },
+      "lines": 1576,
+      "source_sha256": "546c200c619dc0c9dce7e6a4b8f82b23695065385cf0a1df85aa67ce257422a5"
+    },
+    {
+      "label": "skills/agent-hub/SKILL.md",
+      "characters": 2183,
+      "utf8_bytes": 4735,
+      "tokens": {
+        "o200k_base": 1191,
+        "cl100k_base": 1504
+      },
+      "lines": 38,
+      "source_sha256": "0c813b7d50b2773e9554f77ae291837f4b531f23a49277a63f3193ec6d87578e"
+    },
+    {
+      "label": "skills/agent-hub/references/task-workflow.md",
+      "characters": 1843,
+      "utf8_bytes": 3599,
+      "tokens": {
+        "o200k_base": 951,
+        "cl100k_base": 1170
+      },
+      "lines": 37,
+      "source_sha256": "6b4d5ba8ac0b358e00159b79753a02bc0bafaa778ef005d01975875a1b3e675b"
+    },
+    {
+      "label": "skills/agent-hub/references/work-records.md",
+      "characters": 1187,
+      "utf8_bytes": 2726,
+      "tokens": {
+        "o200k_base": 678,
+        "cl100k_base": 861
+      },
+      "lines": 29,
+      "source_sha256": "1dda4388904c402b8f51203f0966f3dd9837afa69baa16a9fd2b78826a4bf36c"
+    },
+    {
+      "label": "设计文档/19_全项目总审计与实施路线.md",
+      "characters": 15233,
+      "utf8_bytes": 35269,
+      "tokens": {
+        "o200k_base": 9474,
+        "cl100k_base": 12410
+      },
+      "lines": 358,
+      "source_sha256": "9e3a141e96786af1b48557661a3ce643fe634390b3be232e156b402086d103e2"
+    },
+    {
+      "label": "projects/agent-hub/src/agent_hub/tasks.py",
+      "characters": 13373,
+      "utf8_bytes": 13438,
+      "tokens": {
+        "o200k_base": 3433,
+        "cl100k_base": 3442
+      },
+      "lines": 247,
+      "source_sha256": "9e04c2350f9fcd97ec94ac666da82baa88ffe85944230686a19918ffa5051a17"
+    },
+    {
+      "label": "mcp_tool_definitions:setup",
+      "characters": 1887,
+      "utf8_bytes": 2581,
+      "tokens": {
+        "o200k_base": 600,
+        "cl100k_base": 656
+      },
+      "tool_count": 5
+    },
+    {
+      "label": "mcp_tool_definitions:project",
+      "characters": 9160,
+      "utf8_bytes": 10932,
+      "tokens": {
+        "o200k_base": 2661,
+        "cl100k_base": 2820
+      },
+      "tool_count": 17
+    },
+    {
+      "label": "mcp_tool_definitions:project-reader",
+      "characters": 1835,
+      "utf8_bytes": 2339,
+      "tokens": {
+        "o200k_base": 549,
+        "cl100k_base": 603
+      },
+      "tool_count": 6
+    },
+    {
+      "label": "mcp_tool_definitions:project-developer",
+      "characters": 7101,
+      "utf8_bytes": 8587,
+      "tokens": {
+        "o200k_base": 2091,
+        "cl100k_base": 2223
+      },
+      "tool_count": 15
+    }
+  ],
+  "hypothetical_20_full_install_reads_tokens": {
+    "o200k_base": 382420,
+    "cl100k_base": 471100
+  }
+}

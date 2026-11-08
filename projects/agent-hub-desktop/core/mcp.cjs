@@ -106,6 +106,7 @@ async function dispatch(request,invoke,checkVersion,{omitToolText=false,scope='p
       for(const key of ['current_version','task_status','run_id','lease_until','path']){
         if(failure.details?.[key]!==undefined)details[key]=failure.details[key];
       }
+      if(failure.details?.violations)details.violations=failure.details.violations;
       if(failure.details?.update)details.update=failure.details.update;
       result={content:[{type:'text',text:JSON.stringify(details)}],isError:true};
     }

@@ -306,7 +306,8 @@ class Console {
   async tasks() {
     const projectId = this.project?.id, revision = this.renderVersion;
     const title = this.heading('任务与工作日志','任务状态、认领和流程决定由服务器保存。当前页面每 5 秒刷新。',
-      [button('刷新',() => this.renderView()),...(projectId && this.can('tasks:publish') ? [button('创建任务',() => this.createTask(),'primary')] : [])]);
+      [button('刷新',() => this.renderView()),...(projectId ? [button('项目规则',() => this.openPolicy(projectId))] : []),
+        ...(projectId && this.can('tasks:publish') ? [button('创建任务',() => this.createTask(),'primary')] : [])]);
     if (!projectId) return [title,h('section',{class:'card empty'},'请先选择一个项目。')];
     const base = `/api/projects/${projectId}`, list = h('div',{}), feed = h('div',{}), status = h('p',{class:'hint'});
     let offset = 0, before = '0', busy = false;
@@ -347,10 +348,36 @@ class Console {
       h('label',{},'需求描述',h('textarea',{name:'description',required:true,maxlength:8000,rows:3})),
       h('label',{},'验收标准',h('textarea',{name:'acceptance',required:true,maxlength:8000,rows:3})),
       field('repository','仓库标识',{required:true,maxlength:200}),field('platform','目标端',{required:true,maxlength:80,placeholder:'例如 web'}),
+      field('execution_mode','记录类型',{items:[['observed','代码任务：须确认规则并采集真实改动'],['declaration','人工资料记录：不提供代码证据保证']]}),
       h('label',{},'允许修改的相对目录或文件（每行一项）',h('textarea',{name:'paths',required:true,rows:3,placeholder:'src\ntests'}))));
     dialog(parentId ? '拆解子任务' : '创建任务','任务创建后，依次记录需求、设计和可行性确认，再开放认领。范围声明不代替 Git 仓库权限。',form,'创建草稿',data =>
       this.api('POST',`/api/projects/${projectId}/tasks`,{title:data.title,description:data.description,acceptance:data.acceptance,
-        parent_id:parentId,scope:{repository:data.repository,platform:data.platform,paths:data.paths.split(/\r?\n/).map(p => p.trim()).filter(Boolean)}}));
+        parent_id:parentId,execution_mode:data.execution_mode,scope:{repository:data.repository,platform:data.platform,paths:data.paths.split(/\r?\n/).map(p => p.trim()).filter(Boolean)}}));
+  }
+  async openPolicy(projectId) {
+    const policy = await this.api('GET',`/api/projects/${projectId}/policy`);
+    if (this.project?.id !== projectId || this.currentView !== 'tasks') return;
+    const content = h('div',{id:'modal-body'},h('h2',{},`项目规则 · 版本 ${policy.version}`),
+      h('p',{class:'hint'},'基础规则不能由项目规则覆盖。新增版本使旧开工确认失效；规则不直接设置本机文件权限。'),
+      ...policy.rules.map(rule => h('p',{},h('strong',{},rule.id+' '),rule.text)),
+      h('p',{},'保护路径：'+(policy.protected_paths.join('、') || '尚无自定义路径')),
+      h('p',{},'禁止功能：'+(policy.forbidden_features.join('、') || '尚无自定义功能')),
+      h('div',{class:'row-actions'},button('关闭',() => modal.close())));
+    if (this.can('tasks:publish',projectId)) content.append(button('发布新版本',() => {
+      const form = h('form',{},
+        h('label',{},'禁止修改的相对路径（每行一项，按目录前缀匹配）',h('textarea',{name:'protected_paths',rows:4},policy.protected_paths.join('\n'))),
+        h('label',{},'禁止扩展的功能（每行一项）',h('textarea',{name:'forbidden_features',rows:3},policy.forbidden_features.join('\n'))),
+        h('label',{},'项目规章（每行 P-规则编号|规则说明）',h('textarea',{name:'rules',rows:5},policy.rules.filter(r => r.id.startsWith('P-')).map(r => r.id+'|'+r.text).join('\n'))),
+        field('change_reason','变更原因',{required:true,minlength:10,maxlength:1000,full:true}));
+      dialog('发布规则版本','所有代码执行实例下次记录或提交时须使用当前规则确认。原版本保留。',form,'发布版本',data => {
+        const lines = value => value.split(/\r?\n/).map(v => v.trim()).filter(Boolean);
+        const rules = lines(data.rules).map(line => { const separator = line.indexOf('|');
+          if (separator < 0) throw new Error('项目规章应为 P-编号|说明。'); return {id:line.slice(0,separator).trim(),text:line.slice(separator+1).trim()}; });
+        return this.api('PUT',`/api/projects/${projectId}/policy`,{expected_version:policy.version,protected_paths:lines(data.protected_paths),
+          forbidden_features:lines(data.forbidden_features),rules,change_reason:data.change_reason});
+      });
+    },'primary'));
+    modal.replaceChildren(content); if (!modal.open) modal.showModal();
   }
   async openTask(projectId, taskId, offset = 0) {
     const revision = this.renderVersion, base = `/api/projects/${projectId}/tasks/${taskId}`;
@@ -364,17 +391,17 @@ class Console {
     const actions = [button('关闭',() => modal.close()),button('刷新',reload)];
     if (this.can('tasks:publish') && task.status !== 'completed') actions.push(button('拆解子任务',() => this.createTask(taskId)));
     const expired = !task.lease_until || new Date(task.lease_until).getTime() <= Date.now();
-    if (['ready','in_progress'].includes(task.status) && expired && this.can('tasks:claim') && this.can('tasks:write'))
+    if (task.execution_mode !== 'observed' && ['ready','in_progress'].includes(task.status) && expired && this.can('tasks:claim') && this.can('tasks:write'))
       actions.push(button('本人认领',() => act('/claim',{instance_id:crypto.randomUUID(),harness:'human'}),'primary'));
     if (owned && !expired && task.status === 'in_progress') {
       actions.push(button('续租 10 分钟',() => act('/heartbeat',lease)),
-        button('记录本轮工作',() => this.writeTaskLog(base,lease)),
+        task.execution_mode !== 'observed' && button('记录本轮工作',() => this.writeTaskLog(base,lease)),
         button('释放认领',() => {
           const form = h('form',{},field('reason','交接 / 释放原因',{required:true,maxlength:1000,full:true}));
           dialog('释放认领','先保存工作日志。释放后，其他人可以立即认领。',form,'释放',data => this.api('POST',base+'/release',{...lease,reason:data.reason}));
         }));
       const latest = logs.items.find(log => log.run_id === task.active_run_id);
-      if (!offset && latest?.outcome === 'checkpoint') actions.push(button('提交最新日志待评审',() => act('/submit',{
+      if (task.execution_mode !== 'observed' && !offset && latest?.outcome === 'checkpoint') actions.push(button('提交最新日志待评审',() => act('/submit',{
         ...lease,worklog_id:latest.id,expected_version:task.version}),'primary'));
     }
     const nextGate = task.status === 'draft' ? ['requirements','design','feasibility'][task.admission_step] :
@@ -389,6 +416,7 @@ class Console {
         evidence:values.evidence,override_reason:values.override_reason || '',instance_id:crypto.randomUUID(),harness:'human'}));
     },'primary'));
     const content = h('div',{id:'modal-body'},h('h2',{},task.title),h('p',{},`${taskStates[task.status]} · 版本 ${task.version} · ${task.id}`),
+      task.execution_mode === 'observed' && h('p',{class:'help-block'},'代码任务：在工程 MCP 调用 hub_claim_task 认领，再调用 hub_prepare_work、hub_acknowledge_work。保存日志时采集本机实际改动。网页用于查看与流程决定。'),
       h('p',{},`${task.scope.repository} / ${task.scope.platform} · ${task.scope.paths.join('、')}`),
       h('h3',{},'需求与验收'),h('pre',{class:'document-content'},task.description+'\n\n验收：'+task.acceptance),
       task.lease_until && h('p',{},`租约到期 ${date(task.lease_until)}。网页认领需手动续租；Agent 使用 MCP 心跳。`),h('div',{class:'row-actions'},actions),

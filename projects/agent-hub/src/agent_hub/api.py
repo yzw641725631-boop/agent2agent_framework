@@ -15,7 +15,7 @@ from sqlalchemy import delete, select, text, update
 from sqlalchemy.exc import DBAPIError
 from sqlalchemy.exc import TimeoutError as PoolTimeout
 
-from . import documents, progress, tasks
+from . import documents, progress, tasks, work_policy
 from . import __version__
 from . import schemas as S
 from .administration import Setup, device_view, email_change_complete, email_change_start, grant_view
@@ -753,6 +753,33 @@ def create_app(
         hub.project(db, identity, project_id)
         return tasks.page(db, project_id, offset, limit)
 
+    @app.get("/api/projects/{project_id}/policy")
+    def project_policy(project_id: uuid.UUID, request: Request, db: DB):
+        hub.project(db, actor(request, db), project_id)
+        return work_policy.current(db, project_id)
+
+    @app.put("/api/projects/{project_id}/policy")
+    def publish_policy(project_id: uuid.UUID, body: S.PolicyInput, request: Request, db: DB):
+        identity = actor(request, db)
+        hub.project(db, identity, project_id, "tasks:publish")
+        return mutate(request, db, identity, body,
+                      lambda: work_policy.publish(hub, db, identity, project_id, body, request.state.request_id))
+
+    @app.post("/api/projects/{project_id}/tasks/{task_id}/contexts")
+    def prepare_work_context(project_id: uuid.UUID, task_id: uuid.UUID, body: S.LeaseInput, request: Request, db: DB):
+        identity = actor(request, db)
+        hub.project(db, identity, project_id, "tasks:write")
+        return mutate(request, db, identity, body,
+                      lambda: work_policy.prepare(hub, db, identity, project_id, task_id, body, request.state.request_id))
+
+    @app.post("/api/projects/{project_id}/tasks/{task_id}/context-acknowledgments")
+    def acknowledge_work_context(project_id: uuid.UUID, task_id: uuid.UUID, body: S.ContextAcknowledgment,
+                                 request: Request, db: DB):
+        identity = actor(request, db)
+        hub.project(db, identity, project_id, "tasks:write")
+        return mutate(request, db, identity, body,
+                      lambda: work_policy.acknowledge(hub, db, identity, project_id, task_id, body, request.state.request_id))
+
     @app.get("/api/projects/{project_id}/activity")
     def recent_activity(project_id: uuid.UUID, request: Request, db: DB,
                         before: int = Query(0, ge=0, le=9223372036854775807), limit: int = Query(20, ge=1, le=100)):
@@ -818,6 +845,20 @@ def create_app(
         hub.project(db, identity, project_id, "tasks:write")
         return mutate(request, db, identity, body,
                       lambda: tasks.submit(hub, db, identity, project_id, task_id, body, request.state.request_id))
+
+    @app.get("/api/projects/{project_id}/tasks/{task_id}/worklog-index")
+    def worklog_index(project_id: uuid.UUID, task_id: uuid.UUID, request: Request, db: DB,
+                      offset: int = Query(0, ge=0, le=100000), limit: int = Query(10, ge=1, le=50)):
+        identity = actor(request, db)
+        hub.project(db, identity, project_id)
+        result = tasks.log_index(db, project_id, task_id, offset, limit)
+        result["visibility"] = "project" if identity.user.platform_role == "superadmin" or "logs:read" in identity.grant.capabilities else "own"
+        return result
+
+    @app.get("/api/projects/{project_id}/tasks/{task_id}/worklogs/{log_id}")
+    def read_worklog(project_id: uuid.UUID, task_id: uuid.UUID, log_id: uuid.UUID, request: Request, db: DB):
+        hub.project(db, actor(request, db), project_id)
+        return tasks.read_log(db, project_id, task_id, log_id)
 
     @app.post("/api/projects/{project_id}/tasks/{task_id}/decisions")
     def decide_task(project_id: uuid.UUID, task_id: uuid.UUID, body: S.GateDecision, request: Request, db: DB):

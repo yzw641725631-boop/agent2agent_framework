@@ -2,6 +2,12 @@
 const crypto = require('node:crypto');
 
 const messages = {
+  WORK_CONTEXT_REQUIRED:'请先准备本执行实例的开工规则。',WORK_CONTEXT_ACK_REQUIRED:'请实际读取并确认全部当前规则。',
+  WORK_CONTEXT_STALE:'规则或任务范围已变化，请重新准备并确认。',WORK_CONTEXT_ACK_MISMATCH:'规则哈希或确认列表不匹配。',
+  WORK_CHANGE_EVIDENCE_REQUIRED:'代码任务需要桌面端采集的实际改动清单。',WORK_EVIDENCE_CHANGED:'检查点之后代码已变化，请重新记录。',
+  WORK_CHANGE_PATHS_MISMATCH:'申报路径与实际改动不一致。',WORK_PATH_PROTECTED:'改动触及受保护路径。',
+  WORK_RUNTIME_REQUIRED:'请在新版桌面端使用本机工作运行组件。',WORKLOG_NOT_ACCESSIBLE:'日志不存在或不在当前资料权限内。',
+  POLICY_VERSION_CONFLICT:'规则已有新版本，请刷新后再发布。',
   TASK_NOT_FOUND:'任务不存在或不在当前项目。',TASK_ALREADY_CLAIMED:'任务已被认领，请等待释放或租约过期。',
   TASK_NOT_CLAIMABLE:'任务还不能认领，请先完成准入确认或当前评审流程。',
   TASK_LEASE_STALE:'任务已交接或提交，当前执行凭证失效，请重新读取任务。',

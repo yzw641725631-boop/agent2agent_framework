@@ -220,6 +220,7 @@ class Task(Identity, Base):
     description: Mapped[str] = mapped_column(Text)
     acceptance: Mapped[str] = mapped_column(Text)
     scope: Mapped[dict] = mapped_column(JSONB)
+    execution_mode: Mapped[str] = mapped_column(String(24), default="observed", server_default="declaration")
     status: Mapped[str] = mapped_column(String(24), default="draft")
     admission_step: Mapped[int] = mapped_column(Integer, default=0)
     version: Mapped[int] = mapped_column(Integer, default=1)
@@ -269,6 +270,40 @@ class Worklog(Identity, Base):
     outcome: Mapped[str] = mapped_column(String(24))
     git_commit: Mapped[str | None] = mapped_column(String(64))
     receipt_hash: Mapped[str] = mapped_column(String(64))
+    context_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))
+    change_evidence: Mapped[dict | None] = mapped_column(JSONB)
+    evidence_hash: Mapped[str | None] = mapped_column(String(64))
+
+
+class ProjectPolicy(Base):
+    __tablename__ = "project_policies"
+    project_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("projects.id"), primary_key=True)
+    version: Mapped[int] = mapped_column(Integer, primary_key=True)
+    author_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id"))
+    device_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("devices.id"))
+    content: Mapped[dict] = mapped_column(JSONB)
+    content_hash: Mapped[str] = mapped_column(String(64))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class WorkContext(Identity, Base):
+    __tablename__ = "work_contexts"
+    __table_args__ = (
+        ForeignKeyConstraint(["run_id", "task_id", "project_id"],
+                             ["task_runs.id", "task_runs.task_id", "task_runs.project_id"]),
+        Index("ix_contexts_run", "project_id", "run_id", "created_at"),
+    )
+    project_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("projects.id"))
+    task_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True))
+    run_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True))
+    author_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id"))
+    device_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("devices.id"))
+    lease_epoch: Mapped[int] = mapped_column(Integer)
+    policy_version: Mapped[int] = mapped_column(Integer)
+    task_hash: Mapped[str] = mapped_column(String(64))
+    payload: Mapped[dict] = mapped_column(JSONB)
+    content_hash: Mapped[str] = mapped_column(String(64))
+    acknowledged_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
 
 class TaskDecision(Identity, Base):

@@ -17,6 +17,7 @@ from agent_hub.security import now
 def new_task(w, project, **overrides):
     return w.ok("POST", f"/api/projects/{project}/tasks", who=w.root, body={
         "title": "Web 登录页", "description": "仅实现 Web 登录", "acceptance": "登录校验与可访问性通过",
+        "execution_mode": "declaration",
         "scope": {"repository": "web", "platform": "web", "paths": ["src", "tests"]}, **overrides})
 
 

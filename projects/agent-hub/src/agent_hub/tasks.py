@@ -9,6 +9,7 @@ from sqlalchemy import select
 
 from .models import ProjectProgress, Task, TaskDecision, TaskRun, Worklog
 from .security import HubError, now
+from . import work_policy
 
 LEASE_SECONDS = 600
 ADMISSION = ("requirements", "design", "feasibility")
@@ -17,6 +18,7 @@ ADMISSION = ("requirements", "design", "feasibility")
 def task_view(t):
     return {"id": str(t.id), "project_id": str(t.project_id), "parent_id": str(t.parent_id) if t.parent_id else None,
             "title": t.title, "description": t.description, "acceptance": t.acceptance, "scope": t.scope,
+            "execution_mode": t.execution_mode,
             "status": t.status, "admission_step": t.admission_step, "version": t.version,
             "lease_epoch": t.lease_epoch, "active_run_id": str(t.active_run_id) if t.active_run_id else None,
             "lease_until": t.lease_until.isoformat() if t.lease_until else None,
@@ -32,11 +34,14 @@ def run_view(r):
 
 
 def log_payload(w):
-    return {"id": str(w.id), "project_id": str(w.project_id), "task_id": str(w.task_id),
+    value = {"id": str(w.id), "project_id": str(w.project_id), "task_id": str(w.task_id),
             "run_id": str(w.run_id), "author_id": str(w.author_id), "device_id": str(w.device_id),
             "lease_epoch": w.lease_epoch, "summary": w.summary, "notes": w.notes,
             "changed_paths": w.changed_paths, "tests": w.tests, "next_steps": w.next_steps,
             "outcome": w.outcome, "git_commit": w.git_commit, "created_at": w.created_at.isoformat()}
+    if w.context_id:
+        value.update(context_id=str(w.context_id), change_evidence=w.change_evidence, evidence_hash=w.evidence_hash)
+    return value
 
 
 def log_view(w):
@@ -160,11 +165,18 @@ def release(hub, db, actor, project_id, task_id, body, request_id):
 def write_log(hub, db, actor, project_id, task_id, body, request_id):
     hub.project(db, actor, project_id, "tasks:write")
     task, run = live_run(db, actor, project_id, task_id, body)
+    evidence_value = evidence_hash = None
+    if task.execution_mode == "observed":
+        evidence_value, evidence_hash = work_policy.evidence(db, actor, task, run, body)
+    elif body.context_id or body.change_evidence:
+        raise HubError("WORK_EVIDENCE_MODE_MISMATCH", 422)
     for path in body.changed_paths:
-        if not any(path == root or path.startswith(root + "/") for root in task.scope["paths"]):
+        if task.execution_mode != "observed" and not any(path == root or path.startswith(root + "/") for root in task.scope["paths"]):
             raise HubError("TASK_PATH_OUT_OF_SCOPE", 422, path=path)
     log = Worklog(id=uuid.uuid4(), created_at=now(), project_id=project_id, task_id=task_id,
-                  author_id=actor.user.id, device_id=actor.device.id, **body.model_dump(mode="python"))
+                  author_id=actor.user.id, device_id=actor.device.id,
+                  **body.model_dump(mode="python", exclude={"change_evidence"}),
+                  change_evidence=evidence_value, evidence_hash=evidence_hash)
     canonical = json.dumps(log_payload(log), ensure_ascii=False, sort_keys=True, separators=(",", ":"))
     log.receipt_hash = hashlib.sha256(canonical.encode("utf-8")).hexdigest()
     db.add(log)
@@ -180,6 +192,21 @@ def logs(db, project_id, task_id, offset, limit):
     return {"items": [log_view(w) for w in rows], "has_more": len(rows) == limit, "next_offset": offset + len(rows)}
 
 
+def log_index(db, project_id, task_id, offset, limit):
+    result = logs(db, project_id, task_id, offset, limit)
+    result["items"] = [{key: row[key] for key in ("id", "task_id", "author_id", "summary", "outcome", "created_at", "receipt_hash")}
+                       | {"evidence_hash": row.get("evidence_hash")} for row in result["items"]]
+    return result
+
+
+def read_log(db, project_id, task_id, log_id):
+    get_task(db, project_id, task_id)
+    row = db.scalar(select(Worklog).where(Worklog.project_id == project_id, Worklog.task_id == task_id, Worklog.id == log_id))
+    if not row:
+        raise HubError("WORKLOG_NOT_ACCESSIBLE", 404)
+    return log_view(row)
+
+
 def check_version(task, version):
     if task.version != version:
         raise HubError("TASK_VERSION_CONFLICT", 409, current_version=task.version)
@@ -193,6 +220,10 @@ def submit(hub, db, actor, project_id, task_id, body, request_id):
                        .order_by(Worklog.created_at.desc(), Worklog.id).limit(1))
     if not latest or latest.id != body.worklog_id or latest.outcome != "checkpoint":
         raise HubError("TASK_LATEST_CHECKPOINT_REQUIRED", 409)
+    if task.execution_mode == "observed":
+        work_policy.require_context(db, actor, task, run, latest.context_id)
+        if not latest.evidence_hash or latest.evidence_hash != body.evidence_hash:
+            raise HubError("WORK_EVIDENCE_CHANGED", 409)
     task.submission_id, task.status, task.version = latest.id, "review", task.version + 1
     task.active_run_id, task.lease_until = None, None
     run.state, run.ended_at = "submitted", now()

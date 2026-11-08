@@ -1,0 +1,62 @@
+{
+  "date": "2026-11-08",
+  "desktop_version": "0.7.0",
+  "backend_version": "0.5.0",
+  "tiktoken_version": "0.14.0",
+  "billing_usage": false,
+  "warning": "Public-text tokenizer counts only; synthetic logs are not production usage or savings.",
+  "measured": {
+    "install.md": {
+      "o200k_base": 19267,
+      "cl100k_base": 23737
+    },
+    "skills/agent-hub/SKILL.md": {
+      "o200k_base": 1424,
+      "cl100k_base": 1825
+    },
+    "skills/agent-hub/references/task-workflow.md": {
+      "o200k_base": 1356,
+      "cl100k_base": 1698
+    },
+    "skills/agent-hub/references/work-records.md": {
+      "o200k_base": 1068,
+      "cl100k_base": 1411
+    },
+    "tools:setup": {
+      "tool_count": 5,
+      "o200k_base": 600,
+      "cl100k_base": 656
+    },
+    "tools:project": {
+      "tool_count": 23,
+      "o200k_base": 3488,
+      "cl100k_base": 3717
+    },
+    "tools:project-reader": {
+      "tool_count": 9,
+      "o200k_base": 803,
+      "cl100k_base": 889
+    },
+    "tools:project-developer": {
+      "tool_count": 21,
+      "o200k_base": 2876,
+      "cl100k_base": 3076
+    }
+  },
+  "log_example": {
+    "synthetic": true,
+    "logs": 20,
+    "full": {
+      "o200k_base": 32543,
+      "cl100k_base": 38623
+    },
+    "index": {
+      "o200k_base": 943,
+      "cl100k_base": 1023
+    },
+    "one_full": {
+      "o200k_base": 1628,
+      "cl100k_base": 1932
+    }
+  }
+}
