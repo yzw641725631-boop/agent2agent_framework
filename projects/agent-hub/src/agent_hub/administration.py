@@ -31,6 +31,7 @@ def grant_view(grant):
         "user_id": str(grant.user_id),
         "device_id": str(grant.device_id),
         "capabilities": grant.capabilities,
+        "repository_permissions": grant.repository_permissions,
         "status": grant.status,
         "expires_at": grant.expires_at.isoformat(),
     }

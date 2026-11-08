@@ -52,12 +52,32 @@ test('MCP document tools are advertised only with documents read permission',asy
   let capabilities=['project:read'];
   const invoke=async()=>({capabilities});
   const request={jsonrpc:'2.0',id:1,method:'tools/list'};
-  assert.equal((await dispatch(request,invoke)).result.tools.length,8);
+  assert.equal((await dispatch(request,invoke)).result.tools.length,9);
   capabilities.push('documents:read');
   const tools=(await dispatch(request,invoke)).result.tools;
   assert.deepEqual(tools.filter(tool=>tool.name.includes('document')).map(tool=>tool.name),
-    ['hub_get_document_index','hub_search_documents','hub_read_document']);
+    ['hub_list_document_sources','hub_get_document_index','hub_search_documents','hub_read_document']);
   assert.ok(tools.every(tool=>tool.annotations.readOnlyHint));
+});
+
+test('real context responses remove withdrawn repository events and keep sibling bindings usable after restore',async t=>{
+  const dir=await temporary(t),f=fixture(dir),web=crypto.randomUUID(),pc=crypto.randomUUID();
+  t.after(()=>f.controller.close());f.controller.projectSlot=async()=>'platform';f.controller.watch=()=>{};
+  const one=f.profile.bindings[0];one.repositoryId=web;
+  f.profile.bindings.push({...one,id:crypto.randomUUID(),workspace:path.join(dir,'pc'),repositoryId:pc});
+  const visibility={all_repositories:false,unscoped:false,code_read_ids:[web],code_write_ids:[],document_read_ids:[]};
+  f.profile.events=[{project_id:f.projectId,repository_id:web,summary:'visible'},
+    {project_id:f.projectId,repository_id:pc,summary:'withdrawn'}, {project_id:f.projectId,summary:'unclassified'}];
+  f.controller.remote.transport=async url=>{
+    assert.ok(url.endsWith(`/api/projects/${f.projectId}/context`));
+    return json({id:f.projectId,capabilities:['project:read'],resource_visibility:visibility});
+  };
+  const result=await f.controller.context(f.projectId);assert.deepEqual(result.resource_visibility,visibility);
+  assert.deepEqual(f.profile.events.map(e=>e.summary),['visible']);
+  assert.equal(one.status,'active');assert.equal(f.profile.bindings[1].status,'blocked');
+  await f.controller.restoreBindings();
+  assert.equal(one.status,'active');assert.equal(f.profile.bindings[1].status,'blocked');
+  assert.equal(f.profile.bindings[1].errorCode,'REPOSITORY_NOT_ACCESSIBLE');
 });
 async function until(fn){for(let i=0;i<100;i++){if(await fn())return;await new Promise(r=>setTimeout(r,10));}throw new Error('condition timed out');}
 test('logout immediately freezes new calls and rejects a call waiting for context',async t=>{

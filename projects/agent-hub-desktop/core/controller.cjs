@@ -10,6 +10,7 @@ const workspaces=require('./workspaces.cjs');
 const {Management}=require('./management.cjs');
 const {SetupConnection}=require('./setup-connection.cjs');
 const {WorkRuntime}=require('./work-runtime.cjs');
+const {RepositoryRuntime}=require('./repository-runtime.cjs');
 const {version}=require('../package.json');
 
 const stopped=new Set(['PROJECT_ACCESS_REVOKED','ACCOUNT_INACTIVE','DEVICE_NOT_ALLOWED','SESSION_REVOKED',
@@ -28,6 +29,7 @@ class Controller extends EventEmitter {
     this.management=new Management(this);
     this.setup=new SetupConnection(this);
     this.work=new WorkRuntime(this);
+    this.repositories=new RepositoryRuntime(this);
   }
   get profile(){return this.vault.data.profiles[this.vault.data.current] || null;}
   persist(){return this.vault.save();}
@@ -54,6 +56,7 @@ class Controller extends EventEmitter {
       this.connection='reauth_required';this.message=error.message;this.stopWatches();this.cancelRecovery();
       for(const b of profile.bindings){b.status='blocked';b.message=error.message;b.errorCode=error.code;}
     }else if(projectId){
+      if(terminal)profile.events=(profile.events || []).filter(event=>event.project_id!==projectId);
       for(const b of profile.bindings.filter(b=>b.projectId===projectId)){
         b.status=terminal?'blocked':'offline';b.message=error.message || '进度连接中断，正在重连。';b.errorCode=error.code;
       }
@@ -75,6 +78,7 @@ class Controller extends EventEmitter {
       setupEnabled:!!this.setup.binding,
       setupAccountMatches:visible && !!this.setup.binding && !!this.setup.matches(this.setup.binding),
       projects:visible?this.projects:[],bindings:(visible?p?.bindings || []:[]).map(b=>({id:b.id,projectId:b.projectId,projectName:b.projectName,
+        repositoryId:b.repositoryId || null,repositoryName:b.repositoryName || null,
         workspace:b.workspace,status:b.status,message:b.message || '',configuration:this.configuration(b),
         installed:b.installed || null})),
       events:(visible?p?.events || []:[]).slice(-100).reverse(),
@@ -160,6 +164,10 @@ class Controller extends EventEmitter {
       Array.from(new Map(grants.map(g=>[g.project_id,{id:g.project_id,name:g.project_name,slug:g.project_slug}])).values());
     this.ensureCurrent(profile,remote);
     profile.user=me.user;profile.deviceId=me.device_id;this.grants=grants;this.projects=projects;
+    if(me.user.platform_role!=='superadmin'){
+      profile.events=(profile.events || []).filter(event=>grants.some(grant=>grant.project_id===event.project_id &&
+        (!event.repository_id || (grant.repository_permissions || []).some(permission=>permission.repository_id===event.repository_id && permission.capabilities.includes('code:read')))));
+    }
     for(const [slot,session] of Object.entries(profile.sessions)){
       if(slot!=='platform' && !grants.some(g=>g.project_id===slot && g.id===session.grant_id)){
         this.cancelWatch(slot);delete profile.sessions[slot];
@@ -208,7 +216,26 @@ class Controller extends EventEmitter {
     this.ensureCurrent(profile,remote);
     const result=await remote.request('GET',`/api/projects/${projectId}/context`,undefined,{slot});
     this.ensureCurrent(profile,remote);
+    if(result.resource_visibility && this.applyResourceVisibility(projectId,result.resource_visibility)){
+      await this.persist();this.ensureCurrent(profile,remote);this.emitState();
+    }
     return {...result,capabilities:profile.user.platform_role==='superadmin' && !result.capabilities.length?['project:read','tasks:write','documents:read']:result.capabilities};
+  }
+  applyResourceVisibility(projectId,visibility){
+    if(!visibility || !Array.isArray(visibility.code_read_ids) || !Array.isArray(visibility.document_read_ids))return;
+    const p=this.profile;if(!p)return;
+    let changed=JSON.stringify(p.resourceVisibility?.[projectId])!==JSON.stringify(visibility);
+    const count=(p.events || []).length;
+    (p.resourceVisibility??={})[projectId]=visibility;
+    p.events=(p.events || []).filter(event=>event.project_id!==projectId || visibility.all_repositories ||
+      (event.repository_id?visibility.code_read_ids.includes(event.repository_id):visibility.unscoped));
+    for(const binding of p.bindings.filter(binding=>binding.projectId===projectId && binding.repositoryId)){
+      if(!visibility.code_read_ids.includes(binding.repositoryId) && !visibility.document_read_ids.includes(binding.repositoryId)){
+        if(binding.status!=='blocked' || binding.errorCode!=='REPOSITORY_NOT_ACCESSIBLE')changed=true;
+        binding.status='blocked';binding.errorCode='REPOSITORY_NOT_ACCESSIBLE';binding.message='该仓库的授权已失效，请保留未交付工作。';
+      }
+    }
+    return changed || count!==p.events.length;
   }
   descriptorPath(binding){return path.join(this.directory,'bindings',binding.id+'.json');}
   configuration(binding){
@@ -223,13 +250,23 @@ class Controller extends EventEmitter {
     const descriptor={version:1,protocol:'desktop-mcp-v1',endpoint:this.broker.endpoint,binding:binding.id,secret:binding.secret};
     await fs.writeFile(target+'.next',JSON.stringify(descriptor),{mode:0o600});await fs.rename(target+'.next',target);
   }
-  async bind({projectId,workspace}){
+  async bind({projectId,workspace,repositoryId}){
     if(!uuid(projectId) || !this.projects.some(p=>p.id===projectId))throw new HubError('PROJECT_NOT_ACCESSIBLE');
     const actual=await workspaces.directory(workspace);
     const p=this.profile;
     if(p.bindings.some(b=>b.workspace===actual))throw new HubError('WORKSPACE_ALREADY_BOUND','这个目录已绑定连接，请先停用原连接。');
     const context=await this.context(projectId);
+    let repository;
+    if(repositoryId){
+      if(!uuid(repositoryId))throw new HubError('INVALID_REQUEST');
+      const slot=await this.projectSlot(projectId),profile=this.profile,remote=this.remote;
+      const registry=await remote.request('GET',`/api/projects/${projectId}/repositories`,undefined,{slot});
+      this.ensureCurrent(profile,remote);
+      repository=registry.items.find(repo=>repo.id===repositoryId && repo.status==='active' && repo.capabilities.some(cap=>['code:read','documents:read'].includes(cap)));
+      if(!repository)throw new HubError('REPOSITORY_NOT_ACCESSIBLE');
+    }
     const binding={id:crypto.randomUUID(),secret:crypto.randomBytes(32).toString('base64url'),projectId,
+      ...(repository?{repositoryId,repositoryName:repository.name}:{}),
       projectName:context.name,workspace:actual,status:'active'};
     p.bindings.push(binding);await this.writeDescriptor(binding);await this.persist();
     this.watch(projectId);this.emitState();return this.state();
@@ -239,12 +276,18 @@ class Controller extends EventEmitter {
     await this.management.restore();
     for(const binding of profile.bindings){
       try{
-        await this.context(binding.projectId);this.ensureCurrent(profile,remote);binding.status='active';binding.message='';delete binding.errorCode;
+        const context=await this.context(binding.projectId);this.ensureCurrent(profile,remote);
+        if(binding.repositoryId && context.resource_visibility &&
+          !context.resource_visibility.code_read_ids.includes(binding.repositoryId) && !context.resource_visibility.document_read_ids.includes(binding.repositoryId))
+          throw new HubError('REPOSITORY_NOT_ACCESSIBLE');
+        binding.status='active';binding.message='';delete binding.errorCode;
         await this.writeDescriptor(binding);this.watch(binding.projectId);
       }catch(error){
-        this.ensureCurrent(profile,remote);this.cancelWatch(binding.projectId);
-        binding.status=stopped.has(error.code)?'blocked':'offline';binding.message=error.message;binding.errorCode=error.code;
-        if(!stopped.has(error.code))this.scheduleRecovery();
+        this.ensureCurrent(profile,remote);
+        if(stopped.has(error.code))this.cancelWatch(binding.projectId);
+        const blocked=stopped.has(error.code) || error.code==='REPOSITORY_NOT_ACCESSIBLE';
+        binding.status=blocked?'blocked':'offline';binding.message=error.message;binding.errorCode=error.code;
+        if(!blocked)this.scheduleRecovery();
       }
     }
     await this.persist();
@@ -282,6 +325,11 @@ class Controller extends EventEmitter {
     return this.invokeProject(b,request.action,request.args);
   }
   async invokeProject(b,action,args){
+    if(['hub_assemble_project','hub_fetch_repository','hub_push_task'].includes(action)){
+      const operation=this.repositories.invoke(b,action,args);
+      this.projectOperations.add(operation);
+      try{return await operation;}finally{this.projectOperations.delete(operation);}
+    }
     const localActions={hub_prepare_work:'prepare',hub_acknowledge_work:'acknowledge',hub_check_changes:'check',
       hub_list_local_work:'list'};
     const prepared=args?.run_id && this.profile?.workRuns?.[args.run_id];
@@ -324,15 +372,40 @@ class Controller extends EventEmitter {
       const context=await this.context(b.projectId);
       this.ensureCurrent(profile,remote);
       if(this.connection!=='active' || this.binding(b.id)!==b)throw new HubError('LOGIN_REQUIRED');
+      if(b.status==='blocked')throw new HubError(b.errorCode || 'PROJECT_ACCESS_REVOKED');
       const slot=await this.projectSlot(b.projectId);
       this.ensureCurrent(profile,remote);
-      if(action==='metadata')return {project_id:b.projectId,capabilities:context.capabilities};
+      if(action==='metadata')return {project_id:b.projectId,capabilities:context.capabilities,repository_id:b.repositoryId || null,
+        repository_code_read:b.repositoryId?context.resource_visibility?.code_read_ids.includes(b.repositoryId):
+          !!context.resource_visibility?.code_read_ids.length,
+        repository_code_write:!!b.repositoryId && !!context.resource_visibility?.code_write_ids.includes(b.repositoryId)};
       if(action==='hub_get_project'){
         if(Object.keys(args).length)throw new HubError('INVALID_REQUEST');
-        return {...context,workspace:b.workspace};
+        return {...context,workspace:b.workspace,repository_id:b.repositoryId || null};
+      }
+      if(['hub_list_repositories','hub_list_document_sources'].includes(action)){
+        require('./repository-tools.cjs').validate(action,args);
+        return await remote.request('GET',`/api/projects/${b.projectId}/${action==='hub_list_repositories'?'repositories':'documents/sources'}`,undefined,{slot});
+      }
+      if(action==='hub_register_repository'){
+        require('./repository-tools.cjs').validate(action,args);
+        if(!context.capabilities.includes('repositories:manage'))throw new HubError('CAPABILITY_REQUIRED');
+        const {operation_id,...body}=args;
+        return await remote.request('POST',`/api/projects/${b.projectId}/repositories`,body,{slot,idempotency:operation_id});
       }
       const taskRequest=require('./task-tools.cjs').request(action,args,context.capabilities,b.projectId,{internal});
       if(taskRequest){
+        if(b.repositoryId){
+          if(args.task_id){
+            const {task}=await remote.request('GET',`/api/projects/${b.projectId}/tasks/${args.task_id}`,undefined,{slot});
+            if(task.repository_id!==b.repositoryId)throw new HubError('TASK_REPOSITORY_MISMATCH');
+          }
+          if(action==='hub_create_task'){
+            if(args.repository_id && args.repository_id!==b.repositoryId)throw new HubError('TASK_REPOSITORY_MISMATCH');
+            taskRequest.body.repository_id=b.repositoryId;
+          }
+          if(action==='hub_list_tasks')taskRequest.path+=(taskRequest.path.includes('?')?'&':'?')+'repository_id='+b.repositoryId;
+        }
         const result=await remote.request(taskRequest.method,taskRequest.path,taskRequest.body,
           {slot,idempotency:taskRequest.operation_id});
         this.ensureCurrent(profile,remote);
@@ -346,23 +419,31 @@ class Controller extends EventEmitter {
       }
       if(['hub_get_document_index','hub_search_documents','hub_read_document'].includes(action)){
         if(!context.capabilities.includes('documents:read'))throw new HubError('CAPABILITY_REQUIRED','当前项目授权不包含文档读取。');
-        const base=`/api/projects/${b.projectId}/documents`;
+        const repositoryId=args.repository_id || b.repositoryId;
+        if(repositoryId && (!uuid(repositoryId) || b.repositoryId && repositoryId!==b.repositoryId))throw new HubError('DOCUMENT_SOURCE_NOT_ACCESSIBLE');
+        if(!repositoryId && context.repository_mode==='scoped')throw new HubError('DOCUMENT_SOURCE_REQUIRED','请先列出文档源，再指定 repository_id。');
+        const base=`/api/projects/${b.projectId}${repositoryId?'/repositories/'+repositoryId:''}/documents`;
         if(action==='hub_get_document_index'){
-          if(Object.keys(args).length)throw new HubError('INVALID_REQUEST');
+          if(Object.keys(args).some(key=>key!=='repository_id'))throw new HubError('INVALID_REQUEST');
           return await remote.request('GET',`${base}/repository`,undefined,{slot});
         }
-        const search=action==='hub_search_documents',allowed=search?['query','offset','limit','snapshot_id']:['path','snapshot_id'];
+        const search=action==='hub_search_documents',allowed=search?['query','offset','limit','snapshot_id','repository_id']:['path','snapshot_id','repository_id'];
         if(Object.keys(args).some(k=>!allowed.includes(k)) ||
            (args.snapshot_id!==undefined && !uuid(args.snapshot_id)) ||
            (search && ((args.query!==undefined && (typeof args.query!=='string' || args.query.length>200)) ||
              (args.offset!==undefined && (!Number.isInteger(args.offset) || args.offset<0 || args.offset>1000)) ||
              (args.limit!==undefined && (!Number.isInteger(args.limit) || args.limit<1 || args.limit>50)))) ||
            (!search && (typeof args.path!=='string' || !args.path.length || args.path.length>800)))throw new HubError('INVALID_REQUEST');
-        return await remote.request('POST',`${base}/${search?'search':'read'}`,args,{slot});
+        const {repository_id,...body}=args;
+        return await remote.request('POST',`${base}/${search?'search':'read'}`,body,{slot});
       }
       if(action==='hub_report_progress'){
         if(!context.capabilities.includes('tasks:write'))throw new HubError('CAPABILITY_REQUIRED','当前项目授权不包含进度上报，读取连接仍可使用。');
         const {operation_id,...body}=args;
+        if(b.repositoryId){
+          if(body.repository_id && body.repository_id!==b.repositoryId)throw new HubError('TASK_REPOSITORY_MISMATCH');
+          body.repository_id=b.repositoryId;
+        }
         if(!uuid(operation_id))throw new HubError('INVALID_REQUEST','上报进度需要稳定的 operation_id（UUID）。');
         const result=await remote.request('POST',`/api/projects/${b.projectId}/progress`,body,{slot,idempotency:operation_id});
         return {...result,operation_id};
@@ -397,6 +478,9 @@ class Controller extends EventEmitter {
         let ready=false;
         for await(const event of parseEvents(response.body,{onActivity:activity})){
           if(signal.aborted || this.closed || this.profile!==profile || this.remote!==remote)return;
+          if(event.event==='resource_visibility'){
+            this.applyResourceVisibility(projectId,event.data);await this.persist();this.emitState();continue;
+          }
           if(event.event==='ready'){
             ready=true;caughtUp=true;backoff=1000;
             let changed=false;

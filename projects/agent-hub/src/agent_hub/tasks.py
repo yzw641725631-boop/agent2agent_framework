@@ -7,9 +7,9 @@ from datetime import timedelta
 
 from sqlalchemy import select
 
+from . import repositories, work_policy
 from .models import ProjectProgress, Task, TaskDecision, TaskRun, Worklog
 from .security import HubError, now
-from . import work_policy
 
 LEASE_SECONDS = 600
 ADMISSION = ("requirements", "design", "feasibility")
@@ -17,6 +17,7 @@ ADMISSION = ("requirements", "design", "feasibility")
 
 def task_view(t):
     return {"id": str(t.id), "project_id": str(t.project_id), "parent_id": str(t.parent_id) if t.parent_id else None,
+            "repository_id": str(t.repository_id) if t.repository_id else None,
             "title": t.title, "description": t.description, "acceptance": t.acceptance, "scope": t.scope,
             "execution_mode": t.execution_mode,
             "status": t.status, "admission_step": t.admission_step, "version": t.version,
@@ -64,8 +65,11 @@ def get_task(db, project_id, task_id):
     return task
 
 
-def page(db, project_id, offset, limit):
-    rows = list(db.scalars(select(Task).where(Task.project_id == project_id)
+def page(db, project_id, offset, limit, *, repository_id=None):
+    statement = select(Task).where(Task.project_id == project_id)
+    if repository_id:
+        statement = statement.where(Task.repository_id == repository_id)
+    rows = list(db.scalars(statement
                           .order_by(Task.created_at.desc(), Task.id).offset(offset).limit(limit)))
     return {"items": [task_view(t) for t in rows], "has_more": len(rows) == limit, "next_offset": offset + len(rows)}
 
@@ -85,17 +89,25 @@ def emit(hub, db, actor, task, kind, request_id, *, run_id=None, worklog_id=None
     label = {"task.created": "任务已创建", "task.claimed": "任务已认领", "task.released": "认领已释放",
              "task.submitted": "任务待评审", "worklog.recorded": "工作日志已保存", "task.gate_decided": "流程已推进"}[kind]
     event = ProjectProgress(project_id=task.project_id, author_id=actor.user.id, device_id=actor.device.id,
+                            repository_id=task.repository_id,
                             status="completed" if task.status == "completed" else "checkpoint",
                             summary=f"{label} · {task.title}"[:300], detail="", task_reference=str(task.id),
                             kind=kind, task_id=task.id, run_id=run_id, worklog_id=worklog_id)
     db.add(event)
     hub.audit(db, actor.user.id, kind, task.id, request_id, task.project_id,
+              repository_id=task.repository_id,
               task_version=task.version, run_id=str(run_id) if run_id else None,
               worklog_id=str(worklog_id) if worklog_id else None)
 
 
 def create(hub, db, actor, project_id, body, request_id):
-    hub.project(db, actor, project_id, "tasks:publish")
+    project = hub.project(db, actor, project_id, "tasks:publish")
+    if body.repository_id:
+        repo = repositories.require(db, project_id, body.repository_id)
+        if body.scope.repository != repo.slug or body.scope.platform != repo.platform:
+            raise HubError("TASK_REPOSITORY_MISMATCH", 422)
+    elif project.repository_mode == "scoped":
+        raise HubError("TASK_REPOSITORY_REQUIRED", 422)
     if body.parent_id:
         parent = get_task(db, project_id, body.parent_id)
         if parent.status == "completed":
@@ -111,6 +123,8 @@ def claim(hub, db, actor, project_id, task_id, body, request_id):
     hub.project(db, actor, project_id, "tasks:claim")
     hub.project(db, actor, project_id, "tasks:write")
     task = get_task(db, project_id, task_id)
+    if task.repository_id:
+        repositories.require(db, project_id, task.repository_id, "code:write")
     if task.status not in {"ready", "in_progress"}:
         raise HubError("TASK_NOT_CLAIMABLE", 409, task_status=task.status)
     if task.active_run_id:
@@ -134,6 +148,8 @@ def claim(hub, db, actor, project_id, task_id, body, request_id):
 
 def live_run(db, actor, project_id, task_id, body):
     task = get_task(db, project_id, task_id)
+    if task.repository_id:
+        repositories.require(db, project_id, task.repository_id, "code:write")
     if task.active_run_id != body.run_id or task.lease_epoch != body.lease_epoch or task.status != "in_progress":
         raise HubError("TASK_LEASE_STALE", 409)
     run = db.get(TaskRun, body.run_id)
@@ -157,7 +173,8 @@ def release(hub, db, actor, project_id, task_id, body, request_id):
     run.state, run.ended_at = "released", now()
     task.active_run_id, task.lease_until, task.status = None, None, "ready"
     task.version += 1
-    hub.audit(db, actor.user.id, "task.release_reason", task_id, request_id, project_id, reason=body.reason)
+    hub.audit(db, actor.user.id, "task.release_reason", task_id, request_id, project_id,
+              repository_id=task.repository_id, reason=body.reason)
     emit(hub, db, actor, task, "task.released", request_id, run_id=run.id)
     return task_view(task)
 

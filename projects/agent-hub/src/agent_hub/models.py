@@ -1,7 +1,18 @@
 import uuid
 from datetime import datetime
 
-from sqlalchemy import BigInteger, DateTime, ForeignKey, ForeignKeyConstraint, Index, Integer, String, Text, UniqueConstraint, func
+from sqlalchemy import (
+    BigInteger,
+    DateTime,
+    ForeignKey,
+    ForeignKeyConstraint,
+    Index,
+    Integer,
+    String,
+    Text,
+    UniqueConstraint,
+    func,
+)
 from sqlalchemy import Identity as AutoIdentity
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
@@ -80,6 +91,38 @@ class Project(Identity, Base):
     created_by: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id"))
     status: Mapped[str] = mapped_column(String(24), default="active")
     version: Mapped[int] = mapped_column(Integer, default=1)
+    repository_mode: Mapped[str] = mapped_column(String(16), default="legacy", server_default="legacy")
+
+
+class ProjectRepository(Identity, Base):
+    __tablename__ = "project_repositories"
+    __table_args__ = (UniqueConstraint("project_id", "slug"), UniqueConstraint("id", "project_id"))
+    project_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("projects.id"), index=True)
+    slug: Mapped[str] = mapped_column(String(80))
+    name: Mapped[str] = mapped_column(String(200))
+    platform: Mapped[str] = mapped_column(String(24))
+    repository_url: Mapped[str] = mapped_column(String(400))
+    branch: Mapped[str] = mapped_column(String(200))
+    auth_mode: Mapped[str] = mapped_column(String(24), default="public")
+    encrypted_token: Mapped[str | None] = mapped_column(Text)
+    installation_id: Mapped[int | None] = mapped_column(BigInteger)
+    status: Mapped[str] = mapped_column(String(16), default="active")
+    version: Mapped[int] = mapped_column(Integer, default=1)
+
+
+class RepositoryTicket(Identity, Base):
+    __tablename__ = "repository_tickets"
+    project_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("projects.id"))
+    repository_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("project_repositories.id"))
+    session_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("auth_sessions.id"))
+    user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id"))
+    device_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("devices.id"))
+    digest: Mapped[str] = mapped_column(String(64), unique=True)
+    action: Mapped[str] = mapped_column(String(16))
+    run_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))
+    lease_epoch: Mapped[int | None] = mapped_column(Integer)
+    expected_commit: Mapped[str | None] = mapped_column(String(64))
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
 
 
 class Membership(Identity, Base):
@@ -99,6 +142,7 @@ class Grant(Identity, Base):
     device_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("devices.id"))
     approval_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("approval_requests.id"), unique=True)
     capabilities: Mapped[list] = mapped_column(JSONB)
+    repository_permissions: Mapped[list] = mapped_column(JSONB, default=list, server_default="[]")
     membership_epoch: Mapped[int] = mapped_column(Integer)
     user_epoch: Mapped[int] = mapped_column(Integer)
     device_epoch: Mapped[int] = mapped_column(Integer)
@@ -141,6 +185,7 @@ class Audit(Identity, Base):
     __mapper_args__ = {"eager_defaults": False}
     actor_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id"))
     project_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("projects.id"), index=True)
+    repository_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("project_repositories.id"))
     action: Mapped[str] = mapped_column(String(100))
     object_id: Mapped[str] = mapped_column(String(100))
     request_id: Mapped[str] = mapped_column(String(64))
@@ -192,6 +237,7 @@ class ProjectProgress(Base):
     __tablename__ = "project_progress"
     sequence: Mapped[int] = mapped_column(BigInteger, AutoIdentity(), primary_key=True)
     project_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("projects.id"), index=True)
+    repository_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("project_repositories.id"))
     author_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id"))
     device_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("devices.id"))
     status: Mapped[str] = mapped_column(String(24))
@@ -211,9 +257,11 @@ class Task(Identity, Base):
     __table_args__ = (
         UniqueConstraint("id", "project_id"),
         ForeignKeyConstraint(["parent_id", "project_id"], ["tasks.id", "tasks.project_id"]),
+        ForeignKeyConstraint(["repository_id", "project_id"], ["project_repositories.id", "project_repositories.project_id"]),
         Index("ix_tasks_project_created", "project_id", "created_at", "id"),
     )
     project_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("projects.id"))
+    repository_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))
     parent_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))
     created_by: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id"))
     title: Mapped[str] = mapped_column(String(200))
@@ -327,7 +375,11 @@ class TaskDecision(Identity, Base):
 
 class DocumentRepository(Base):
     __tablename__ = "document_repositories"
-    project_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("projects.id"), primary_key=True)
+    __table_args__ = (UniqueConstraint("id", "project_id"),)
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True,
+                                        default=lambda ctx: ctx.get_current_parameters()["project_id"])
+    project_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("projects.id"), index=True)
+    repository_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("project_repositories.id"))
     repository_url: Mapped[str] = mapped_column(String(400))
     branch: Mapped[str] = mapped_column(String(200))
     include_paths: Mapped[list] = mapped_column(JSONB)
@@ -343,6 +395,8 @@ class DocumentRepository(Base):
 class DocumentSync(Identity, Base):
     __tablename__ = "document_syncs"
     project_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("projects.id"))
+    source_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("document_repositories.id"),
+                                               default=lambda ctx: ctx.get_current_parameters()["project_id"])
     configuration_version: Mapped[int] = mapped_column(Integer)
     requested_by: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id"))
     device_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("devices.id"))
@@ -357,7 +411,9 @@ class DocumentSync(Identity, Base):
 
 class ProjectDocument(Base):
     __tablename__ = "project_documents"
-    project_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("projects.id"), primary_key=True)
+    project_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("projects.id"))
+    source_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("document_repositories.id"), primary_key=True,
+                                               default=lambda ctx: ctx.get_current_parameters()["project_id"])
     path: Mapped[str] = mapped_column(String(800), primary_key=True)
     snapshot_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True))
     title: Mapped[str] = mapped_column(String(300))

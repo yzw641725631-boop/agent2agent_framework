@@ -40,12 +40,15 @@ def job_view(job):
     }
 
 
-def repository_view(db, project_id, *, manager=False):
-    row = db.get(DocumentRepository, project_id)
+def repository_view(db, project_id, *, manager=False, repository_id=None):
+    source_id = repository_id or project_id
+    row = db.get(DocumentRepository, source_id)
     if not row:
         return {"configured": False, "version": 0, "can_manage": manager}
     result = {
         "configured": True,
+        "source_id": str(row.id),
+        "repository_id": str(row.repository_id) if row.repository_id else None,
         "version": row.version,
         "can_manage": manager,
         "repository_url": row.repository_url,
@@ -61,7 +64,7 @@ def repository_view(db, project_id, *, manager=False):
     if manager:
         job = db.scalar(
             select(DocumentSync)
-            .where(DocumentSync.project_id == project_id)
+            .where(DocumentSync.project_id == project_id, DocumentSync.source_id == source_id)
             .order_by(DocumentSync.created_at.desc())
             .limit(1)
         )
@@ -69,8 +72,14 @@ def repository_view(db, project_id, *, manager=False):
     return result
 
 
-def configure(hub, db, actor, project_id, body, request_id):
-    row = db.get(DocumentRepository, project_id)
+def configure(hub, db, actor, project_id, body, request_id, *, repository_id=None):
+    source_id = repository_id or project_id
+    row = db.get(DocumentRepository, source_id)
+    if repository_id:
+        from .repositories import require
+        registered = require(db, project_id, repository_id)
+        if body.repository_url != registered.repository_url or body.branch != registered.branch or body.token or body.clear_token:
+            raise HubError("DOCUMENT_SOURCE_REPOSITORY_MISMATCH", 422)
     if body.expected_version != (row.version if row else 0):
         raise HubError("CONFIGURATION_VERSION_CONFLICT", 409)
     if body.token is not None and body.clear_token:
@@ -89,14 +98,14 @@ def configure(hub, db, actor, project_id, body, request_id):
     elif body.clear_token:
         encrypted = None
     # Configuration changes invalidate all old content in the same transaction.
-    db.execute(delete(ProjectDocument).where(ProjectDocument.project_id == project_id))
+    db.execute(delete(ProjectDocument).where(ProjectDocument.source_id == source_id))
     db.execute(
         update(DocumentSync)
-        .where(DocumentSync.project_id == project_id, DocumentSync.status.in_(["queued", "running"]))
+        .where(DocumentSync.source_id == source_id, DocumentSync.status.in_(["queued", "running"]))
         .values(status="cancelled", finished_at=now())
     )
     if row is None:
-        row = DocumentRepository(project_id=project_id)
+        row = DocumentRepository(id=source_id, project_id=project_id, repository_id=repository_id)
         db.add(row)
     row.repository_url, row.branch, row.include_paths = body.repository_url, body.branch, body.include_paths
     row.encrypted_token, row.version = encrypted, body.expected_version + 1
@@ -110,24 +119,27 @@ def configure(hub, db, actor, project_id, body, request_id):
         project_id,
         request_id,
         project_id,
+        repository_id=repository_id,
         configuration_version=row.version,
     )
-    return repository_view(db, project_id, manager=True)
+    return repository_view(db, project_id, manager=True, repository_id=repository_id)
 
 
-def enqueue(hub, db, actor, project_id, request_id):
-    row = db.get(DocumentRepository, project_id)
+def enqueue(hub, db, actor, project_id, request_id, *, repository_id=None):
+    source_id = repository_id or project_id
+    row = db.get(DocumentRepository, source_id)
     if not row:
         raise HubError("DOCUMENT_REPOSITORY_NOT_CONFIGURED", 409)
     job = db.scalar(
         select(DocumentSync).where(
-            DocumentSync.project_id == project_id, DocumentSync.status.in_(["queued", "running"])
+            DocumentSync.source_id == source_id, DocumentSync.status.in_(["queued", "running"])
         )
     )
     if job:
         return job_view(job)
     job = DocumentSync(
         project_id=project_id,
+        source_id=source_id,
         configuration_version=row.version,
         requested_by=actor.user.id,
         device_id=actor.device.id,
@@ -135,12 +147,13 @@ def enqueue(hub, db, actor, project_id, request_id):
     )
     db.add(job)
     db.flush()
-    hub.audit(db, actor.user.id, "documents.sync_requested", job.id, request_id, project_id)
+    hub.audit(db, actor.user.id, "documents.sync_requested", job.id, request_id, project_id,
+              repository_id=repository_id)
     return job_view(job)
 
 
-def snapshot(db, project_id, expected=None):
-    row = db.get(DocumentRepository, project_id)
+def snapshot(db, project_id, expected=None, *, repository_id=None):
+    row = db.get(DocumentRepository, repository_id or project_id)
     if not row or not row.snapshot_id:
         raise HubError("DOCUMENT_INDEX_NOT_READY", 409)
     if expected and expected != row.snapshot_id:
@@ -151,6 +164,8 @@ def snapshot(db, project_id, expected=None):
 def reference(repo, doc):
     return {
         "path": doc.path,
+        "source_id": str(repo.id),
+        "repository_id": str(repo.repository_id) if repo.repository_id else None,
         "title": doc.title,
         "sha256": doc.sha256,
         "byte_size": doc.byte_size,
@@ -161,11 +176,12 @@ def reference(repo, doc):
     }
 
 
-def search(db, project_id, body):
-    repo = snapshot(db, project_id, body.snapshot_id)
+def search(db, project_id, body, *, repository_id=None):
+    repo = snapshot(db, project_id, body.snapshot_id, repository_id=repository_id)
     query = body.query.strip()
     statement = select(ProjectDocument).where(
-        ProjectDocument.project_id == project_id, ProjectDocument.snapshot_id == repo.snapshot_id
+        ProjectDocument.project_id == project_id, ProjectDocument.source_id == repo.id,
+        ProjectDocument.snapshot_id == repo.snapshot_id
     )
     if query:
         # Literal matching supports Chinese and treats %, _ and SQL fragments as text.
@@ -196,9 +212,9 @@ def search(db, project_id, body):
     }
 
 
-def read(db, project_id, body):
-    repo = snapshot(db, project_id, body.snapshot_id)
-    doc = db.get(ProjectDocument, (project_id, body.path))
+def read(db, project_id, body, *, repository_id=None):
+    repo = snapshot(db, project_id, body.snapshot_id, repository_id=repository_id)
+    doc = db.get(ProjectDocument, (repo.id, body.path))
     if not doc or doc.snapshot_id != repo.snapshot_id:
         raise HubError("DOCUMENT_NOT_FOUND", 404)
     return reference(repo, doc) | {"content": doc.content, "line_count": len(doc.content.splitlines())}

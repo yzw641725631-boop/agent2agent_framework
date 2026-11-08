@@ -138,15 +138,17 @@ class SetupConnection {
       return c.management.invoke(c.management.binding, action, args);
     }
     if (action !== 'hub_connect_project') throw new HubError('UNKNOWN_BRIDGE_ACTION');
-    if (Object.keys(args).some(key => !['project_id', 'workspace', 'harness'].includes(key)) ||
-        !uuid(args.project_id) || typeof args.workspace !== 'string' || !hostInstall.hosts.includes(args.harness)) throw new HubError('INVALID_REQUEST');
+    if (Object.keys(args).some(key => !['project_id', 'repository_id', 'workspace', 'harness'].includes(key)) ||
+        !uuid(args.project_id) || args.repository_id!==undefined && !uuid(args.repository_id) ||
+        typeof args.workspace !== 'string' || !hostInstall.hosts.includes(args.harness)) throw new HubError('INVALID_REQUEST');
     const operation = this.operations.then(async () => {
       await this.identity(binding); await this.list(binding, identity);
       const workspace = await directory(args.workspace);
       let project = identity.profile.bindings.find(item => item.workspace === workspace), created = false;
       if (project && project.projectId !== args.project_id) throw new HubError('WORKSPACE_ALREADY_BOUND');
+      if (project && (project.repositoryId || null)!==(args.repository_id || null)) throw new HubError('WORKSPACE_ALREADY_BOUND');
       if (!project) {
-        await c.bind({ projectId: args.project_id, workspace }); created = true;
+        await c.bind({ projectId: args.project_id, repositoryId:args.repository_id, workspace }); created = true;
         project = identity.profile.bindings.find(item => item.workspace === workspace);
       }
       try {

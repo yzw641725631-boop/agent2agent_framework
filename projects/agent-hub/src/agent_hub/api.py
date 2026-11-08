@@ -15,8 +15,16 @@ from sqlalchemy import delete, select, text, update
 from sqlalchemy.exc import DBAPIError
 from sqlalchemy.exc import TimeoutError as PoolTimeout
 
-from . import documents, progress, tasks, work_policy
-from . import __version__
+from . import (
+    __version__,
+    documents,
+    git_gateway,
+    github_credentials,
+    progress,
+    repositories,
+    tasks,
+    work_policy,
+)
 from . import schemas as S
 from .administration import Setup, device_view, email_change_complete, email_change_start, grant_view
 from .config import Settings, get_settings
@@ -152,6 +160,7 @@ def create_app(
                     "RATE_LIMITED",
                     "DEVICE_PROOF_REQUIRED",
                     "DPOP_TOKEN_REQUIRED",
+                    "GIT_AUTHENTICATION_REQUIRED",
                 }:
                     with security_sessions.begin() as audit_db:
                         hub.audit(
@@ -212,6 +221,12 @@ def create_app(
         return user, device
 
     def mutate(request, db, identity, body, action):
+        # Cached mutation results must never bypass current resource visibility.
+        params = request.path_params
+        if params.get("task_id"):
+            tasks.get_task(db, params["project_id"], params["task_id"])
+        if params.get("repository_id") and "/documents" in request.url.path:
+            repositories.source_access(hub, db, identity, params["project_id"], params["repository_id"], manage=True)
         return hub.idempotent(
             db,
             identity,
@@ -365,8 +380,56 @@ def create_app(
             "id": str(p.id),
             "slug": p.slug,
             "name": p.name,
+            "repository_mode": p.repository_mode,
+            "resource_visibility": repositories.visibility(db, p),
             "capabilities": sorted(ADMIN_CAPS) if identity.user.platform_role == "superadmin" else identity.grant.capabilities,
         }
+
+    @app.get("/api/projects/{project_id}/repositories")
+    def project_repositories(project_id: uuid.UUID, request: Request, db: DB):
+        return repositories.page(hub, db, actor(request, db), project_id)
+
+    @app.post("/api/projects/{project_id}/repositories")
+    def register_repository(project_id: uuid.UUID, body: S.RepositoryInput, request: Request, db: DB):
+        identity = actor(request, db)
+        hub.manage_members(db, identity, project_id)
+        hub.project(db, identity, project_id, "repositories:manage")
+        return mutate(request, db, identity, body,
+                      lambda: repositories.register(hub, db, identity, project_id, body, request.state.request_id))
+
+    @app.post("/api/projects/{project_id}/repositories/{repository_id}/status")
+    def repository_status(project_id: uuid.UUID, repository_id: uuid.UUID, body: S.RepositoryStatus, request: Request, db: DB):
+        identity = actor(request, db)
+        require_root(identity)
+        return mutate(request, db, identity, body,
+                      lambda: repositories.change_status(hub, db, identity, project_id, repository_id, body, request.state.request_id))
+
+    @app.put("/api/projects/{project_id}/repositories/{repository_id}/credential")
+    def repository_credential(project_id: uuid.UUID, repository_id: uuid.UUID, body: S.RepositoryCredential, request: Request, db: DB):
+        identity = actor(request, db)
+        require_root(identity)
+        return mutate(request, db, identity, body,
+                      lambda: repositories.change_credential(hub, db, identity, project_id, repository_id, body, request.state.request_id))
+
+    @app.post("/api/projects/{project_id}/repositories/{repository_id}/git-ticket")
+    def repository_git_ticket(project_id: uuid.UUID, repository_id: uuid.UUID, body: S.GitTicketInput, request: Request, db: DB):
+        identity = actor(request, db)
+        hub.project(db, identity, project_id)
+        rate_limit(security_sessions, hub.secret, f"git-ticket:{identity.user.id}", 60, 60)
+        # Tickets are deliberately not persisted in plaintext idempotency results.
+        return git_gateway.issue(hub, db, identity, project_id, repository_id, body, request.state.request_id)
+
+    @app.get("/api/admin/integrations/github")
+    def github_app_configuration(request: Request, db: DB):
+        require_root(actor(request, db))
+        return github_credentials.app_view(hub, db)
+
+    @app.put("/api/admin/integrations/github")
+    def configure_github_app(body: S.GitHubAppInput, request: Request, db: DB):
+        identity = actor(request, db)
+        require_root(identity)
+        return mutate(request, db, identity, body,
+                      lambda: github_credentials.configure_app(hub, db, identity, body, request.state.request_id))
 
     @app.put("/api/admin/projects/{project_id}/administrators")
     def assign_admin(project_id: uuid.UUID, body: S.AssignAdmin, request: Request, db: DB):
@@ -748,10 +811,10 @@ def create_app(
 
     @app.get("/api/projects/{project_id}/tasks")
     def task_list(project_id: uuid.UUID, request: Request, db: DB,
-                  offset: int = Query(0, ge=0, le=100000), limit: int = Query(50, ge=1, le=100)):
+                  offset: int = Query(0, ge=0, le=100000), limit: int = Query(50, ge=1, le=100), repository_id: uuid.UUID | None = None):
         identity = actor(request, db)
         hub.project(db, identity, project_id)
-        return tasks.page(db, project_id, offset, limit)
+        return tasks.page(db, project_id, offset, limit, repository_id=repository_id)
 
     @app.get("/api/projects/{project_id}/policy")
     def project_policy(project_id: uuid.UUID, request: Request, db: DB):
@@ -874,12 +937,14 @@ def create_app(
         identity = actor(request, db)
         manager = bool(db.scalar(text("SELECT hub.can_manage_documents(:p)"), {"p": project_id}))
         hub.project(db, identity, project_id, "documents:manage" if manager else "documents:read")
+        repositories.source_access(hub, db, identity, project_id, manage=manager)
         return documents.repository_view(db, project_id, manager=manager)
 
     @app.put("/api/projects/{project_id}/documents/repository")
     def configure_documents(project_id: uuid.UUID, body: S.DocumentRepositoryInput, request: Request, db: DB):
         identity = actor(request, db)
         documents.require_manager(hub, db, identity, project_id)
+        repositories.source_access(hub, db, identity, project_id, manage=True)
         return mutate(
             request,
             db,
@@ -892,6 +957,7 @@ def create_app(
     def sync_documents(project_id: uuid.UUID, body: S.Empty, request: Request, db: DB):
         identity = actor(request, db)
         documents.require_manager(hub, db, identity, project_id)
+        repositories.source_access(hub, db, identity, project_id, manage=True)
         rate_limit(security_sessions, hub.secret, f"documents-sync:{project_id}", 30, 3600)
         return mutate(
             request,
@@ -914,6 +980,49 @@ def create_app(
         hub.project(db, identity, project_id, "documents:read")
         rate_limit(security_sessions, hub.secret, f"documents-read:{identity.user.id}", 180, 60)
         return documents.read(db, project_id, body)
+
+    @app.get("/api/projects/{project_id}/documents/sources")
+    def list_document_sources(project_id: uuid.UUID, request: Request, db: DB):
+        hub.project(db, actor(request, db), project_id, "documents:read")
+        return repositories.document_sources(db, project_id)
+
+    @app.get("/api/projects/{project_id}/repositories/{repository_id}/documents/repository")
+    def repository_document_index(project_id: uuid.UUID, repository_id: uuid.UUID, request: Request, db: DB):
+        identity = actor(request, db)
+        manager = bool(db.scalar(text("SELECT hub.can_manage_documents(:p)"), {"p": project_id})) and repositories.permitted(db, project_id, repository_id, "code:read")
+        repositories.source_access(hub, db, identity, project_id, repository_id, manage=manager)
+        return documents.repository_view(db, project_id, manager=manager, repository_id=repository_id)
+
+    @app.put("/api/projects/{project_id}/repositories/{repository_id}/documents/repository")
+    def configure_repository_documents(project_id: uuid.UUID, repository_id: uuid.UUID, body: S.DocumentRepositoryInput, request: Request, db: DB):
+        identity = actor(request, db)
+        documents.require_manager(hub, db, identity, project_id)
+        repositories.source_access(hub, db, identity, project_id, repository_id, manage=True)
+        return mutate(request, db, identity, body, lambda: documents.configure(
+            hub, db, identity, project_id, body, request.state.request_id, repository_id=repository_id))
+
+    @app.post("/api/projects/{project_id}/repositories/{repository_id}/documents/syncs")
+    def sync_repository_documents(project_id: uuid.UUID, repository_id: uuid.UUID, body: S.Empty, request: Request, db: DB):
+        identity = actor(request, db)
+        documents.require_manager(hub, db, identity, project_id)
+        repositories.source_access(hub, db, identity, project_id, repository_id, manage=True)
+        rate_limit(security_sessions, hub.secret, f"documents-sync:{project_id}", 30, 3600)
+        return mutate(request, db, identity, body, lambda: documents.enqueue(
+            hub, db, identity, project_id, request.state.request_id, repository_id=repository_id))
+
+    @app.post("/api/projects/{project_id}/repositories/{repository_id}/documents/search")
+    def search_repository_documents(project_id: uuid.UUID, repository_id: uuid.UUID, body: S.DocumentSearch, request: Request, db: DB):
+        identity = actor(request, db)
+        repositories.source_access(hub, db, identity, project_id, repository_id)
+        rate_limit(security_sessions, hub.secret, f"documents-read:{identity.user.id}", 180, 60)
+        return documents.search(db, project_id, body, repository_id=repository_id)
+
+    @app.post("/api/projects/{project_id}/repositories/{repository_id}/documents/read")
+    def read_repository_document(project_id: uuid.UUID, repository_id: uuid.UUID, body: S.DocumentRead, request: Request, db: DB):
+        identity = actor(request, db)
+        repositories.source_access(hub, db, identity, project_id, repository_id)
+        rate_limit(security_sessions, hub.secret, f"documents-read:{identity.user.id}", 180, 60)
+        return documents.read(db, project_id, body, repository_id=repository_id)
 
     @app.post("/api/projects/{project_id}/progress")
     def report_progress(project_id: uuid.UUID, body: S.ProgressReport, request: Request, db: DB):
@@ -944,17 +1053,20 @@ def create_app(
         def batch(cursor):
             with sessions.begin() as db:
                 hub.lock_session(db, value, thumb, project_ids=[project_id], exclusive=False)
-                hub.project(db, hub.authenticate(db, value, thumb), project_id)
-                return progress.page(db, project_id, cursor, 100)
+                project = hub.project(db, hub.authenticate(db, value, thumb), project_id)
+                return progress.page(db, project_id, cursor, 100) | {"resource_visibility": repositories.visibility(db, project)}
 
         async def events():
-            cursor, last_ping, ready = after, 0, False
+            cursor, last_ping, ready, visibility = after, 0, False, None
             while not await request.is_disconnected():
                 try:
                     result = await asyncio.to_thread(batch, cursor)
                 except HubError as exc:
                     yield "event: access_status\ndata: " + json.dumps({"code": exc.code}) + "\n\n"
                     return
+                if result["resource_visibility"] != visibility:
+                    visibility = result["resource_visibility"]
+                    yield "event: resource_visibility\ndata: " + json.dumps(visibility) + "\n\n"
                 for entry in result["items"]:
                     yield f"id: {entry['sequence']}\nevent: progress\ndata: {json.dumps(entry)}\n\n"
                     cursor = int(entry["sequence"])
@@ -995,6 +1107,7 @@ def create_app(
         return email_change_complete(hub, db, identity, body, request.state.request_id)
 
     static = Path(__file__).parent / "static"
+    git_gateway.install(app, hub, sessions, db_dependency)
     app.mount("/assets", StaticFiles(directory=static), name="assets")
 
     @app.get("/", include_in_schema=False)

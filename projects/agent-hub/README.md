@@ -1,6 +1,6 @@
 # Agent Hub：身份与项目基础服务
 
-> 2026-11-08｜0.5.0 / 迁移 0008：版本化项目规则、开工上下文确认、代码任务文件清单与摘要日志索引，配套 Windows 0.7.0。验证与边界见[本轮整改](../../设计文档/22_规则执行与本机检查点整改.md)。
+> 2026-11-09｜0.6.0 / 迁移 0009：项目组的独立仓库、审批到具体仓库的资源权限、多文档源及受管 Git 代理，配套 Windows 0.8.0。验证与边界见[本轮实施](../../设计文档/23_项目组仓库授权与Git交付.md)。
 
 本服务为多项目 Agent 框架提供统一身份、设备审批、项目授权和协作任务。当前已实现 REST API、中文管理后台、PostgreSQL 迁移、初始化及恢复 CLI、设备签名测试客户端、项目进度与 SSE、版本化 Markdown 索引，以及任务租约和不可覆盖的工作日志。通过 [Electron 桌面端](../agent-hub-desktop/README.md) 提供本机 stdio MCP。桌面有本机加密检查点；远程代码快照、自动记忆和撤权上传卸载仍待接入。文档接入步骤见 [Git 文档索引](../../设计文档/11_Git文档索引与MCP查询.md)。
 
@@ -22,6 +22,8 @@
 - 项目进度追加保存，幂等上报与游标分页；SSE 每两秒重查授权、十秒心跳，撤权或过期后结束流。
 - 同一设备可创建互不撤销的项目会话家族，桌面端可同时使用多个已审批项目。
 - 明确范围的 GitHub Markdown 索引、加密仓库凭证、独立 Worker、提交快照、中文文字片段搜索和全文读取；管理员 `documents:manage`、成员 `documents:read` 均按设备审批。
+- 多仓库项目组：仓库、目标端、来源固定；代码读写与文档读取逐仓库审批。任务、日志、进度继承资源可见性，首次登记仓库后未归类历史仅超管可读。
+- GitHub App 或仓库专用凭证仅服务器持有；两分钟平台票据代理真实 Git HTTPS，每次请求重新验证。写入绑定有效任务、当前规则与日志提交，只开放任务独有分支。
 
 管理员资格与项目管理员角色分别记录：超管先创建具备管理员资格的账号，待其验证邮箱，再分配项目。分配角色后，设备的项目 grant 仍需签发。
 
@@ -56,7 +58,10 @@
 | `src/agent_hub/progress.py` | 持久进度与游标查询 |
 | `src/agent_hub/documents.py` | 文档配置、权限、快照引用及查询 |
 | `src/agent_hub/document_worker.py` | GitHub 读取、范围校验和作业领取/发布 |
-| `migrations/versions/` | 六份可执行数据库迁移 |
+| `src/agent_hub/repositories.py` | 仓库登记、权限与多源文档范围 |
+| `src/agent_hub/git_gateway.py` | Git 代理、短期票据与任务分支限制 |
+| `src/agent_hub/github_credentials.py` | 加密 App 配置及指定仓库安装令牌 |
+| `migrations/versions/` | 九份可执行数据库迁移 |
 | `tests/` | 真实 PostgreSQL 上的权限与会话测试 |
 | `deploy/compose.server-db.yaml` | 已在指定服务器运行的数据库配置 |
 | `deploy/compose.server-app.yaml` | 已部署的应用配置，复用服务器数据库 |
@@ -72,14 +77,14 @@
 |---|---|
 | 部署目录 | `/opt/agent-hub/database` |
 | 容器 | `agent-hub-postgres`，PostgreSQL 18.6 |
-| 数据库 | `agent_hub`，已迁移至 `0006` |
+| 数据库 | `agent_hub`，发行版对应迁移 `0009` |
 | 数据卷 | `agent-hub-postgres-data` |
 | 私有网络 | `agent-hub-database`，内部主机名 `postgres:5432` |
 | 运行/迁移角色 | `hub_runtime` / `hub_owner` |
 | 文档 Worker | `hub_document_worker` 登录，继承 `hub_indexer`；与 API 角色分开 |
 | 凭证 | 服务器 `.env`，root 所有，权限 `0600` |
 | 对外端口 | 数据库不发布宿主机或公网端口 |
-| 应用目录 | `/opt/agent-hub/application/current`，指向 `releases/0.3.2` |
+| 应用目录 | `/opt/agent-hub/application/current`，发行版目录 `releases/0.6.0` |
 | 应用容器 | `agent-hub-app-api-1`，仅发布服务器 `127.0.0.1:8765` |
 | 公网入口 | `https://47.109.23.86:18180`，容器 `agent-hub-edge` |
 | 入口与证书状态 | `/opt/agent-hub/edge`；每六小时检查证书续期 |

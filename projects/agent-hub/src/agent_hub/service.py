@@ -34,6 +34,7 @@ ADMIN_CAPS = MEMBER_CAPS | {
     "grants:request",
     "audit:read",
     "documents:manage",
+    "repositories:manage",
 }
 
 
@@ -139,11 +140,12 @@ class Hub:
             coordinate(db, user_ids=[user_id], project_ids=[project_id])
             db.expire_all()
 
-    def audit(self, db, actor_id, action, object_id, request_id, project_id=None, **details):
+    def audit(self, db, actor_id, action, object_id, request_id, project_id=None, *, repository_id=None, **details):
         db.add(
             Audit(
                 actor_id=actor_id,
                 project_id=project_id,
+                repository_id=repository_id,
                 action=action,
                 object_id=str(object_id),
                 request_id=request_id,
@@ -599,11 +601,14 @@ class Hub:
         ceiling = ADMIN_CAPS if member.role == "administrator" else MEMBER_CAPS
         if not caps <= ceiling or "project:read" not in caps:
             raise HubError("CAPABILITY_NOT_ALLOWED", 422)
+        from .repositories import validate_permissions
+        permissions = validate_permissions(db, body.project_id, body.repository_permissions)
         payload = {
             "project_id": str(body.project_id),
             "user_id": str(user.id),
             "device_id": str(device.id),
             "capabilities": sorted(caps),
+            "repository_permissions": permissions,
             "duration_days": body.duration_days,
             "membership_epoch": member.epoch,
             "user_epoch": user.auth_epoch,
@@ -662,6 +667,8 @@ class Hub:
                     or not set(p["capabilities"]) <= ceiling
                 ):
                     raise HubError("APPROVAL_SUBJECT_CHANGED", 409)
+                from .repositories import validate_permissions
+                permissions = validate_permissions(db, project.id, p.get("repository_permissions", []))
                 self.revoke_grants(db, project_id=project.id, user_id=user.id, device_id=device.id)
                 grant = Grant(
                     project_id=project.id,
@@ -669,6 +676,7 @@ class Hub:
                     device_id=device.id,
                     approval_id=a.id,
                     capabilities=p["capabilities"],
+                    repository_permissions=permissions,
                     membership_epoch=member.epoch,
                     user_epoch=user.auth_epoch,
                     device_epoch=device.epoch,

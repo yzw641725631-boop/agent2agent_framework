@@ -9,6 +9,8 @@ RUN pip install --no-cache-dir --no-deps --no-build-isolation . \
     && useradd --uid 10001 --create-home hub
 
 FROM base AS tests
+RUN apt-get update && apt-get install -y --no-install-recommends git \
+    && rm -rf /var/lib/apt/lists/*
 COPY tests ./tests
 USER 10001
 CMD ["python", "-m", "pytest", "-q", "-p", "no:cacheprovider"]

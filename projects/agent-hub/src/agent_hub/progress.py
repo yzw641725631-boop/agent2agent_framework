@@ -3,12 +3,14 @@
 from sqlalchemy import select
 
 from .models import ProjectProgress
+from .security import HubError
 
 
 def view(entry):
     return {
         "sequence": str(entry.sequence),
         "project_id": str(entry.project_id),
+        "repository_id": str(entry.repository_id) if entry.repository_id else None,
         "author_id": str(entry.author_id),
         "device_id": str(entry.device_id),
         "status": entry.status,
@@ -25,14 +27,20 @@ def view(entry):
 
 
 def report(hub, db, actor, project_id, body, request_id):
-    hub.project(db, actor, project_id, "tasks:write")
+    project = hub.project(db, actor, project_id, "tasks:write")
+    if body.repository_id:
+        from .repositories import require
+        require(db, project_id, body.repository_id, "code:read")
+    elif project.repository_mode == "scoped":
+        raise HubError("PROGRESS_REPOSITORY_REQUIRED", 422)
     entry = ProjectProgress(
         project_id=project_id, author_id=actor.user.id, device_id=actor.device.id,
         **body.model_dump(mode="python"),
     )
     db.add(entry)
     db.flush()
-    hub.audit(db, actor.user.id, "progress.reported", entry.sequence, request_id, project_id)
+    hub.audit(db, actor.user.id, "progress.reported", entry.sequence, request_id, project_id,
+              repository_id=entry.repository_id)
     return view(entry)
 
 

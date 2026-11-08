@@ -64,6 +64,10 @@ class WorkRuntime{
   }
   async prepare(binding,args){
     const c=this.c,p=c.profile,remote=c.remote;
+    if(c.repositories){
+      const {task}=await c.invokeProjectRemote(binding,'hub_get_task',{task_id:args.task_id});
+      await c.repositories.verifyTaskBinding(binding,task);c.ensureCurrent(p,remote);
+    }
     const previous=this.runs()[args.run_id];
     if(previous)this.run(binding,args);
     const baseline=previous?{workspace:previous.workspace,base_commit:previous.base_commit}:await observer.initialize(binding.workspace);

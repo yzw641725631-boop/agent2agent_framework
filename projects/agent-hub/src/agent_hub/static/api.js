@@ -5,6 +5,12 @@ const encode = value => btoa(String.fromCharCode(...new Uint8Array(value)))
 const json = value => encode(encoder.encode(JSON.stringify(value)));
 
 export const messages = {
+  TASK_REPOSITORY_REQUIRED:'请选择任务所属的已接入仓库。',TASK_REPOSITORY_MISMATCH:'任务所属仓库或目标端不匹配。',
+  DOCUMENT_SOURCE_NOT_ACCESSIBLE:'当前没有此仓库的资料权限。',DOCUMENT_SOURCE_REPOSITORY_MISMATCH:'文档源须使用登记的仓库、分支和服务器凭证。',
+  PROGRESS_REPOSITORY_REQUIRED:'请选择本次进展所属的仓库。',REPOSITORY_ALREADY_REGISTERED:'仓库地址或标识已经接入。',
+  REPOSITORY_VERSION_CONFLICT:'仓库配置已更新，请刷新后重试。',DUPLICATE_REPOSITORY_PERMISSION:'同一仓库不能重复填写授权。',
+  GITHUB_APP_KEY_REQUIRED:'请填写 GitHub App 私钥。',GITHUB_APP_KEY_INVALID:'私钥格式不正确，请填写该 App 的 RSA PEM 私钥。',
+  GITHUB_APP_NOT_CONFIGURED:'请先在后台配置 GitHub App。',GITHUB_APP_AUTHORIZATION_FAILED:'GitHub App 授权失败，请核对 App、安装 ID 及仓库授权。',
   WORK_CONTEXT_REQUIRED:'请在项目 MCP 准备开工规则。', WORK_CONTEXT_ACK_REQUIRED:'请读取并确认全部当前规则。',
   WORK_CONTEXT_STALE:'规则或任务范围已更新，请重新准备。', WORK_CONTEXT_ACK_MISMATCH:'规则哈希或确认列表不匹配。',
   WORK_CHANGE_EVIDENCE_REQUIRED:'代码任务需要桌面端采集实际改动。', WORK_EVIDENCE_CHANGED:'检查点已变化，请保存最新日志。',

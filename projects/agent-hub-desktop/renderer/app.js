@@ -144,13 +144,40 @@ function bindings(limit=100){
   const items=state.bindings.slice(0,limit);
   if(!items.length)return empty('连接第一个项目','选择服务端项目和本地工作目录，再将生成的 MCP 配置加入 harness。');
   return el('div',{},items.map(binding=>el('article',{class:'binding'},
-    el('div',{class:'row between'},text('h3',binding.projectName),pill(binding.status)),
+    el('div',{class:'row between'},text('h3',binding.projectName+(binding.repositoryName?' / '+binding.repositoryName:' / 项目组')),pill(binding.status)),
     text('div',binding.workspace,'meta mono'),binding.message?text('p',binding.message,'warning'):null,
-    el('div',{class:'row'},button('MCP 配置',()=>configDialog(binding)),button('停用连接',()=>{
+    el('div',{class:'row'},button('MCP 配置',()=>configDialog(binding)),
+      binding.repositoryId ? button('获取更新',async()=>{
+        const result=await invoke('fetchRepository',{bindingId:binding.id});toast('已获取更新 '+result.fetched_commit.slice(0,8)+'，当前代码未合并。',true);
+      }) : button('组装仓库',()=>assembleDialog(binding)),button('停用连接',()=>{
       openDialog(text('h2','停用这个 MCP 连接'),text('p',binding.projectName),
         text('p','此连接会立即失效。工作文件和已经写入的 .mcp.json 会保留，你可以在 harness 配置里移除对应项。'),
         dialogActions(button('确认停用',async()=>{await invoke('disconnect',{id:binding.id});closeDialog();await update();},'danger')));
     },'quiet')))));
+}
+async function assembleDialog(binding){
+  const registry=await invoke('repositoryList',{bindingId:binding.id});
+  const repositories=registry.items.filter(repo=>repo.status==='active' && repo.capabilities.includes('code:read'));
+  if(!repositories.length)throw new Error('当前没有获准的代码仓库，请先在后台接入仓库并批准权限。');
+  const picks=repositories.map(repo=>({repo,input:el('input',{type:'checkbox',checked:true})}));
+  const harness=el('select',{},[['codex','Codex'],['claude','Claude Code'],['cursor','Cursor']].map(([value,label])=>el('option',{value},label)));
+  const progress=text('p','','note');
+  const operationId=crypto.randomUUID();
+  openDialog(text('h2','组装项目组仓库'),text('p',binding.workspace,'mono'),
+    text('p','每个选中仓库会拉取到独立子目录，并配置固定的仓库 MCP 连接。同名已有目录会保留。'),
+    el('div',{class:'fields'},...picks.map(({repo,input})=>field(repo.name+' · '+repo.platform,input)),field('接入开发工具',harness)),progress,
+    dialogActions(button('拉取并接入',async()=>{
+      const repositoryIds=picks.filter(item=>item.input.checked).map(item=>item.repo.id);
+      if(!repositoryIds.length)throw new Error('请至少选择一个仓库。');
+      progress.textContent='正在验证权限、拉取仓库和配置连接，请保持桌面端运行…';
+      try{
+        const result=await invoke('assembleRepositories',{bindingId:binding.id,repositoryIds,harness:harness.value,operationId});
+        progress.textContent='';await update();
+        openDialog(text('h2','项目组已组装'),...result.items.map(item=>el('div',{},text('h3',item.repository_name),text('p',item.workspace,'mono'),
+          item.connection_installation==='manual-tracked-configuration'?text('p','仓库内已有受版本管理的开发工具配置，已保留原文。请从该仓库连接复制 MCP 配置并手动接入。','warning'):null)),
+          text('p','在相应仓库目录打开开发工具，重新加载 MCP 并完成信任确认，然后认领该仓库的任务。'),dialogActions());
+      }catch(error){progress.textContent=error.message;throw error;}
+    },'primary')));
 }
 function overview(){
   const active=state.bindings.filter(b=>b.status==='active').length;

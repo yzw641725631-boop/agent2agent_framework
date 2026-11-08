@@ -8,6 +8,7 @@ const names = {active:'正常', approved:'已批准', pending:'待审批', pendi
 const caps = {'project:read':'项目资料', 'documents:read':'读取文档', 'documents:propose':'文档提案',
   'tasks:claim':'认领任务', 'tasks:write':'提交进展', 'tasks:publish':'发布任务', 'documents:manage':'管理文档源',
   'tasks:review':'代码评审', 'tasks:test':'测试确认', 'logs:read':'读取共享日志',
+  'repositories:manage':'管理仓库接入',
   'members:manage':'成员管理', 'grants:request':'授权申请', 'audit:read':'项目审计'};
 const osDefault = /Mac/i.test(navigator.platform) ? 'macos' : 'windows';
 const messagesForDocument = code => messages[code] || code;
@@ -240,7 +241,7 @@ class Console {
   }
   shell() {
     modal.close();
-    const navigation = [['overview','工作台'],['projects','项目管理'],['tasks','任务与日志'],['documents','项目文档'],...(this.isRoot ? [['users','人员管理'],['devices','设备管理'],['approvals','授权审批'],['settings','系统设置']] : [['devices','我的设备']]),['audit','操作记录']];
+    const navigation = [['overview','工作台'],['projects','项目组与成员'],['repositories','仓库与资料'],['tasks','任务与日志'],['documents','项目文档'],...(this.isRoot ? [['users','人员管理'],['devices','设备管理'],['approvals','授权审批'],['settings','系统设置']] : [['devices','我的设备']]),['audit','操作记录']];
     const nav = h('nav',{class:'nav','aria-label':'主要导航'},navigation.map(([key,label]) => button(label,async () => {
       this.currentView = key; this.offset = 0; await this.renderView();
     })));
@@ -298,7 +299,7 @@ class Console {
           h('div',{},h('span',{},'登录名'),h('strong',{},this.user.login)),h('div',{},h('span',{},'账号角色'),h('span',{},this.isRoot ? '超级管理员' : '项目成员 / 管理员')),
           h('div',{},h('span',{},'邮箱'),h('span',{},this.user.email || '未绑定')),h('div',{},h('span',{},'邮箱验证'),pill(this.user.email_verified ? 'approved' : 'pending_email')),
           h('div',{},h('span',{},'当前设备'),h('span',{class:'mono'},short(this.device)))))),
-      h('div',{class:'help-block'},h('strong',{},'当前开放：'), ' 人员、项目、设备审批、授权、发信设置和 GitHub 文档检索。任务交接与工作上传卸载将在后续接入。')];
+      h('div',{class:'help-block'},h('strong',{},'开始协作：'), ' 创建项目组，接入独立仓库，为成员设备签发代码与资料权限，再拆解任务。工作记录可共享；远程代码恢复与离场卸载仍待后续接入。')];
   }
   can(cap, projectId = this.project?.id) {
     return this.isRoot || this.grants.some(g => g.project_id === projectId && g.capabilities.includes(cap));
@@ -342,17 +343,82 @@ class Console {
     await refresh();
     return [title,status,list,feed,h('p',{class:'help-block'},'发布确认是平台流程记录。Git 提交、推送、合并与部署需要各自的真实证据；工作日志尚不包含代码备份。')];
   }
-  createTask(parentId = null) {
+  async createTask(parentId = null) {
     const projectId = this.project.id;
+    const registry = await this.api('GET',`/api/projects/${projectId}/repositories`);
+    const repositories = registry.items.filter(repo => repo.status === 'active' && repo.capabilities.includes('code:read'));
+    const scoped = registry.repository_mode === 'scoped';
+    if (scoped && !repositories.length) throw new Error('请先由超级管理员批准要开发的仓库权限。');
+    if (this.project?.id !== projectId) return;
     const form = h('form',{},h('div',{class:'fields single'},field('title','任务名称',{required:true,maxlength:200}),
       h('label',{},'需求描述',h('textarea',{name:'description',required:true,maxlength:8000,rows:3})),
       h('label',{},'验收标准',h('textarea',{name:'acceptance',required:true,maxlength:8000,rows:3})),
-      field('repository','仓库标识',{required:true,maxlength:200}),field('platform','目标端',{required:true,maxlength:80,placeholder:'例如 web'}),
+      scoped ? field('repository_id','任务所属仓库',{required:true,items:repositories.map(repo => [repo.id,`${repo.name} · ${repo.platform}`])}) :
+        field('repository','仓库标识',{required:true,maxlength:200}),
+      !scoped && field('platform','目标端',{required:true,maxlength:80,placeholder:'例如 web'}),
       field('execution_mode','记录类型',{items:[['observed','代码任务：须确认规则并采集真实改动'],['declaration','人工资料记录：不提供代码证据保证']]}),
       h('label',{},'允许修改的相对目录或文件（每行一项）',h('textarea',{name:'paths',required:true,rows:3,placeholder:'src\ntests'}))));
-    dialog(parentId ? '拆解子任务' : '创建任务','任务创建后，依次记录需求、设计和可行性确认，再开放认领。范围声明不代替 Git 仓库权限。',form,'创建草稿',data =>
-      this.api('POST',`/api/projects/${projectId}/tasks`,{title:data.title,description:data.description,acceptance:data.acceptance,
-        parent_id:parentId,execution_mode:data.execution_mode,scope:{repository:data.repository,platform:data.platform,paths:data.paths.split(/\r?\n/).map(p => p.trim()).filter(Boolean)}}));
+    dialog(parentId ? '拆解子任务' : '创建任务','任务绑定具体仓库；成员还须具有该仓库的开发权限才能认领。创建后依次完成需求、设计和可行性确认。',form,'创建草稿',data => {
+      const repo = repositories.find(repo => repo.id === data.repository_id);
+      return this.api('POST',`/api/projects/${projectId}/tasks`,{title:data.title,description:data.description,acceptance:data.acceptance,
+        repository_id:repo?.id || null,parent_id:parentId,execution_mode:data.execution_mode,
+        scope:{repository:repo?.slug || data.repository,platform:repo?.platform || data.platform,
+          paths:data.paths.split(/\r?\n/).map(p => p.trim()).filter(Boolean)}});
+    });
+  }
+
+  async repositories() {
+    const title = this.heading('仓库与资料','一个项目组可以接入 Web、PC、API 和共享资料等独立仓库。成员只获得明确批准的资源。');
+    if (!this.project) return [title,h('section',{class:'card empty'},'请先选择项目组。')];
+    const projectId = this.project.id, base = `/api/projects/${projectId}/repositories`;
+    const data = await this.api('GET',base);
+    const permissionNames = {'code:read':'读取代码','code:write':'开发代码','documents:read':'读取文档'};
+    const parts = [title,table('已接入仓库',['仓库','目标端','本人权限','状态','操作'],data.items.map(repo => [
+      textPair(repo.name,repo.repository_url),repo.platform,
+      repo.capabilities.map(cap => permissionNames[cap]).join('、') || '尚未获得代码或资料权限',
+      repo.status === 'active' ? '可用' : '已归档',this.isRoot ? h('div',{class:'row-actions'},button(repo.status === 'active' ? '归档' : '恢复',() => {
+        const status = repo.status === 'active' ? 'archived' : 'active';
+        dialog(status === 'archived' ? '归档仓库' : '恢复仓库','归档会停止本平台的仓库访问。恢复后仍在有效期内的原授权可以再次使用。',h('form'),
+          '确认',() => this.api('POST',`${base}/${repo.id}/status`,{expected_version:repo.version,status}));
+      },'small'),repo.auth_mode === 'token' && repo.status === 'active' && button('更换仓库凭证',() => {
+        const form = h('form',{},field('token','新的仓库专用凭证',{type:'password',required:true,maxlength:2048,autocomplete:'new-password'}));
+        dialog('更换仓库凭证','新凭证加密保存在服务器。成员下次访问会使用新凭证，已有代码不会被覆盖。',form,'保存新凭证',data =>
+          this.api('PUT',`${base}/${repo.id}/credential`,{expected_version:repo.version,token:data.token}));
+      },'small')) : '—'
+    ]))];
+    if (data.can_manage) parts.push(h('section',{class:'card'},h('h2',{},'接入独立仓库'),
+      h('p',{},'接入后按仓库审批代码和文档权限。原有未归类记录继续保留，由超级管理员查看。'),
+      button('接入仓库',() => {
+        const form = h('form',{},h('div',{class:'fields single'},
+          field('slug','仓库标识',{required:true,pattern:'[a-z][a-z0-9\\-]{1,79}',placeholder:'web 或 api'}),
+          field('name','显示名称',{required:true,maxlength:200}),
+          field('platform','目标端',{items:[['web','Web'],['pc','PC'],['api','API'],['mobile','移动端'],['shared','共享资料'],['other','其他']]}),
+          field('repository_url','GitHub 仓库地址',{type:'url',required:true,placeholder:'https://github.com/组织/仓库'}),
+          field('branch','分支',{required:true,value:'main'}),
+          field('auth_mode','服务器访问方式',{items:[['github_app','GitHub App'],['token','该仓库的专用凭证'],['public','公共只读仓库']]}),
+          field('installation_id','GitHub App 安装 ID（使用 App 时填写）',{type:'number',min:1}),
+          field('token','仓库专用凭证（选择专用凭证时填写）',{type:'password',autocomplete:'new-password',maxlength:2048,
+            hint:'仅授予所需仓库的权限；凭证加密保存在服务器，成员和 Agent 不会获得它。'})));
+        dialog('接入仓库','仓库地址和标识创建后固定。代码权限、文档权限仍需单独审批。',form,'接入',data => {
+          const body = {...data};
+          if (body.auth_mode !== 'token') delete body.token;
+          if (body.auth_mode === 'github_app') body.installation_id = Number(body.installation_id); else delete body.installation_id;
+          return this.api('POST',base,body);
+        });
+      },'primary')));
+    if (this.isRoot) {
+      const app = await this.api('GET','/api/admin/integrations/github');
+      parts.push(h('section',{class:'card'},h('h2',{},'GitHub App'),
+        h('p',{},app.private_key_set ? `已配置 App ${app.app_id}。请在 GitHub 上将 App 安装到允许接入的仓库。` : '先创建并安装 GitHub App，再在这里保存 App ID 与私钥。'),
+        button('配置 GitHub App',() => {
+          const form = h('form',{},field('app_id','App ID',{required:true,type:'number',min:1,value:app.app_id || ''}),
+            h('label',{},'PEM 私钥（已配置时可留空保留）',h('textarea',{name:'private_key',rows:6,maxlength:16384,autocomplete:'off'})));
+          dialog('GitHub App 配置','私钥仅保存在服务器，用于取得指定仓库的短期访问凭证。',form,'保存',data =>
+            this.api('PUT','/api/admin/integrations/github',{expected_version:app.version,app_id:Number(data.app_id),
+              ...(data.private_key.trim() ? {private_key:data.private_key.trim()} : {})}));
+        })));
+    }
+    return parts;
   }
   async openPolicy(projectId) {
     const policy = await this.api('GET',`/api/projects/${projectId}/policy`);
@@ -445,8 +511,31 @@ class Console {
   async documents() {
     const title = this.heading('项目文档','从指定 GitHub 分支建立 Markdown 索引；读取结果带文件路径和提交号。',[button('刷新状态',() => this.renderView())]);
     if (!this.project) return [title,h('section',{class:'card empty'},'请先选择项目；项目只能由超级管理员创建。')];
-    const projectId = this.project.id, base = `/api/projects/${projectId}/documents`;
-    const data = await this.api('GET',`${base}/repository`), parts = [title];
+    const revision = this.renderVersion;
+    const projectId = this.project.id, registry = await this.api('GET',`/api/projects/${projectId}/repositories`);
+    const scoped = registry.repository_mode === 'scoped';
+    const accessible = registry.items.filter(repo => repo.status === 'active' &&
+      (repo.capabilities.includes('documents:read') || this.can('documents:manage') && repo.capabilities.includes('code:read')));
+    const parts = [title];
+    let historical = false;
+    if (scoped && this.isRoot) {
+      const sources = await this.api('GET',`/api/projects/${projectId}/documents/sources`);
+      historical = sources.items.some(source => !source.repository_id);
+    }
+    if (scoped && !accessible.length && !historical) return [...parts,h('section',{class:'card empty'},'当前没有获准的文档仓库，请联系超级管理员审批资料权限。')];
+    const previous = this.documentSource?.projectId === projectId ? this.documentSource.repositoryId : null;
+    const selected = scoped ? (historical && previous === '' ? null : accessible.find(repo => repo.id === previous) || accessible[0]) : null;
+    if (scoped) {
+      this.documentSource = {projectId,repositoryId:selected?.id || ''};
+      const picker = field('document_source','文档所属仓库',{value:selected?.id || '',items:[...accessible.map(repo => [repo.id,repo.name]),
+        ...(historical ? [['','历史文档源（仅超管）']] : [])]});
+      picker.querySelector('select').addEventListener('change',event => {
+        this.documentSource = {projectId,repositoryId:event.target.value}; this.renderView().catch(error => this.report(error));
+      });
+      parts.push(h('section',{class:'card'},picker));
+    }
+    const base = selected ? `/api/projects/${projectId}/repositories/${selected.id}/documents` : `/api/projects/${projectId}/documents`;
+    const data = await this.api('GET',`${base}/repository`);
     const status = data.latest_sync;
     const states = {queued:'排队中',running:'同步中',succeeded:'同步成功',failed:'同步失败',cancelled:'已取消'};
     parts.push(h('section',{class:'card'},h('h2',{},'当前索引'),
@@ -459,12 +548,12 @@ class Console {
       },'primary')));
     if (data.can_manage) {
       const form = h('form',{},h('div',{class:'fields single'},
-        field('repository_url','GitHub 仓库地址',{type:'url',required:true,value:data.repository_url || '',placeholder:'https://github.com/你的组织/你的仓库'}),
-        field('branch','分支',{required:true,maxlength:200,value:data.branch || 'main'}),
+        field('repository_url','GitHub 仓库地址',{type:'url',required:true,readonly:!!selected,value:data.repository_url || selected?.repository_url || '',placeholder:'https://github.com/你的组织/你的仓库'}),
+        field('branch','分支',{required:true,readonly:!!selected,maxlength:200,value:data.branch || selected?.branch || 'main'}),
         h('label',{class:'full'},'允许索引的目录或 Markdown 文件（每行一项）',h('textarea',{name:'include_paths',required:true,rows:4},(data.include_paths || ['docs','AGENTS.md','install.md']).join('\n'))),
-        field('token','GitHub 只读凭证（公共仓库可留空）',{type:'password',autocomplete:'new-password',maxlength:2048,
+        !selected && field('token','GitHub 只读凭证（公共仓库可留空）',{type:'password',autocomplete:'new-password',maxlength:2048,
           hint:data.token_set ? '已有加密凭证；留空保留。更换仓库时需重新填写凭证或选择清除。' : '私有仓库使用仅授权该仓库 Contents: read 的凭证。'}),
-        field('clear_token','凭证处理',{items:[['keep','保留现有凭证'],['clear','清除凭证，使用公共访问']]})));
+        !selected && field('clear_token','凭证处理',{items:[['keep','保留现有凭证'],['clear','清除凭证，使用公共访问']]})));
       form.append(h('div',{class:'actions'},submit(form,'保存文档源',async values => {
         const body = {expected_version:data.version,repository_url:values.repository_url.trim(),branch:values.branch.trim(),
           include_paths:values.include_paths.split(/\r?\n/).map(p => p.trim()).filter(Boolean),clear_token:values.clear_token === 'clear'};
@@ -480,11 +569,11 @@ class Console {
     const find = async (query,offset=0) => {
       const request = ++requestNumber;
       const result = await this.api('POST',`${base}/search`,{query,offset,limit:20,snapshot_id:data.snapshot_id});
-      if (request !== requestNumber || this.project?.id !== projectId || this.currentView !== 'documents') return;
+      if (request !== requestNumber || this.project?.id !== projectId || this.currentView !== 'documents' || this.renderVersion !== revision) return;
       resultBox.replaceChildren(table('匹配文档',['文档','正文片段','操作'],result.items.map(doc => [textPair(doc.title,doc.path),
         h('p',{class:'document-excerpt'},doc.excerpt),button('读取',async () => {
           const document = await this.api('POST',`${base}/read`,{path:doc.path,snapshot_id:doc.snapshot_id});
-          if (this.project?.id !== projectId || this.currentView !== 'documents') return;
+          if (this.project?.id !== projectId || this.currentView !== 'documents' || this.renderVersion !== revision) return;
           modal.replaceChildren(h('div',{class:'modal-heading'},h('h2',{},document.title),button('关闭',() => modal.close(),'quiet')),
             h('p',{class:'mono'},`${document.path} · ${document.git_commit}`),h('pre',{class:'document-content'},document.content));
           modal.showModal();
@@ -562,6 +651,12 @@ class Console {
       this.allPages('/api/admin/approvals'), this.allPages('/api/admin/users'), this.allPages('/api/admin/devices')
     ]);
     const items = result;
+    const repositoryNames = new Map();
+    await Promise.all([...new Set(items.filter(a => a.kind !== 'device').map(a => a.payload.project_id))].map(async projectId => {
+      const repositories = await this.api('GET',`/api/projects/${projectId}/repositories`);
+      for (const repo of repositories.items) repositoryNames.set(repo.id,repo.name);
+    }));
+    const resourceNames = {'code:read':'读取代码','code:write':'开发代码','documents:read':'读取文档'};
     const details = a => {
       const user = users.find(u => u.id === a.subject_id), requester = users.find(u => u.id === a.requester_id);
       const device = devices.find(d => d.id === a.payload.device_id), project = this.projects.find(p => p.id === a.payload.project_id);
@@ -570,6 +665,9 @@ class Console {
         row('提交人',requester?.login || short(a.requester_id)),row('设备',device ? `${device.name} · ${device.os}` : short(a.payload.device_id)),
         device && row('设备指纹',device.thumbprint),a.kind !== 'device' && [row('项目',project?.name || short(a.payload.project_id)),
           row('授权能力',(a.payload.capabilities || []).map(c => caps[c] || c).join('、')),
+          row('仓库范围',(a.payload.repository_permissions || []).map(permission =>
+            `${repositoryNames.get(permission.repository_id) || permission.repository_id}：${permission.capabilities.map(cap => resourceNames[cap] || cap).join('、')}`)
+            .join('；') || '无代码或仓库资料授权'),
           row('授权期限',`${a.payload.duration_days} 天`)]);
     };
     return [this.heading('授权审批','核对申请的设备、项目与能力，按当前版本批准或拒绝。',[button('刷新申请',() => this.renderView())]),
@@ -635,20 +733,28 @@ class Console {
     const form = h('form',{},h('div',{class:'fields single'},
       field('device_id','成员设备',{items:devices.map(d => [d.id,`${d.login} · ${d.name}`]),required:true}),
       field('duration_days','授权天数',{type:'number',min:1,max:90,value:30,required:true})));
+    const repositories = (await this.api('GET',`/api/projects/${this.project.id}/repositories`)).items.filter(repo => repo.status === 'active');
     const checks = h('div',{class:'capabilities'});
     function updateCapabilities() {
       const device = devices.find(d => d.id === form.elements.device_id.value);
       const member = members.find(m => m.id === device.user_id);
-      checks.replaceChildren(...Object.entries(caps).filter(([cap]) => member.membership_role === 'administrator' || !['tasks:publish','members:manage','grants:request','audit:read'].includes(cap))
+      checks.replaceChildren(...Object.entries(caps).filter(([cap]) => member.membership_role === 'administrator' || !['tasks:publish','members:manage','grants:request','audit:read','documents:manage','repositories:manage'].includes(cap))
         .map(([cap,label]) => h('label',{},h('input',{type:'checkbox',name:'capability',value:cap,checked:cap === 'project:read'}),label)));
     }
     form.append(h('h3',{},'授权能力'),checks); updateCapabilities(); form.elements.device_id.addEventListener('change',updateCapabilities);
+    const repositoryChecks = h('div',{},...repositories.map(repo => h('section',{},h('h4',{},repo.name),
+      h('div',{class:'capabilities'},Object.entries({'code:read':'读取代码','code:write':'开发代码','documents:read':'读取文档'}).map(([cap,label]) =>
+        h('label',{},h('input',{type:'checkbox','data-repository':repo.id,value:cap}),label))))));
+    if (repositories.length) form.append(h('h3',{},'各仓库权限'),h('p',{class:'hint'},'未勾选的仓库不会开放。开发代码需同时勾选读取代码；读取同事日志还需相应代码读取权限。'),repositoryChecks);
     dialog(this.isRoot ? '签发项目授权' : '申请项目授权',this.isRoot ? '授权将绑定选定人员、设备和当前项目。' : '申请提交后需由超级管理员批准；当前不会获得额外权限。',form,
       this.isRoot ? '批准并签发' : '提交申请',data => {
         const device = devices.find(d => d.id === data.device_id);
         return this.api('POST',this.isRoot ? '/api/admin/grants' : '/api/grant-requests',{
           project_id:this.project.id,user_id:device.user_id,device_id:device.id,duration_days:Number(data.duration_days),
-          capabilities:[...checks.querySelectorAll('input:checked')].map(c => c.value)});
+          capabilities:[...checks.querySelectorAll('input:checked')].map(c => c.value),
+          repository_permissions:repositories.map(repo => ({repository_id:repo.id,
+            capabilities:[...repositoryChecks.querySelectorAll('input:checked')].filter(c => c.dataset.repository === repo.id).map(c => c.value)}))
+            .filter(permission => permission.capabilities.length)});
       });
   }
   changeEmail() {

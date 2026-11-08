@@ -22,4 +22,4 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/install-windows.
 
 登录另一个账号时，原安装连接不会自动获得新账号权限。在 PC 的“桌面与消息推送 → Agent 一键安装连接”重新授权后，再运行安装入口更新本机配置；旧连接 ID 会失效。
 
-安装成功仅表示客户端、Skill 和 MCP 已接入。完整项目组、多仓库组装和原 install 的全部角色文档并未随客户端安装自动部署。
+安装成功仅表示客户端、Skill 和 MCP 已接入。提供仓库工具的版本可按[项目组与仓库](repositories.md)继续组装获准代码；原 install 的完整角色文档、长期记忆和调度不会随安装客户端自动部署。

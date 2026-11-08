@@ -1,0 +1,141 @@
+{
+  "date": "2026-11-09",
+  "scope": "Project groups, per-repository grants, authorized assembly and task-branch Git delivery",
+  "server": {
+    "version": "0.6.0",
+    "migration": "0009",
+    "public_health_verified": true,
+    "tests_passed": 104,
+    "tests_database": "isolated hub_test on the designated server",
+    "image_sha256": "1db2a67aef09ba264f995cea0d21ca83377e596b041893a4fed9b5bddf2425d4",
+    "tested_source_archive_sha256": "6d1e7c5bf4032de42ca4c98b559eb571c7a59b1dae9762e3b94e1abdf7b3c80b",
+    "current_release": "/opt/agent-hub/application/releases/0.6.0",
+    "pre_migration_backup": "/opt/agent-hub/database/backups/agent_hub_before_repositories_060_20261108T162001Z.dump",
+    "backup_catalog_readable": true,
+    "counts_preserved": {
+      "users": 1,
+      "devices": 4,
+      "projects": 0,
+      "settings": 1
+    },
+    "production_repositories": 0,
+    "repository_rls_verified": true,
+    "no_local_postgresql_or_docker_installed": true
+  },
+  "desktop": {
+    "version": "0.8.0",
+    "tests_passed": 83,
+    "published": true,
+    "metadata_version": 8,
+    "manifest_signature": "Ed25519",
+    "metadata_issued_at": "2026-11-08T16:18:14.944Z",
+    "metadata_expires_at": "2026-12-08T16:18:14.944Z",
+    "published_feed_signature_and_freshness_verified": true,
+    "installer": {
+      "url": "https://47.109.23.86:18180/desktop-updates/win-x64/AgentHub-Setup-0.8.0.exe",
+      "bytes": 123108842,
+      "sha256": "4fd70176163ebb953efce8c24272943ec8958dfe992116c9346ceb6564f0241b"
+    },
+    "files_sha256": "0060ad4500fec755abfe96661c2e8c19c5a404f1cfa5bb623fea91a91e12f138",
+    "zip_bytes": 159933942,
+    "zip_sha256": "310eb2e2b1bfafbd5afd67dfb48df3b7ea72a1c807f446d82793e9dfc90df2c2",
+    "windows_authenticode_signed": false,
+    "packaged_smoke": {
+      "passed": true,
+      "version": "0.8.0",
+      "packagedRuntime": true,
+      "closeToTrayDefault": true,
+      "trayLifetimeVerifiedInSourceSmoke": true,
+      "profileIsolated": true
+    },
+    "local_installed_version": "0.8.0",
+    "local_tree_verified": true,
+    "global_skill_updated": true,
+    "mcp_reported_version": "0.8.0",
+    "mcp_version_gate_passed": true,
+    "login_required": true
+  },
+  "integration": {
+    "real_git_client_asgi_gateway_stateless_git": true,
+    "clone_fetch_task_push_verified": true,
+    "upstream_transport": "isolated, not a real private GitHub business repository",
+    "rejected": [
+      "main branch, other task branch, branch deletion and multiple ref changes",
+      "read-only writes, revoked or archived repositories",
+      "expired leases, outdated checkpoint tickets and outdated policy acknowledgements"
+    ],
+    "github_app_tests": "temporary RSA key, local JWT verification and mocked GitHub transport",
+    "real_github_app_or_kms_configured": false
+  },
+  "web": {
+    "passed": true,
+    "realChromium": true,
+    "registerRepository": true,
+    "rotateCredential": true,
+    "defaultNoRepositoryGrants": true,
+    "explicitRepositoryGrants": true,
+    "taskRepositoryScope": true,
+    "multipleSources": true,
+    "legacySourcePreserved": true,
+    "consoleErrors": [],
+    "apiMode": "isolated UI mock; PostgreSQL and Git gateway tested separately"
+  },
+  "desktop_ui": {
+    "passed": true,
+    "realElectron": true,
+    "realGit": true,
+    "realController": true,
+    "bindGroup": true,
+    "assembleRepository": true,
+    "fixedRepositoryMcp": true,
+    "generatedConfigExcludedFromGit": true,
+    "fetchPreservesEdits": true,
+    "repositoryRevocation": true,
+    "groupRemainsUsable": true,
+    "apiMode": "isolated metadata API; real service authorization tested on hub_test"
+  },
+  "existing_workflow_web_regression": {
+    "passed": true,
+    "realChromium": true,
+    "created": true,
+    "admission": true,
+    "humanClaim": true,
+    "worklog": true,
+    "submit": true,
+    "reviewTestRelease": true,
+    "policyRevision": true,
+    "codeTaskUsesMcpClaim": true,
+    "mutations": 12,
+    "apiMode": "isolated mock; authorization covered by real server PostgreSQL tests"
+  },
+  "static_checks": {
+    "python_compileall": true,
+    "ruff_rules_passed": [
+      "E",
+      "F",
+      "I",
+      "UP",
+      "B"
+    ],
+    "ruff_excluded": [
+      "E501"
+    ],
+    "desktop_and_web_javascript_syntax": true,
+    "skill_quick_validate": true
+  },
+  "token_measurement": "2026-11-09_080_Token测量.json; text tokenization only, not billing or measured savings",
+  "remaining_required_work": [
+    "pgvector, versioned shared memory, incremental distillation and authorized context loading",
+    "server-persisted delivery receipts and remote backup of uncommitted code",
+    "restricted revocation closeout identity and manifest-based framework removal",
+    "independent worktrees, cross-task file conflict coordination and role dispatch",
+    "per-turn harness hooks, all seven harnesses, macOS and two-physical-device acceptance",
+    "PR, CI, deployment and rollback evidence linkage"
+  ],
+  "known_limits": [
+    "No OS-level file write isolation or erasure of separately copied code",
+    "Git push does not imply merge, deployment or backup of uncommitted work",
+    "Existing automatic updater restart reliability has not been fixed in this batch",
+    "Existing TestClient httpx deprecation warning remains"
+  ]
+}

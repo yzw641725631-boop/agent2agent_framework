@@ -4,7 +4,16 @@ from typing import Annotated, Literal
 from urllib.parse import urlsplit
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, EmailStr, Field, SecretStr, StringConstraints, field_validator, model_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    EmailStr,
+    Field,
+    SecretStr,
+    StringConstraints,
+    field_validator,
+    model_validator,
+)
 
 Login = Annotated[str, StringConstraints(pattern=r"^[a-z0-9][a-z0-9_.-]{2,79}$")]
 
@@ -58,11 +67,24 @@ class AssignAdmin(Input):
     user_id: UUID
 
 
+class RepositoryPermission(Input):
+    repository_id: UUID
+    capabilities: list[Literal["code:read", "code:write", "documents:read"]] = Field(min_length=1, max_length=3)
+
+    @model_validator(mode="after")
+    def read_before_write(self):
+        self.capabilities = sorted(set(self.capabilities))
+        if "code:write" in self.capabilities and "code:read" not in self.capabilities:
+            raise ValueError("Writing code requires code:read")
+        return self
+
+
 class GrantRequest(Input):
     project_id: UUID
     user_id: UUID
     device_id: UUID
-    capabilities: list[str] = Field(min_length=1, max_length=16)
+    capabilities: list[str] = Field(min_length=1, max_length=32)
+    repository_permissions: list[RepositoryPermission] = Field(default_factory=list, max_length=100)
     duration_days: int = Field(default=30, ge=1, le=90)
 
 
@@ -86,6 +108,7 @@ class Empty(Input):
 
 
 class ProgressReport(Input):
+    repository_id: UUID | None = None
     status: Literal["running", "checkpoint", "blocked", "completed"] = "checkpoint"
     summary: str = Field(min_length=1, max_length=300)
     detail: str = Field(default="", max_length=8000)
@@ -116,6 +139,7 @@ class TaskScope(Input):
 
 
 class NewTask(Input):
+    repository_id: UUID | None = None
     parent_id: UUID | None = None
     title: str = Field(min_length=1, max_length=200)
     description: str = Field(min_length=1, max_length=8000)
@@ -413,6 +437,85 @@ class DocumentRepositoryInput(Input):
         ):
             raise ValueError("Invalid repository credential")
         return value
+
+
+class RepositoryInput(Input):
+    slug: str = Field(pattern=r"^[a-z][a-z0-9-]{1,79}$")
+    name: str = Field(min_length=1, max_length=200)
+    platform: Literal["web", "pc", "api", "mobile", "shared", "other"]
+    repository_url: str = Field(max_length=400)
+    branch: str = Field(default="main", min_length=1, max_length=200)
+    auth_mode: Literal["public", "token", "github_app"] = "public"
+    token: SecretStr | None = None
+    installation_id: int | None = Field(default=None, ge=1)
+
+    @field_validator("repository_url")
+    @classmethod
+    def repository(cls, value):
+        return DocumentRepositoryInput.github_repository(value)
+
+    @field_validator("branch")
+    @classmethod
+    def branch_name(cls, value):
+        return DocumentRepositoryInput.git_branch(value)
+
+    @field_validator("token")
+    @classmethod
+    def credential(cls, value):
+        return DocumentRepositoryInput.bounded_token(value)
+
+    @field_validator("slug")
+    @classmethod
+    def portable_slug(cls, value):
+        if value in {"con", "prn", "aux", "nul", *(f"com{i}" for i in range(10)), *(f"lpt{i}" for i in range(10))}:
+            raise ValueError("Use a portable repository name")
+        return value
+
+    @model_validator(mode="after")
+    def credential_mode(self):
+        if self.auth_mode == "token" and self.token is None:
+            raise ValueError("A repository credential is required")
+        if self.auth_mode != "token" and self.token is not None:
+            raise ValueError("Credential does not match auth_mode")
+        if (self.auth_mode == "github_app") != (self.installation_id is not None):
+            raise ValueError("GitHub App mode requires an installation ID")
+        return self
+
+
+class RepositoryStatus(Input):
+    expected_version: int = Field(ge=1)
+    status: Literal["active", "archived"]
+
+
+class RepositoryCredential(Input):
+    expected_version: int = Field(ge=1)
+    token: SecretStr
+
+    @field_validator("token")
+    @classmethod
+    def credential(cls, value):
+        return DocumentRepositoryInput.bounded_token(value)
+
+
+class GitHubAppInput(Input):
+    expected_version: int = Field(ge=0)
+    app_id: int = Field(ge=1)
+    private_key: SecretStr | None = None
+
+
+class GitTicketInput(Input):
+    action: Literal["read", "write"] = "read"
+    task_id: UUID | None = None
+    run_id: UUID | None = None
+    lease_epoch: int | None = Field(default=None, ge=1)
+    expected_commit: str | None = Field(default=None, pattern=r"^[a-f0-9]{40}$")
+
+    @model_validator(mode="after")
+    def write_binding(self):
+        values = [self.task_id, self.run_id, self.lease_epoch, self.expected_commit]
+        if self.action == "write" and not all(values) or self.action == "read" and any(values):
+            raise ValueError("Write tickets require a live task run and exact commit")
+        return self
 
 
 class DocumentSearch(Input):

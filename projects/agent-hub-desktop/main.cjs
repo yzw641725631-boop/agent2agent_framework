@@ -169,9 +169,13 @@ async function start(){
     },
     bind:async data=>{
       if(!selectedWorkspace)throw new HubError('INVALID_WORKSPACE','请先选择项目文件夹。');
-      const result=await controller.bind({projectId:data.projectId,workspace:selectedWorkspace});
+      const result=await controller.bind({projectId:data.projectId,repositoryId:data.repositoryId,workspace:selectedWorkspace});
       selectedWorkspace=null;return result;
     },
+    repositoryList:data=>controller.invokeProject(controller.binding(data.bindingId),'hub_list_repositories',{}),
+    assembleRepositories:data=>controller.invokeProject(controller.binding(data.bindingId),'hub_assemble_project',{
+      repository_ids:data.repositoryIds,harness:data.harness,operation_id:data.operationId}),
+    fetchRepository:data=>controller.invokeProject(controller.binding(data.bindingId),'hub_fetch_repository',{}),
     disconnect:data=>controller.disconnect(data.id),preview:data=>controller.configurationPreview(data.id),
     managementConfiguration:()=>controller.management.configuration(),
     copyManagementConfiguration:async()=>{

@@ -48,9 +48,12 @@ def publish(hub, db, actor, project_id, body, request_id):
 
 
 def task_hash(task):
-    return digest({"id": str(task.id), "scope": task.scope, "title": task.title,
-                   "description": task.description, "acceptance": task.acceptance,
-                   "execution_mode": task.execution_mode})
+    payload = {"id": str(task.id), "scope": task.scope, "title": task.title,
+               "description": task.description, "acceptance": task.acceptance,
+               "execution_mode": task.execution_mode}
+    if task.repository_id:
+        payload["repository_id"] = str(task.repository_id)
+    return digest(payload)
 
 
 def context_view(row):
@@ -69,7 +72,8 @@ def prepare(hub, db, actor, project_id, task_id, body, request_id):
                            .order_by(Worklog.created_at.desc(), Worklog.id).limit(5)))
     payload = {"schema_version": 1, "project_id": str(project_id), "task_id": str(task_id),
                "run_id": str(run.id), "lease_epoch": task.lease_epoch, "policy": policy,
-               "task": {"title": task.title, "description": task.description, "acceptance": task.acceptance,
+               "task": {"title": task.title, "repository_id": str(task.repository_id) if task.repository_id else None,
+                        "description": task.description, "acceptance": task.acceptance,
                         "scope": task.scope, "execution_mode": task.execution_mode},
                "recent_work": [{"id": str(w.id), "summary": w.summary, "outcome": w.outcome,
                                 "created_at": w.created_at.isoformat()} for w in rows],

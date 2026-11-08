@@ -2,6 +2,13 @@
 const crypto = require('node:crypto');
 
 const messages = {
+  REPOSITORY_NOT_ACCESSIBLE:'当前没有该仓库所需的代码或资料权限。',TASK_REPOSITORY_MISMATCH:'请使用任务所属仓库的连接。',
+  TASK_REPOSITORY_REQUIRED:'任务必须绑定已接入的仓库。',DOCUMENT_SOURCE_NOT_ACCESSIBLE:'当前没有该仓库的资料权限。',
+  GIT_RECORDED_CHECKPOINT_REQUIRED:'请先提交代码到本机 Git，再保存含该提交号的最新 checkpoint 工作日志。',
+  GIT_PUSH_SCOPE_DENIED:'只允许推送当前任务已记录的提交到本任务分支。',
+  GIT_TICKET_EXPIRED_OR_INSUFFICIENT:'本次 Git 访问凭证已失效，请重新验证授权后重试。',
+  REPOSITORY_UPSTREAM_REJECTED:'GitHub 拒绝本次仓库访问，请核对服务器凭证与仓库设置。',
+  GITHUB_APP_NOT_CONFIGURED:'请先在后台配置 GitHub App。',GITHUB_APP_AUTHORIZATION_FAILED:'GitHub App 授权失败，请核对 App 安装及仓库权限。',
   WORK_CONTEXT_REQUIRED:'请先准备本执行实例的开工规则。',WORK_CONTEXT_ACK_REQUIRED:'请实际读取并确认全部当前规则。',
   WORK_CONTEXT_STALE:'规则或任务范围已变化，请重新准备并确认。',WORK_CONTEXT_ACK_MISMATCH:'规则哈希或确认列表不匹配。',
   WORK_CHANGE_EVIDENCE_REQUIRED:'代码任务需要桌面端采集的实际改动清单。',WORK_EVIDENCE_CHANGED:'检查点之后代码已变化，请重新记录。',

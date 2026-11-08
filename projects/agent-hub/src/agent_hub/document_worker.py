@@ -16,7 +16,7 @@ from sqlalchemy import delete, or_, select, text
 
 from .db import context, coordinate, session_factory
 from .documents import markdown_document, token_cipher
-from .models import Audit, DocumentRepository, DocumentSync, Project, ProjectDocument
+from .models import Audit, DocumentRepository, DocumentSync, Project, ProjectDocument, ProjectRepository
 from .schemas import document_path
 from .security import HubError, now
 
@@ -82,7 +82,9 @@ class GitHubSource:
             "X-GitHub-Api-Version": "2026-03-10",
             "User-Agent": "AgentHub-DocumentIndexer/0.3.0",
         }
-        if repository["encrypted_token"]:
+        if repository.get("credential"):
+            headers["Authorization"] = "Bearer " + repository["credential"]
+        elif repository["encrypted_token"]:
             credential = token_cipher(self.settings).decrypt(repository["encrypted_token"].encode()).decode()
             headers["Authorization"] = "Bearer " + credential
         started = time.monotonic()
@@ -167,6 +169,7 @@ class DocumentWorker:
     def authorized(db, job):
         context(db, job.requested_by, job.device_id, job.grant_id)
         allowed = db.scalar(text("SELECT hub.can_manage_documents(:p)"), {"p": job.project_id})
+        allowed = allowed and db.scalar(text("SELECT hub.can_read_source(:p,:s)"), {"p": job.project_id, "s": job.source_id})
         project = db.get(Project, job.project_id)
         return allowed and project is not None and project.status == "active"
 
@@ -195,7 +198,7 @@ class DocumentWorker:
             )
             if not job:
                 return True
-            repo = db.get(DocumentRepository, job.project_id)
+            repo = db.get(DocumentRepository, job.source_id)
             if not repo or repo.version != job.configuration_version or not self.authorized(db, job):
                 job.status, job.error_code, job.finished_at = "cancelled", "SYNC_AUTHORIZATION_CHANGED", now()
                 return True
@@ -204,12 +207,23 @@ class DocumentWorker:
                 return True
             job.status, job.attempts = "running", job.attempts + 1
             job.lease_until, job.lease_id = now() + timedelta(minutes=5), uuid.uuid4()
-            job_id, lease_id, project_id = job.id, job.lease_id, job.project_id
+            job_id, lease_id, project_id, source_id = job.id, job.lease_id, job.project_id, job.source_id
             requested_by = job.requested_by
             configuration = {
                 key: getattr(repo, key)
                 for key in ("repository_url", "branch", "encrypted_token", "include_paths", "version")
             }
+            registered = db.get(ProjectRepository, repo.repository_id) if repo.repository_id else None
+            repository_version = registered.version if registered else None
+            if registered:
+                from .github_credentials import credential
+                from .service import Hub
+                try:
+                    configuration["credential"] = credential(Hub(self.settings, None), db, registered,
+                                                               transport=getattr(self.source, "transport", None))
+                except HubError as exc:
+                    job.status, job.error_code, job.finished_at = "failed", exc.code, now()
+                    return True
         failure, loaded = None, None
         try:
             loaded = self.source.load(configuration)
@@ -220,18 +234,20 @@ class DocumentWorker:
         with self.sessions.begin() as db:
             coordinate(db, user_ids=[requested_by], project_ids=[project_id])
             job = db.get(DocumentSync, job_id, with_for_update=True)
-            repo = db.get(DocumentRepository, project_id, with_for_update=True)
+            repo = db.get(DocumentRepository, source_id, with_for_update=True)
+            registered = db.get(ProjectRepository, repo.repository_id) if repo and repo.repository_id else None
             if job.status != "running" or job.lease_id != lease_id:
                 return True
-            if not repo or repo.version != configuration["version"] or not self.authorized(db, job):
+            if (not repo or repo.version != configuration["version"] or not self.authorized(db, job)
+                    or registered and registered.version != repository_version):
                 job.status, job.error_code = "cancelled", "SYNC_AUTHORIZATION_CHANGED"
             elif failure:
                 job.status, job.error_code = "failed", failure
             else:
                 commit, documents, skipped = loaded
-                db.execute(delete(ProjectDocument).where(ProjectDocument.project_id == project_id))
+                db.execute(delete(ProjectDocument).where(ProjectDocument.source_id == source_id))
                 db.add_all(
-                    ProjectDocument(project_id=project_id, snapshot_id=job.id, **doc) for doc in documents
+                    ProjectDocument(project_id=project_id, source_id=source_id, snapshot_id=job.id, **doc) for doc in documents
                 )
                 repo.snapshot_id, repo.git_commit, repo.indexed_at = job.id, commit, now()
                 repo.document_count, repo.skipped_count = len(documents), skipped
@@ -241,6 +257,7 @@ class DocumentWorker:
                 Audit(
                     actor_id=job.requested_by,
                     project_id=project_id,
+                    repository_id=repo.repository_id if repo else None,
                     action="documents.sync_" + job.status,
                     object_id=str(job.id),
                     request_id="document-sync:" + str(job.id),
