@@ -1,0 +1,59 @@
+{
+  "date": "2026-11-08",
+  "server": {
+    "version": "0.5.0",
+    "migration": "0008",
+    "tests_passed": 93,
+    "tests_database": "isolated server hub_test",
+    "counts_preserved": {
+      "users": 1,
+      "devices": 4,
+      "projects": 0,
+      "settings": 1
+    },
+    "pre_migration_backup": "/opt/agent-hub/database/backups/agent_hub_before_policy_050_20261108T071259Z.dump"
+  },
+  "desktop": {
+    "version": "0.7.0",
+    "tests_passed": 75,
+    "metadata_version": 7,
+    "online_activation_verified": true,
+    "reopened_after_activation": true,
+    "first_update_attempt_failed": true,
+    "automatic_restart_stability_verified": false,
+    "global_skill_updated": true,
+    "mcp_version_gate_passed": true,
+    "login_required": true,
+    "installer": {
+      "url": "https://47.109.23.86:18180/desktop-updates/win-x64/AgentHub-Setup-0.7.0.exe",
+      "bytes": 123097034,
+      "sha256": "b94f3b86ddb5a4c25e3acef13e72758803c13cccb28261945b9efa084a145dfd"
+    },
+    "files_sha256": "9fbc9b105b6d50df6e19468c983d61ae31b253bd8481333c910ff79b497022f2",
+    "zip_sha256": "504e4eecc091da35fe7cd3230b0ab1b93f672f9a0c2161edc562ede9a5aa0d25",
+    "windows_authenticode_signed": false
+  },
+  "integration": {
+    "realElectron": true,
+    "realStdio": true,
+    "rulesPrepareAck": true,
+    "realGitInventory": true,
+    "changedCheckpointBlocksSubmit": true,
+    "encryptedCheckpoints": true,
+    "lazyLogRead": true,
+    "apiMode": "isolated mock HTTP transport; no production projects, email, or credentials used"
+  },
+  "web": {
+    "realChromium": true,
+    "policyRevision": true,
+    "codeTaskUsesMcpClaim": true,
+    "reviewTestRelease": true,
+    "apiMode": "isolated mock; authorization covered by real server PostgreSQL tests"
+  },
+  "limits": [
+    "No two-physical-device or long-term team acceptance",
+    "No OS write sandbox",
+    "No remote code backup or revocation closeout",
+    "No automatic long-term memory or vector retrieval"
+  ]
+}
