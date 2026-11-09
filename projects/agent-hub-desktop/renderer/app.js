@@ -10,6 +10,9 @@ let frameworkDialogVersion=0;
 modal.addEventListener('close',()=>{taskDialogVersion++;frameworkDialogVersion++;openTaskBinding=null;});
 const taskLabels={draft:'待准入',ready:'待认领',in_progress:'开发中',review:'待评审',testing:'待测试',release_ready:'待发布确认',completed:'已完成'};
 const dispatchLabels={queued:'等待接收',received:'已接收，待决定',accepted:'已接受并认领',declined:'已拒绝',cancelled:'已取消',expired:'已过期'};
+const deliveryLabels={pull_request:'合并请求',ci:'自动测试',merge:'合并',deployment:'部署',rollback:'回滚'};
+const deliveryStates={missing:'尚未核验',open:'已打开',closed:'已关闭',draft:'草稿',merged:'已合并',completed:'已结束',success:'成功',failure:'失败',
+  error:'错误',inactive:'已停用',in_progress:'进行中',queued:'排队中',pending:'等待中',waiting:'等待中',requested:'已请求','no-status':'尚无结果'};
 const roleLabels={'project-manager':'项目经理',architect:'架构师',designer:'产品与交互设计',developer:'开发工程师',reviewer:'代码审查',tester:'测试工程师',publisher:'发布负责人'};
 const labels={active:'已连接',pending:'等待验证 / 审批',offline:'连接中断',blocked:'已拦截',signed_out:'未登录',
   reauth_required:'需要重新登录',running:'执行中',checkpoint:'检查点',completed:'已完成',approved:'已批准'};
@@ -498,7 +501,46 @@ async function taskDetail(bindingId,taskId,generation,offset=0){
     text('h3','可见流程证据'),...data.decisions.map(d=>el('details',{},text('summary',`${d.gate} · ${d.approved?'通过':'退回'}`),
       text('pre',d.evidence+(d.override_reason?'\n自审原因：'+d.override_reason:'')))),
     text('p','取回代码会保存为本机加密检查点，导出到新目录后审查。自动逐轮记录仍需宿主钩子配合。','note'),
-    el('div',{class:'actions end'},button('刷新',()=>taskDetail(bindingId,taskId,generation,offset)),button('关闭',()=>{openTaskBinding=null;closeDialog();},'primary')));
+    el('div',{class:'actions end'},task.repository_id?button('交付核验',()=>deliveryDialog(bindingId,task,generation)):null,
+      button('刷新',()=>taskDetail(bindingId,taskId,generation,offset)),button('关闭',()=>{openTaskBinding=null;closeDialog();},'primary')));
+}
+async function deliveryDialog(bindingId,task,generation,offset=0){
+  const ticket=++taskDialogVersion,account=state.user?.id;
+  const current=()=>view==='tasks' && ticket===taskDialogVersion && account===state.user?.id && taskBinding===bindingId && state.bindings.some(b=>b.id===bindingId && b.status==='active');
+  const data=await invoke('taskQuery',{bindingId,tool:'hub_list_delivery_evidence',args:{task_id:task.id,offset,limit:20}});
+  if(!current())return;
+  const release=data.release;
+  task={...task,version:data.task_version,submission_id:release.worklog_id || task.submission_id};
+  const refresh=()=>deliveryDialog(bindingId,task,generation,offset);
+  const form=el('form',{},text('h3','从 GitHub 读取一次最新结果'),
+    task.submission_id?el('div',{},text('p','核验此任务当前提交的工作检查点。','note'),el('input',{type:'hidden',name:'worklog_id',value:task.submission_id})):
+      field('工作检查点 ID',el('input',{name:'worklog_id',required:true})),
+    field('核验环节',el('select',{name:'kind'},Object.entries(deliveryLabels).map(([value,label])=>el('option',{value},label)))),
+    field('GitHub 编号',el('input',{name:'provider_id',type:'number',min:1,max:Number.MAX_SAFE_INTEGER,required:true})),
+    el('details',{},text('summary','合并与回滚关联（按需填写）'),
+      field('合并凭据 ID（核验合并后提交时填写）',el('input',{name:'merge_evidence_id'})),
+      field('被替换的部署凭据 ID（回滚时填写）',el('input',{name:'rollback_of_id'})),
+      field('恢复目标的部署凭据 ID（回滚时填写）',el('input',{name:'rollback_to_id'}))),
+    el('button',{type:'submit',class:'primary'},'核验并保存回执'));
+  form.addEventListener('submit',async event=>{
+    event.preventDefault();const submit=form.querySelector('[type=submit]');submit.disabled=true;
+    const args=Object.fromEntries(new FormData(form));args.provider_id=Number(args.provider_id);args.task_id=task.id;
+    args.expected_task_version=task.version;args.operation_id=crypto.randomUUID();
+    for(const name of ['merge_evidence_id','rollback_of_id','rollback_to_id'])if(!args[name])delete args[name];
+    try{await invoke('deliveryAction',{bindingId,tool:'hub_verify_delivery_evidence',args});if(current()){toast('服务器已保存外部观察回执。',true);await refresh();}}
+    catch(error){toast(error.message);}finally{submit.disabled=false;}
+  });
+  openDialog(text('h2','交付核验 · '+task.title),text('p',release.ready?'当前提交的外部凭据满足已配置要求。':'当前提交的外部凭据尚未满足要求。',release.ready?'note':'warning'),
+    text('p','规则版本 '+release.policy_version+'。这些是最近一次读取的提供方结果，不能证明目标服务持续健康。','note'),
+    !release.checks.length?text('p','当前未设置必需的外部核验环节；可由发布负责人在网页“仓库与资料”中配置。','note'):null,
+    ...release.checks.map(c=>text('p',`${deliveryLabels[c.kind]}${c.subject?' · '+c.subject:''}：${c.passed?'满足要求':!c.evidence_id?'尚未核验':!c.fresh?'已过有效期':'尚未成功'}${c.observed_at?' · '+new Date(c.observed_at).toLocaleString('zh-CN'):''}`,c.passed?'note':'warning')),
+    text('h3','已保存的外部观察'),...data.items.map(item=>el('details',{},text('summary',`${deliveryLabels[item.kind]} · ${item.successful?'提供方报告成功':'提供方尚未报告成功'} · ${new Date(item.observation.observed_at).toLocaleString('zh-CN')}`),
+      text('p',`状态：${deliveryStates[item.observation.state] || '其他状态'} · ${item.observation.workflow || item.observation.environment || ''}`),
+      text('p',`实际核验提交：${item.observation.verified_commit}`,'mono'),text('p',`凭据 ID：${item.id}`,'mono'),
+      text('p',`原工作提交：${item.git_commit}`,'mono'),text('p',`回执：${item.receipt_hash}`,'mono'))),
+    el('div',{class:'actions'},offset?button('较新记录',()=>deliveryDialog(bindingId,task,generation,Math.max(0,offset-20))):null,
+      data.has_more?button('较早记录',()=>deliveryDialog(bindingId,task,generation,data.next_offset)):null),data.can_verify?form:null,
+    el('div',{class:'actions end'},button('返回任务',()=>taskDetail(bindingId,task.id,generation)),button('刷新',refresh),button('关闭',closeDialog)));
 }
 function workspaces(){return el('div',{},heading('PROJECT CONNECTIONS','项目与 MCP','每个连接绑定一个项目和一个工作目录。服务端在每次 MCP 调用时检查当前权限。'),
   state.user?.platform_role==='superadmin'?el('section',{class:'card management-card'},

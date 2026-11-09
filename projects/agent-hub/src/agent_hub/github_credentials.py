@@ -74,8 +74,10 @@ def configure_app(hub, db, actor, body, request_id):
     return app_view(hub, db)
 
 
-def credential_material(hub, db, repository, *, write=False):
+def credential_material(hub, db, repository, *, write=False, read_permissions=()):
     """Read/sign under authorization locks; perform network exchange after releasing them."""
+    if set(read_permissions) - {"pull_requests", "actions", "deployments"}:
+        raise ValueError("Unsupported GitHub read permission")
     if repository.auth_mode == "public":
         if write:
             raise HubError("REPOSITORY_WRITE_CREDENTIAL_REQUIRED", 409)
@@ -94,8 +96,13 @@ def credential_material(hub, db, repository, *, write=False):
         data["private_key"],
         algorithm="RS256",
     )
-    return {"installation_id": repository.installation_id, "assertion": assertion,
-            "repository": repository.repository_url.rsplit("/", 1)[1], "write": write}
+    return {
+        "installation_id": repository.installation_id,
+        "assertion": assertion,
+        "repository": repository.repository_url.rsplit("/", 1)[1],
+        "write": write,
+        "read_permissions": sorted(set(read_permissions)),
+    }
 
 
 def exchange_credential(material, *, transport=None):
@@ -112,7 +119,10 @@ def exchange_credential(material, *, transport=None):
                 },
                 json={
                     "repositories": [material["repository"]],
-                    "permissions": {"contents": "write" if material["write"] else "read"},
+                    "permissions": {
+                        "contents": "write" if material["write"] else "read",
+                        **dict.fromkeys(material.get("read_permissions", []), "read"),
+                    },
                 },
             )
             if response.status_code != 201 or len(response.content) > 2 * 1024 * 1024:

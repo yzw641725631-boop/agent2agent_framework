@@ -148,6 +148,8 @@ def change_workflow(hub, db, actor, task, body, request_id):
 
 
 def check_release(db, task):
+    from .delivery_evidence import check_release as check_external
+    check_external(db, task)
     if (task.workflow_policy or {}).get("require_verified_delivery"):
         if (
             task.execution_mode != "observed"

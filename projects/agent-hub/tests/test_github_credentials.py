@@ -51,7 +51,11 @@ def test_github_app_keys_are_encrypted_and_installation_tokens_are_repository_an
         assert claims["iss"] == "1234" and 0 < claims["exp"] - claims["iat"] <= 600
         body = json.loads(request.content)
         assert body["repositories"] == ["web"]
-        assert body["permissions"] in ({"contents": "read"}, {"contents": "write"})
+        assert body["permissions"] in (
+            {"contents": "read"},
+            {"contents": "write"},
+            {"contents": "read", "actions": "read"},
+        )
         calls.append(body)
         return httpx.Response(201, json={"token": "short-lived-installation-token"})
 
@@ -66,4 +70,12 @@ def test_github_app_keys_are_encrypted_and_installation_tokens_are_repository_an
             == "short-lived-installation-token"
         )
         github_credentials.credential(w.client.app.state.hub, db, stored, write=True, transport=transport)
-    assert [call["permissions"] for call in calls] == [{"contents": "read"}, {"contents": "write"}]
+        material = github_credentials.credential_material(
+            w.client.app.state.hub, db, stored, read_permissions=["actions"]
+        )
+        github_credentials.exchange_credential(material, transport=transport)
+    assert [call["permissions"] for call in calls] == [
+        {"contents": "read"},
+        {"contents": "write"},
+        {"contents": "read", "actions": "read"},
+    ]

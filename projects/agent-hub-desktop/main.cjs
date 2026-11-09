@@ -192,7 +192,11 @@ async function start(){
       return controller.work.removeExported(data.id);
     },
     taskQuery:data=>{
-      if(!['hub_list_guides','hub_read_guide','hub_get_usage','hub_get_collaboration','hub_list_tasks','hub_get_task','hub_list_worklogs','hub_read_worklog','hub_get_memory_status','hub_search_memory','hub_search_knowledge','hub_read_memory_source','hub_get_roles','hub_preview_framework','hub_list_agents','hub_list_agent_dispatches','hub_preview_turn_hooks','hub_get_work_record_status'].includes(data.tool))throw new HubError('INVALID_DESKTOP_REQUEST');
+      if(!['hub_list_delivery_evidence','hub_get_delivery_policy','hub_list_guides','hub_read_guide','hub_get_usage','hub_get_collaboration','hub_list_tasks','hub_get_task','hub_list_worklogs','hub_read_worklog','hub_get_memory_status','hub_search_memory','hub_search_knowledge','hub_read_memory_source','hub_get_roles','hub_preview_framework','hub_list_agents','hub_list_agent_dispatches','hub_preview_turn_hooks','hub_get_work_record_status'].includes(data.tool))throw new HubError('INVALID_DESKTOP_REQUEST');
+      return controller.invokeProject(controller.binding(data.bindingId),data.tool,data.args || {});
+    },
+    deliveryAction:data=>{
+      if(!['hub_verify_delivery_evidence','hub_set_delivery_policy'].includes(data.tool))throw new HubError('INVALID_DESKTOP_REQUEST');
       return controller.invokeProject(controller.binding(data.bindingId),data.tool,data.args || {});
     },
     agentAction:data=>{

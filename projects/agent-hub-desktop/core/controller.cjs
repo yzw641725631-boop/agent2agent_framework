@@ -509,6 +509,9 @@ class Controller extends EventEmitter {
       const guideRequest=require('./guide-tools.cjs').request(action,args,b,context.capabilities);
       if(guideRequest)return await remote.request(guideRequest.method,guideRequest.path,guideRequest.body,
         {slot,idempotency:guideRequest.operation_id});
+      const deliveryRequest=require('./delivery-tools.cjs').request(action,args,b,context.capabilities);
+      if(deliveryRequest)return await remote.request(deliveryRequest.method,deliveryRequest.path,deliveryRequest.body,
+        {slot,idempotency:deliveryRequest.operation_id});
       const knowledgeRequest=require('./knowledge-tools.cjs').request(action,args,b.projectId,b.repositoryId,context.capabilities);
       if(knowledgeRequest)return await remote.request(knowledgeRequest.method,knowledgeRequest.path,knowledgeRequest.body,
         {slot,idempotency:knowledgeRequest.operation_id});

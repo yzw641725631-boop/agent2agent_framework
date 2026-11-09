@@ -3,6 +3,9 @@ import {Client, messages} from './api.js';
 const root = document.querySelector('#app');
 const modal = document.querySelector('#modal');
 const notice = document.querySelector('#notice');
+const deliveryKinds={pull_request:'合并请求',ci:'自动测试',merge:'合并',deployment:'部署',rollback:'回滚'};
+const deliveryStates={missing:'尚未核验',open:'已打开',closed:'已关闭',draft:'草稿',merged:'已合并',completed:'已结束',success:'成功',failure:'失败',
+  error:'错误',inactive:'已停用',in_progress:'进行中',queued:'排队中',pending:'等待中',waiting:'等待中',requested:'已请求','no-status':'尚无结果'};
 const names = {active:'正常', approved:'已批准', pending:'待审批', pending_email:'待验证邮箱',
   pending_approval:'待审批', revoked:'已撤销', suspended:'已冻结', disabled:'已停用', issued:'已签发', denied:'已拒绝'};
 const caps = {'project:read':'项目资料', 'documents:read':'读取文档', 'documents:propose':'文档提案',
@@ -538,15 +541,17 @@ class Console {
     const parts = [title,table('已接入仓库',['仓库','目标端','本人权限','状态','操作'],data.items.map(repo => [
       textPair(repo.name,repo.repository_url),repo.platform,
       repo.capabilities.map(cap => permissionNames[cap]).join('、') || '尚未获得代码或资料权限',
-      repo.status === 'active' ? '可用' : '已归档',this.isRoot ? h('div',{class:'row-actions'},button(repo.status === 'active' ? '归档' : '恢复',() => {
+      repo.status === 'active' ? '可用' : '已归档',h('div',{class:'row-actions'},
+      repo.status === 'active' && repo.capabilities.includes('code:read') && button('交付要求',()=>this.openDeliveryPolicy(projectId,repo),'small'),
+      this.isRoot && button(repo.status === 'active' ? '归档' : '恢复',() => {
         const status = repo.status === 'active' ? 'archived' : 'active';
         dialog(status === 'archived' ? '归档仓库' : '恢复仓库','归档会停止本平台的仓库访问。恢复后仍在有效期内的原授权可以再次使用。',h('form'),
           '确认',() => this.api('POST',`${base}/${repo.id}/status`,{expected_version:repo.version,status}));
-      },'small'),repo.auth_mode === 'token' && repo.status === 'active' && button('更换仓库凭证',() => {
+      },'small'),this.isRoot && repo.auth_mode === 'token' && repo.status === 'active' && button('更换仓库凭证',() => {
         const form = h('form',{},field('token','新的仓库专用凭证',{type:'password',required:true,maxlength:2048,autocomplete:'new-password'}));
         dialog('更换仓库凭证','新凭证加密保存在服务器。成员下次访问会使用新凭证，已有代码不会被覆盖。',form,'保存新凭证',data =>
           this.api('PUT',`${base}/${repo.id}/credential`,{expected_version:repo.version,token:data.token}));
-      },'small')) : '—'
+      },'small'))
     ]))];
     if (data.can_manage) parts.push(h('section',{class:'card'},h('h2',{},'接入独立仓库'),
       h('p',{},'接入后按仓库审批代码和文档权限。原有未归类记录继续保留，由超级管理员查看。'),
@@ -581,6 +586,36 @@ class Console {
         })));
     }
     return parts;
+  }
+  async openDeliveryPolicy(projectId, repo) {
+    const revision=this.renderVersion,base=`/api/projects/${projectId}/repositories/${repo.id}/delivery-policy`;
+    const config=await this.api('GET',base);
+    if(this.project?.id!==projectId || this.currentView!=='repositories' || this.renderVersion!==revision)return;
+    const content=h('div',{id:'modal-body'},h('h2',{},'交付要求 · '+repo.name),
+      h('p',{},'规则版本 '+config.version+'。所有列出的必需测试与环境都须取得有效回执。变更规则后须重新核验。'),
+      h('p',{class:'hint'},'检查只读取 GitHub 报告，不执行合并或部署，也不能证明线上服务持续健康。'));
+    if(this.can('tasks:publish')){
+      const form=h('form',{},h('div',{class:'fields'},
+        Object.entries(deliveryKinds).map(([key,label])=>field(key,label,{items:[['no','不要求'],['yes','发布前必须核验']],value:config.required_kinds.includes(key)?'yes':'no'})),
+        field('workflows','必需测试文件（每行一项）',{multiline:true,value:config.workflows.join('\n'),hint:'精确填写，例如 .github/workflows/test.yml。要求自动测试时，每一项都必须通过。'}),
+        field('environments','必需环境（每行一项）',{multiline:true,value:config.environments.join('\n'),hint:'与 GitHub 部署环境名称完全一致。要求部署或回滚时，每一项都必须成功。'}),
+        field('max_age_seconds','回执有效期（秒）',{type:'number',min:60,max:86400,required:true,value:config.max_age_seconds}),
+        field('ci_target','自动测试核验的提交',{items:[['delivered','推送的工作提交'],['merged','已合并的结果提交']],value:config.ci_target}),
+        field('deployment_target','部署 / 回滚核验的提交',{items:[['delivered','推送的工作提交'],['merged','已合并的结果提交']],value:config.deployment_target}),
+        field('change_reason','设置或调整原因',{required:true,minlength:10,maxlength:1000,full:true})));
+      form.append(h('p',{class:'hint'},'选择合并结果提交时，必须同时要求“合并”核验。一次发布选择“部署”或“回滚”之一。'),
+        h('div',{class:'actions end'},button('取消',()=>modal.close()),submit(form,'保存规则',async data=>{
+          const lines=value=>value.split(/\r?\n/).map(v=>v.trim()).filter(Boolean);
+          await this.api('PUT',base,{expected_version:config.version,required_kinds:Object.keys(deliveryKinds).filter(k=>data[k]==='yes'),
+            workflows:lines(data.workflows),environments:lines(data.environments),max_age_seconds:Number(data.max_age_seconds),
+            ci_target:data.ci_target,deployment_target:data.deployment_target,change_reason:data.change_reason});
+          modal.close();toast('交付要求已保存');await this.renderView();
+        })));
+      content.append(form);
+    }else content.append(h('p',{},'必需环节：'+(config.required_kinds.map(k=>deliveryKinds[k]).join('、') || '未设置')),
+      h('p',{},'测试：'+(config.workflows.join('、') || '未设置')),h('p',{},'环境：'+(config.environments.join('、') || '未设置')),
+      button('关闭',()=>modal.close()));
+    modal.replaceChildren(content);if(!modal.open)modal.showModal();
   }
   async openRoles(projectId) {
     const catalog = await this.api('GET',`/api/projects/${projectId}/roles`);
@@ -665,6 +700,7 @@ class Console {
     const reload = () => this.openTask(projectId,taskId,offset);
     const act = async (path,body) => { await this.api('POST',base+path,body); toast('服务器已保存'); await reload(); };
     const actions = [button('关闭',() => modal.close()),button('刷新',reload)];
+    if(task.repository_id)actions.push(button('交付核验',()=>this.openDelivery(projectId,taskId)));
     if(this.can('tasks:publish') && task.status==='ready')actions.push(button('投递给执行者',()=>this.dispatchTask(projectId,task)));
     const coordination = data.coordination;
     if(this.can('tasks:publish') && !task.lease_epoch && ['draft','ready'].includes(task.status) && !coordination?.has_restricted_dependencies)
@@ -731,6 +767,38 @@ class Console {
       table('可见流程证据',['关口','结果','依据','记录时间'],data.decisions.map(d => [gateNames[d.gate],d.approved ? '通过' : '退回',
         textPair(d.evidence,d.override_reason),date(d.created_at)])),h('p',{class:'hint'},'日志、代码备份和 Git 交付独立记录。请核对各自回执；代码恢复通过 PC 端或工程 MCP。'));
     modal.replaceChildren(content); if (!modal.open) modal.showModal();
+  }
+  async openDelivery(projectId,taskId,offset=0){
+    const revision=this.renderVersion,base=`/api/projects/${projectId}/tasks/${taskId}`;
+    const [data,details]=await Promise.all([this.api('GET',base+`/delivery-evidence?offset=${offset}&limit=20`),this.api('GET',base)]);
+    if(this.project?.id!==projectId || this.currentView!=='tasks' || this.renderVersion!==revision)return;
+    const task=details.task,release=data.release,refresh=()=>this.openDelivery(projectId,taskId,offset);
+    const content=h('div',{id:'modal-body'},h('h2',{},'交付核验 · '+task.title),
+      h('p',{class:release.ready?'help-block':'danger-note'},release.ready?'当前提交的外部凭据满足已配置要求。':'当前提交的外部凭据尚未满足要求。'),
+      h('p',{class:'hint'},`规则版本 ${release.policy_version}。这里显示最近一次读取的提供方报告，不能证明目标服务持续健康。`),
+      !release.checks.length && h('p',{},'当前没有必需的外部核验环节；可在“仓库与资料”中配置。'),
+      ...release.checks.map(c=>h('p',{class:c.passed?'help-block':'danger-note'},`${deliveryKinds[c.kind]}${c.subject?' · '+c.subject:''}：${c.passed?'满足要求':!c.evidence_id?'尚未核验':!c.fresh?'已过有效期':'尚未成功'}${c.observed_at?' · '+date(c.observed_at):''}`)),
+      h('h3',{},'已保存的外部观察'),...data.items.map(item=>h('details',{},h('summary',{},`${deliveryKinds[item.kind]} · ${item.successful?'提供方报告成功':'提供方尚未报告成功'} · ${date(item.observation.observed_at)}`),
+        h('p',{},`状态：${deliveryStates[item.observation.state] || '其他状态'} · ${item.observation.workflow || item.observation.environment || ''}`),
+        h('pre',{class:'document-content mono'},`实际核验提交：${item.observation.verified_commit}\n凭据 ID：${item.id}\n原工作提交：${item.git_commit}\n回执：${item.receipt_hash}`))),
+      h('div',{class:'row-actions'},offset>0 && button('较新记录',()=>this.openDelivery(projectId,taskId,Math.max(0,offset-20))),
+        data.has_more && button('较早记录',()=>this.openDelivery(projectId,taskId,data.next_offset))));
+    if(data.can_verify){
+      const form=h('form',{},h('h3',{},'从 GitHub 读取一次最新结果'),h('div',{class:'fields'},
+        task.submission_id?h('div',{},h('p',{class:'hint'},'核验此任务当前提交的工作检查点。'),h('input',{type:'hidden',name:'worklog_id',value:task.submission_id})):
+          field('worklog_id','工作检查点 ID',{required:true}),
+        field('kind','核验环节',{items:Object.entries(deliveryKinds)}),field('provider_id','GitHub 编号',{type:'number',required:true,min:1,max:9007199254740991}),
+        h('details',{class:'full'},h('summary',{},'合并与回滚关联（按需填写）'),
+          field('merge_evidence_id','合并凭据 ID（核验合并后提交时填写）'),field('rollback_of_id','被替换的部署凭据 ID（回滚时填写）'),
+          field('rollback_to_id','恢复目标的部署凭据 ID（回滚时填写）'))));
+      form.append(submit(form,'核验并保存回执',async values=>{
+        const body={...values,provider_id:Number(values.provider_id),expected_task_version:task.version};
+        for(const key of ['merge_evidence_id','rollback_of_id','rollback_to_id'])if(!body[key])delete body[key];
+        await this.api('POST',base+'/delivery-evidence',body);toast('服务器已保存外部观察回执。');await refresh();
+      }));content.append(form);
+    }
+    content.append(h('div',{class:'actions end'},button('返回任务',()=>this.openTask(projectId,taskId)),button('刷新',refresh),button('关闭',()=>modal.close())));
+    modal.replaceChildren(content);if(!modal.open)modal.showModal();
   }
   writeTaskLog(base, lease) {
     const form = h('form',{},field('summary','本轮摘要',{required:true,maxlength:300,full:true}),

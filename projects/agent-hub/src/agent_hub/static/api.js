@@ -5,6 +5,16 @@ const encode = value => btoa(String.fromCharCode(...new Uint8Array(value)))
 const json = value => encode(encoder.encode(JSON.stringify(value)));
 
 export const messages = {
+  DELIVERY_EXTERNAL_EVIDENCE_REQUIRED:'当前提交缺少有效的外部交付凭据，请查看任务的“交付核验”。',
+  DELIVERY_POLICY_VERSION_CONFLICT:'交付规则已变化，请刷新后重新配置。',DELIVERY_CHECKPOINT_NOT_PUSHED:'此工作检查点尚无 Git 推送核验回执。',
+  DELIVERY_PROVIDER_UNAVAILABLE:'暂时无法读取 GitHub 结果，请检查仓库凭证和服务器网络后重试。',
+  DELIVERY_PROVIDER_INVALID:'GitHub 返回的交付资料不完整或格式不符，本次未保存成功凭据。',
+  DELIVERY_PROVIDER_COMMIT_MISMATCH:'GitHub 记录的仓库、分支或提交与此工作检查点不一致。',
+  DELIVERY_PROVIDER_NOT_LATEST:'该编号已有更新的测试运行或环境部署，请核验最新记录。',
+  DELIVERY_WORKFLOW_NOT_APPROVED:'此测试文件未列入本仓库批准的交付规则。',DELIVERY_ENVIRONMENT_NOT_APPROVED:'此环境未列入本仓库批准的交付规则。',
+  DELIVERY_VERIFICATION_STALE:'核验期间的规则或仓库已变化，请刷新后用新的操作重新核验。',
+  DELIVERY_MERGE_EVIDENCE_REQUIRED:'请先取得本检查点当前有效的合并凭据，并按规则选择核验的提交。',
+  DELIVERY_ROLLBACK_SOURCE_MISMATCH:'回滚须关联同仓库同环境中被替换的部署，以及更早的成功恢复目标；请核对凭据。',
   INVITATION_NOT_ACCESSIBLE:'邀请不存在，或当前没有管理权限。',INVITATION_NOT_PENDING:'邀请已关闭或账号已领取，请刷新状态。',
   GUIDES_NOT_APPROVED:'当前提交仍有操作说明未完成产品和测试审核，请先处理说明待办。',
   GUIDE_NOT_ACCESSIBLE:'说明不存在，或当前没有对应阅读权限。',GUIDE_TARGET_MISMATCH:'请由该待办指定的本人设备与执行实例处理；负责人可明确移交。',

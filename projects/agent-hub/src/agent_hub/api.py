@@ -265,6 +265,8 @@ def create_app(
     insights.install(app, hub, actor, mutate, semantic_query, db_dependency, security_sessions)
     from . import guides
     guides.install(app, hub, actor, mutate, db_dependency)
+    from . import delivery_evidence
+    delivery_evidence.install(app, hub, actor, token, mutate, db_dependency, security_sessions)
 
     @app.get("/healthz")
     def health():
