@@ -47,7 +47,7 @@ docker run --rm --network agent-hub-database --read-only --tmpfs /tmp --memory 3
   -e HUB_ENVIRONMENT=test -e HUB_MAIL_MODE=memory -e HUB_RESTORE_DATABASE="$target" \
   -e HUB_RESTORE_SNAPSHOT="$snapshot" \
   -e HUB_PUBLIC_URL=http://127.0.0.1:8765 -e HUB_ARTIFACT_DIRECTORY=/restored-archives \
-  -v "$stage/data/work-archives:/restored-archives:ro" --entrypoint python agent-hub:0.9.0 -c '
+  -v "$stage/data/work-archives:/restored-archives:ro" --entrypoint python agent-hub:0.10.0 -c '
 import datetime,json,os,re
 from urllib.parse import quote
 from sqlalchemy import text
@@ -62,11 +62,16 @@ cfg=Settings(database_url=url)
 factory=session_factory(cfg)
 with factory() as db:
     assert db.scalar(text("SELECT current_database()"))==target
+    schema=db.scalar(text("SELECT version_num FROM alembic_version"))
+    assert schema=="0013"
+    assert db.scalar(text("SELECT count(*) FROM task_runs r JOIN tasks t ON r.task_id=t.id WHERE r.state=:state AND r.role<>t.execution_role"),{"state":"active"})==0
+    assert db.scalar(text("SELECT count(*) FROM pg_indexes WHERE indexname=:name"),{"name":"one_active_primary_run"})==1
 result=audit(cfg,factory)
 assert result["healthy"] and result["verified"]==result["recorded"]
 memory=audit_memory(factory)
 assert memory["healthy"]
 print(json.dumps({"restored_database":target,"snapshot_id":os.environ["HUB_RESTORE_SNAPSHOT"],
+                  "database_schema":schema,"role_bindings_verified":True,
                   "verified_archives":result["verified"],"memory":memory,"passed":True,
                   "created_at":datetime.datetime.now(datetime.timezone.utc).isoformat()}))
 ' >"$stage/result.json"

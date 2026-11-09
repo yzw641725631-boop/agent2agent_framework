@@ -5,8 +5,10 @@ const modal=document.getElementById('dialog');
 let state,info={},releaseState,view='overview',selectedFolder=null;
 let taskBinding=null,taskVersion=0,taskTimer,openTaskBinding=null,taskDialogVersion=0;
 let memoryBinding=null,memoryQuery='',memoryOffset=0;
-modal.addEventListener('close',()=>{taskDialogVersion++;openTaskBinding=null;});
+let frameworkDialogVersion=0;
+modal.addEventListener('close',()=>{taskDialogVersion++;frameworkDialogVersion++;openTaskBinding=null;});
 const taskLabels={draft:'待准入',ready:'待认领',in_progress:'开发中',review:'待评审',testing:'待测试',release_ready:'待发布确认',completed:'已完成'};
+const roleLabels={'project-manager':'项目经理',architect:'架构师',designer:'产品与交互设计',developer:'开发工程师',reviewer:'代码审查',tester:'测试工程师',publisher:'发布负责人'};
 const labels={active:'已连接',pending:'等待验证 / 审批',offline:'连接中断',blocked:'已拦截',signed_out:'未登录',
   reauth_required:'需要重新登录',running:'执行中',checkpoint:'检查点',completed:'已完成',approved:'已批准'};
 const titles={overview:'协作概览',workspaces:'项目与 MCP',tasks:'任务与日志',memory:'共享记忆',checkpoints:'本机检查点',closeouts:'撤权交接',activity:'项目动态',connection:'账号与设备',desktop:'桌面设置'};
@@ -148,6 +150,7 @@ function bindings(limit=100){
     el('div',{class:'row between'},text('h3',binding.projectName+(binding.repositoryName?' / '+binding.repositoryName:' / 项目组')),pill(binding.status)),
     text('div',binding.workspace,'meta mono'),binding.message?text('p',binding.message,'warning'):null,
     el('div',{class:'row'},button('MCP 配置',()=>configDialog(binding)),
+      binding.status==='active'?button('部署职责',()=>frameworkDialog(binding)):null,
       binding.repositoryId ? button('获取更新',async()=>{
         const result=await invoke('fetchRepository',{bindingId:binding.id});toast('已获取更新 '+result.fetched_commit.slice(0,8)+'，当前代码未合并。',true);
       }) : button('组装仓库',()=>assembleDialog(binding)),button('停用连接',()=>{
@@ -155,6 +158,37 @@ function bindings(limit=100){
         text('p','此连接会立即失效。工作文件和已经写入的 .mcp.json 会保留，你可以在 harness 配置里移除对应项。'),
         dialogActions(button('确认停用',async()=>{await invoke('disconnect',{id:binding.id});closeDialog();await update();},'danger')));
     },'quiet')))));
+}
+function frameworkDialog(binding){
+  const ticket=++frameworkDialogVersion,account=state.user?.id;
+  const current=()=>ticket===frameworkDialogVersion && account===state.user?.id &&
+    state.bindings.some(b=>b.id===binding.id && b.status==='active');
+  const names=el('select',{},el('option',{value:'zh'},'中文'),el('option',{value:'en'},'English'));
+  const contents=el('select',{},el('option',{value:'zh'},'中文'),el('option',{value:'en'},'English'));
+  const results=el('div',{}),status=text('p','','note');
+  let preview=null;
+  const args=()=>({doc_name_lang:names.value,doc_content_lang:contents.value});
+  const install=button('确认部署',async()=>{
+    if(!current() || !preview)return;
+    const result=await invoke('frameworkDeploy',{bindingId:binding.id,args:{...args(),preview_hash:preview.preview_hash}});
+    if(!current())return;
+    toast(result.changed?'职责框架已部署，下次开工准备会加载当前角色。':'职责框架已经是当前版本。',true);closeDialog();
+  },'primary');
+  install.disabled=true;
+  const reset=()=>{preview=null;install.disabled=true;results.replaceChildren();status.textContent='语言已改变，请重新预览。'};
+  names.addEventListener('change',reset);contents.addEventListener('change',reset);
+  const inspect=button('预览文件',async()=>{
+    const selected=args();preview=null;install.disabled=true;status.textContent='正在验证项目权限并生成预览…';
+    const result=await invoke('taskQuery',{bindingId:binding.id,tool:'hub_preview_framework',args:selected});
+    if(!current() || JSON.stringify(selected)!==JSON.stringify(args()))return;
+    preview=result;status.textContent='共 '+result.files.length+' 个文件；只写入本工程的职责目录。';
+    results.replaceChildren(text('p',result.directory,'mono'),...result.files.map(f=>text('p',f.path+' · '+f.bytes+' B','meta mono')));
+    install.disabled=false;
+  });
+  openDialog(text('h2','部署项目职责框架'),text('p',binding.projectName+(binding.repositoryName?' / '+binding.repositoryName:'')),
+    text('p','包含七种职业职责、流程、文档索引和本地自检脚本。部署会保存安装收据；撤权交接成功后按收据清理。'),
+    text('p','职责按当前任务加载。职业名称不增加账号或仓库权限，跨端自动调度尚未接入。','note'),
+    el('div',{class:'fields'},field('角色文件名语言',names),field('文档正文语言',contents)),inspect,status,results,dialogActions(install));
 }
 async function assembleDialog(binding){
   const registry=await invoke('repositoryList',{bindingId:binding.id});
@@ -259,7 +293,7 @@ function tasksScreen(){
       if(!current())return;
       rows.replaceChildren(...data.items.map(task=>el('article',{class:'binding'},
         el('div',{class:'row between'},text('h3',task.title),text('span',taskLabels[task.status],'pill')),
-        text('p',`${task.scope.repository} · ${task.scope.platform} · ${task.scope.paths.join('、')}`,'note'),
+        text('p',`${roleLabels[task.execution_role] || task.execution_role || '开发工程师'} · ${task.scope.repository} · ${task.scope.platform} · ${task.scope.paths.join('、')}`,'note'),
         text('p',task.active_run_id?'认领到期 '+new Date(task.lease_until).toLocaleString('zh-CN'):'当前没有开发租约','note'),
         button('查看日志与流程',()=>taskDetail(bindingId,task.id,generation)))));
       if(!data.items.length)rows.append(empty('没有任务','在网站后台创建，或通过项目 MCP 让架构师拆解任务。'));
@@ -310,6 +344,7 @@ async function taskDetail(bindingId,taskId,generation,offset=0){
   if(!current())return;
   const task=data.task;openTaskBinding=bindingId;
   openDialog(text('h2',task.title),text('p',(taskLabels[task.status] || task.status)+' · 版本 '+task.version),
+    text('p','负责角色：'+(roleLabels[task.execution_role] || task.execution_role || '开发工程师')),
     text('pre',task.description+'\n\n验收：'+task.acceptance),
     text('h3',logs.visibility==='project'?'共享工作日志':'本人工作日志'),
     ...logs.items.map(log=>{
@@ -334,7 +369,7 @@ async function taskDetail(bindingId,taskId,generation,offset=0){
     !logs.items.length?text('p','没有当前账号可见的日志。','note'):null,
     el('div',{class:'actions'},offset?button('较新日志',()=>taskDetail(bindingId,taskId,generation,Math.max(0,offset-20))):null,
       logs.has_more?button('较早日志',()=>taskDetail(bindingId,taskId,generation,logs.next_offset)):null),
-    text('h3','执行身份'),...data.runs.map(run=>text('p',`${run.role} · ${run.harness} · ${run.user_id.slice(0,8)} / ${run.device_id.slice(0,8)} · ${run.state}`)),
+    text('h3','执行身份'),...data.runs.map(run=>text('p',`${roleLabels[run.role] || run.role} · ${run.harness} · ${run.user_id.slice(0,8)} / ${run.device_id.slice(0,8)} · ${run.state}`)),
     text('h3','可见流程证据'),...data.decisions.map(d=>el('details',{},text('summary',`${d.gate} · ${d.approved?'通过':'退回'}`),
       text('pre',d.evidence+(d.override_reason?'\n自审原因：'+d.override_reason:'')))),
     text('p','取回代码会保存为本机加密检查点，导出到新目录后审查。自动逐轮记录仍需宿主钩子配合。','note'),

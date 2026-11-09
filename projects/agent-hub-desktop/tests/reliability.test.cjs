@@ -52,12 +52,13 @@ test('MCP document tools are advertised only with documents read permission',asy
   let capabilities=['project:read'];
   const invoke=async()=>({capabilities});
   const request={jsonrpc:'2.0',id:1,method:'tools/list'};
-  assert.equal((await dispatch(request,invoke)).result.tools.length,14);
+  assert.equal((await dispatch(request,invoke)).result.tools.length,17);
   capabilities.push('documents:read');
   const tools=(await dispatch(request,invoke)).result.tools;
   assert.deepEqual(tools.filter(tool=>tool.name.includes('document')).map(tool=>tool.name),
     ['hub_list_document_sources','hub_get_document_index','hub_search_documents','hub_read_document']);
-  assert.ok(tools.filter(tool=>tool.name!=='hub_run_closeout').every(tool=>tool.annotations.readOnlyHint));
+  assert.ok(tools.filter(tool=>!['hub_run_closeout','hub_install_framework'].includes(tool.name)).every(tool=>tool.annotations.readOnlyHint));
+  assert.equal(tools.find(tool=>tool.name==='hub_install_framework').annotations.readOnlyHint,false);
   assert.equal(tools.find(tool=>tool.name==='hub_run_closeout').annotations.destructiveHint,true);
 });
 

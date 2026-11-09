@@ -24,6 +24,7 @@ from . import (
     memory,
     progress,
     repositories,
+    roles,
     tasks,
     work_archives,
     work_policy,
@@ -243,7 +244,7 @@ def create_app(
 
     @app.get("/healthz")
     def health():
-        return {"status": "ok", "phase": "P5-shared-memory", "version": __version__}
+        return {"status": "ok", "phase": "P6-role-framework", "version": __version__}
 
     @app.post("/api/auth/enrollments")
     def enroll(body: S.Enroll, request: Request, db: DB):
@@ -822,6 +823,11 @@ def create_app(
         identity = actor(request, db)
         hub.project(db, identity, project_id)
         return tasks.page(db, project_id, offset, limit, repository_id=repository_id)
+
+    @app.get("/api/projects/{project_id}/roles")
+    def project_roles(project_id: uuid.UUID, request: Request, db: DB, language: str = Query("zh", pattern="^(zh|en)$")):
+        hub.project(db, actor(request, db), project_id)
+        return roles.catalog(language)
 
     @app.get("/api/projects/{project_id}/policy")
     def project_policy(project_id: uuid.UUID, request: Request, db: DB):

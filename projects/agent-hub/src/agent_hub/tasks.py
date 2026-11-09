@@ -7,7 +7,7 @@ from datetime import timedelta
 
 from sqlalchemy import select
 
-from . import repositories, work_policy
+from . import repositories, roles, work_policy
 from .models import CodeDelivery, ProjectProgress, Task, TaskDecision, TaskRun, Worklog, WorkSnapshot
 from .security import HubError, now
 
@@ -19,7 +19,7 @@ def task_view(t):
     return {"id": str(t.id), "project_id": str(t.project_id), "parent_id": str(t.parent_id) if t.parent_id else None,
             "repository_id": str(t.repository_id) if t.repository_id else None,
             "title": t.title, "description": t.description, "acceptance": t.acceptance, "scope": t.scope,
-            "execution_mode": t.execution_mode,
+            "execution_mode": t.execution_mode, "execution_role": t.execution_role,
             "status": t.status, "admission_step": t.admission_step, "version": t.version,
             "lease_epoch": t.lease_epoch, "active_run_id": str(t.active_run_id) if t.active_run_id else None,
             "lease_until": t.lease_until.isoformat() if t.lease_until else None,
@@ -142,7 +142,7 @@ def claim(hub, db, actor, project_id, task_id, body, request_id):
     task.lease_epoch += 1
     run = TaskRun(id=uuid.uuid4(), project_id=project_id, task_id=task_id, user_id=actor.user.id,
                   device_id=actor.device.id, instance_id=body.instance_id, harness=body.harness,
-                  role="developer", lease_epoch=task.lease_epoch)
+                  role=task.execution_role, lease_epoch=task.lease_epoch)
     db.add(run)
     task.active_run_id, task.lease_until = run.id, now() + timedelta(seconds=LEASE_SECONDS)
     task.status, task.submission_id, task.version = "in_progress", None, task.version + 1
@@ -293,11 +293,6 @@ def decide(hub, db, actor, project_id, task_id, body, request_id):
                 raise HubError("TASK_INDEPENDENT_REVIEW_REQUIRED", 403)
         elif body.override_reason:
             raise HubError("TASK_OVERRIDE_NOT_APPLICABLE", 422)
-        run_id = uuid.uuid4()
-        db.add(TaskRun(id=run_id, project_id=project_id, task_id=task_id, user_id=actor.user.id,
-                       device_id=actor.device.id, instance_id=body.instance_id, harness=body.harness,
-                       role={"review": "reviewer", "test": "tester", "release": "publisher"}[body.gate],
-                       lease_epoch=task.lease_epoch, state="finished", ended_at=now()))
         if body.approved and body.gate == "release":
             pending = db.scalar(select(Task.id).where(Task.parent_id == task_id, Task.project_id == project_id,
                                                      Task.status != "completed").limit(1))
@@ -305,6 +300,10 @@ def decide(hub, db, actor, project_id, task_id, body, request_id):
                 raise HubError("TASK_CHILDREN_INCOMPLETE", 409)
         task.status = ({"review": "testing", "test": "release_ready", "release": "completed"}[body.gate]
                        if body.approved else "ready")
+    run_id = uuid.uuid4()
+    db.add(TaskRun(id=run_id, project_id=project_id, task_id=task_id, user_id=actor.user.id,
+                   device_id=actor.device.id, instance_id=body.instance_id, harness=body.harness,
+                   role=roles.GATE_ROLES[body.gate], lease_epoch=task.lease_epoch, state="finished", ended_at=now()))
     db.add(TaskDecision(project_id=project_id, task_id=task_id, author_id=actor.user.id, device_id=actor.device.id,
                         run_id=run_id, worklog_id=body.worklog_id, gate=body.gate, approved=body.approved,
                         evidence=body.evidence, override_reason=body.override_reason.strip(), task_version=task.version))

@@ -28,7 +28,7 @@ const definitions=[
     {task_id:id,worklog_id:id},['task_id','worklog_id'],{route:'@local',write:true,cap:'recovery'}),
   define('hub_create_task','拆解并创建任务','创建草稿任务，可指定同项目 parent_id。必须依次确认需求、设计、可行性才能认领。范围是声明，不能代替仓库授权或本地文件隔离。',
     {parent_id:id,repository_id:id,title:{type:'string',minLength:1,maxLength:200},description:{type:'string',minLength:1,maxLength:8000},
-      acceptance:{type:'string',minLength:1,maxLength:8000},scope,execution_mode:{type:'string',enum:['observed','declaration'],description:'默认 observed 受管代码任务；declaration 仅人工资料记录，不提供代码证据保证。'}},['title','description','acceptance','scope'],{write:true,cap:'tasks:publish'}),
+      acceptance:{type:'string',minLength:1,maxLength:8000},scope,execution_role:{type:'string',enum:['project-manager','architect','designer','developer'],description:'任务负责职业，默认 developer；角色不授予权限。'},execution_mode:{type:'string',enum:['observed','declaration'],description:'默认 observed 受管代码任务；declaration 仅人工资料记录，不提供代码证据保证。'}},['title','description','acceptance','scope'],{write:true,cap:'tasks:publish'}),
   define('hub_get_policy','读取项目规则','读取不可覆盖的基础规则和当前项目规则版本。规则确认不等于文件系统隔离。',{},[],{route:'@policy'}),
   define('hub_prepare_work','准备开工规则','认领后先调用：核验干净 Git 工程，准备本执行者的规则、焦点与最近获准交接摘要。返回 context ID、哈希和全部规则。',
     {task_id:id,...lease},['task_id','run_id','lease_epoch'],{route:':task/contexts',write:true,cap:'tasks:write'}),

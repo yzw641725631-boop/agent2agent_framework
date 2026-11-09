@@ -14,6 +14,7 @@ const osDefault = /Mac/i.test(navigator.platform) ? 'macos' : 'windows';
 const messagesForDocument = code => messages[code] || code;
 const taskStates = {draft:'待准入',ready:'待认领',in_progress:'开发中',review:'待评审',testing:'待测试',release_ready:'待发布确认',completed:'已完成'};
 const gateNames = {requirements:'需求确认',design:'设计审查',feasibility:'可行性确认',review:'代码评审',test:'测试确认',release:'发布确认'};
+const roleNames = {'project-manager':'项目经理',architect:'架构师',designer:'产品与交互设计',developer:'开发工程师',reviewer:'代码审查',tester:'测试工程师',publisher:'发布负责人'};
 const loginOptions = {required:true,pattern:'[a-z0-9][a-z0-9_.\\-]{2,79}',minlength:3,maxlength:80,
   title:'3–80 位小写字母或数字，可含 . _ -，以字母或数字开头，支持纯数字。',
   hint:'3–80 位小写字母或数字，可含 . _ -，支持纯数字。'};
@@ -326,7 +327,7 @@ class Console {
   async tasks() {
     const projectId = this.project?.id, revision = this.renderVersion;
     const title = this.heading('任务与工作日志','任务状态、认领和流程决定由服务器保存。当前页面每 5 秒刷新。',
-      [button('刷新',() => this.renderView()),...(projectId ? [button('项目规则',() => this.openPolicy(projectId))] : []),
+      [button('刷新',() => this.renderView()),...(projectId ? [button('项目规则',() => this.openPolicy(projectId)),button('职业职责',() => this.openRoles(projectId))] : []),
         ...(projectId && this.can('tasks:publish') ? [button('创建任务',() => this.createTask(),'primary')] : [])]);
     if (!projectId) return [title,h('section',{class:'card empty'},'请先选择一个项目。')];
     const base = `/api/projects/${projectId}`, list = h('div',{}), feed = h('div',{}), status = h('p',{class:'hint'});
@@ -376,11 +377,12 @@ class Console {
         field('repository','仓库标识',{required:true,maxlength:200}),
       !scoped && field('platform','目标端',{required:true,maxlength:80,placeholder:'例如 web'}),
       field('execution_mode','记录类型',{items:[['observed','代码任务：须确认规则并采集真实改动'],['declaration','人工资料记录：不提供代码证据保证']]}),
+      field('execution_role','任务负责角色',{items:[['developer','开发工程师'],['project-manager','项目经理'],['architect','架构师'],['designer','产品与交互设计']]}),
       h('label',{},'允许修改的相对目录或文件（每行一项）',h('textarea',{name:'paths',required:true,rows:3,placeholder:'src\ntests'}))));
     dialog(parentId ? '拆解子任务' : '创建任务','任务绑定具体仓库；成员还须具有该仓库的开发权限才能认领。创建后依次完成需求、设计和可行性确认。',form,'创建草稿',data => {
       const repo = repositories.find(repo => repo.id === data.repository_id);
       return this.api('POST',`/api/projects/${projectId}/tasks`,{title:data.title,description:data.description,acceptance:data.acceptance,
-        repository_id:repo?.id || null,parent_id:parentId,execution_mode:data.execution_mode,
+        repository_id:repo?.id || null,parent_id:parentId,execution_mode:data.execution_mode,execution_role:data.execution_role,
         scope:{repository:repo?.slug || data.repository,platform:repo?.platform || data.platform,
           paths:data.paths.split(/\r?\n/).map(p => p.trim()).filter(Boolean)}});
     });
@@ -438,6 +440,17 @@ class Console {
         })));
     }
     return parts;
+  }
+  async openRoles(projectId) {
+    const catalog = await this.api('GET',`/api/projects/${projectId}/roles`);
+    if (this.project?.id !== projectId || this.currentView !== 'tasks') return;
+    const content = h('div',{id:'modal-body'},h('h2',{},'职业职责'),
+      h('p',{class:'hint'},'任务指定负责角色；开工包只加载当前职责。人员权限、仓库授权和独立评审仍由服务器校验。'),
+      ...catalog.roles.map(role => h('details',{},h('summary',{},role.name),
+        ...role.responsibilities.map(item => h('p',{},item)),h('p',{},'交接产物：'+role.outputs.join('、')))),
+      h('p',{class:'hint'},'在 PC“项目与 MCP”选择“部署职责”，可将角色文档、流程和自检脚本安装到本地工程。'),
+      h('div',{class:'row-actions'},button('关闭',() => modal.close())));
+    modal.replaceChildren(content); if (!modal.open) modal.showModal();
   }
   async openPolicy(projectId) {
     const policy = await this.api('GET',`/api/projects/${projectId}/policy`);
@@ -502,7 +515,7 @@ class Console {
     },'primary'));
     const content = h('div',{id:'modal-body'},h('h2',{},task.title),h('p',{},`${taskStates[task.status]} · 版本 ${task.version} · ${task.id}`),
       task.execution_mode === 'observed' && h('p',{class:'help-block'},'代码任务：在工程 MCP 调用 hub_claim_task 认领，再调用 hub_prepare_work、hub_acknowledge_work。保存日志时采集本机实际改动。网页用于查看与流程决定。'),
-      h('p',{},`${task.scope.repository} / ${task.scope.platform} · ${task.scope.paths.join('、')}`),
+      h('p',{},`${roleNames[task.execution_role] || task.execution_role} · ${task.scope.repository} / ${task.scope.platform} · ${task.scope.paths.join('、')}`),
       h('h3',{},'需求与验收'),h('pre',{class:'document-content'},task.description+'\n\n验收：'+task.acceptance),
       task.lease_until && h('p',{},`租约到期 ${date(task.lease_until)}。网页认领需手动续租；Agent 使用 MCP 心跳。`),h('div',{class:'row-actions'},actions),
       h('h3',{},`工作日志 · ${logs.visibility === 'project' ? '共享原文' : '仅本人记录'}`),
@@ -514,7 +527,7 @@ class Console {
         log.delivery && h('p',{class:'mono'},`Git 交付回执 ${log.delivery.receipt_hash}\n${log.delivery.ref}（未合并、未部署）`))) : h('p',{class:'hint'},'没有当前账号可见的日志。'),
       h('div',{class:'row-actions'},offset > 0 && button('较新日志',() => this.openTask(projectId,taskId,Math.max(0,offset-20))),
         logs.has_more && button('较早日志',() => this.openTask(projectId,taskId,logs.next_offset))),
-      table('执行身份',['角色','人员 / 设备','工具','状态'],data.runs.map(r => [r.role,textPair(short(r.user_id),short(r.device_id)),r.harness,r.state])),
+      table('执行身份',['角色','人员 / 设备','工具','状态'],data.runs.map(r => [roleNames[r.role] || r.role,textPair(short(r.user_id),short(r.device_id)),r.harness,r.state])),
       table('可见流程证据',['关口','结果','依据','记录时间'],data.decisions.map(d => [gateNames[d.gate],d.approved ? '通过' : '退回',
         textPair(d.evidence,d.override_reason),date(d.created_at)])),h('p',{class:'hint'},'日志、代码备份和 Git 交付独立记录。请核对各自回执；代码恢复通过 PC 端或工程 MCP。'));
     modal.replaceChildren(content); if (!modal.open) modal.showModal();

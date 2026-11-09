@@ -71,7 +71,8 @@ def main():
         restricted_platform = restricted.tokens.copy()
         pc = register(w, project, "pc")
         w.start(restricted, grant(w, restricted, project, [(pc, ["code:read"])], caps=["project:read", "logs:read"]))
-        work = task(w, project, repo, execution_mode="observed")
+        work = task(w, project, repo, execution_mode="observed",
+                    execution_role="architect" if os.environ.get("HUB_TEST_ROLES") == "isolated" else "developer")
         run = claim(w, project, work, author)
         if memory_test:
             from sqlalchemy import event

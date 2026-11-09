@@ -6,7 +6,7 @@
 
 ## 拆解与准入
 
-有 `tasks:publish` 的管理员或超管通过 `hub_create_task` 创建任务。填写需求、验收标准与 `scope: {repository, platform, paths}`，子任务使用同项目 `parent_id`。多仓库项目另需绑定稳定 `repository_id`，仓库标识和目标端须与登记值一致，使用具体仓库的连接开工。仓库权限与代码交付见[项目组与仓库](repositories.md)。路径范围不执行文件系统隔离。范围不符合用户要求时先调整任务设计，不额外开发其他端。
+有 `tasks:publish` 的管理员或超管通过 `hub_create_task` 创建任务。填写需求、验收标准与 `scope: {repository, platform, paths}`，子任务使用同项目 `parent_id`。`execution_role` 指定项目经理、架构师、设计或开发职责，默认 `developer`，详见[职业职责](role-framework.md)。多仓库项目另需绑定稳定 `repository_id`，仓库标识和目标端须与登记值一致，使用具体仓库的连接开工。仓库权限与代码交付见[项目组与仓库](repositories.md)。路径范围不执行文件系统隔离。范围不符合用户要求时先调整任务设计，不额外开发其他端。
 
 通过 `hub_decide_task` 顺序记录 `requirements`、`design`、`feasibility`；每次先读最新 `task.version`，在 `expected_version` 传入。依据必须是真实的需求确认、设计分析或验证结果。三项通过后状态为 `ready`。代码任务另须完成开工上下文准备和确认，不能为走流程自动填“通过”。
 
@@ -19,7 +19,7 @@
 代码任务使用工程 MCP 认领，不能先在浏览器认领后让另一设备身份接手。准备步骤：
 
 1. `hub_prepare_work`，传 `task_id`、`run_id`、`lease_epoch` 和新 `operation_id`。首次要求干净 Git 根目录，存在原修改时先保全，再选择独立 worktree。已有运行重新准备保留原基线。
-2. 阅读返回的任务范围、全部规则和获准日志摘要。需要原文时用 `hub_read_worklog` 按 ID 展开。
+2. 阅读返回的当前角色职责、任务范围、全部规则和获准记忆摘要。需要原文时按准备包来源展开。
 3. `hub_acknowledge_work`，附上 `context_id`、`content_hash` 和全部 `rule_ids`。规则 revision 改变后旧确认失效；重新准备并确认。
 4. 修改前 `hub_check_changes`，传拟修改的 `proposed_paths`。检查当前租约、规则、允许路径及实际变化。禁止功能的文字规则仍需执行者遵守，检查器不理解任意业务语义。
 
@@ -47,4 +47,4 @@
 
 PC“任务与日志”和 Web 读取同一组服务器记录；PC 列表每 5 秒刷新，通知使用持久游标 SSE。Web 提供项目规则修订、创建与流程决定；人工资料任务还可网页认领、续租与记录，代码任务由工程 MCP 认领。
 
-服务端保存日志原文、文件清单和 SHA256 回执；代码快照可由获准接手人恢复到新目录。撤权后按[撤权交接](revocation.md)执行限定上传与归属卸载。向量检索、增量蒸馏、自动长期记忆和跨端角色调度仍待实现。
+服务端保存日志原文、文件清单和 SHA256 回执；代码快照可由获准接手人恢复到新目录。撤权后按[撤权交接](revocation.md)执行限定上传与归属卸载。已有来源约束的增量摘录、版本失效和本机加密执行记忆；Embedding、语义检索、长期模型蒸馏、自定义职业和跨端自动调度仍待实现。

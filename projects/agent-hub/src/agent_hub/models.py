@@ -270,6 +270,7 @@ class Task(Identity, Base):
     acceptance: Mapped[str] = mapped_column(Text)
     scope: Mapped[dict] = mapped_column(JSONB)
     execution_mode: Mapped[str] = mapped_column(String(24), default="observed", server_default="declaration")
+    execution_role: Mapped[str] = mapped_column(String(24), default="developer", server_default="developer")
     status: Mapped[str] = mapped_column(String(24), default="draft")
     admission_step: Mapped[int] = mapped_column(Integer, default=0)
     version: Mapped[int] = mapped_column(Integer, default=1)

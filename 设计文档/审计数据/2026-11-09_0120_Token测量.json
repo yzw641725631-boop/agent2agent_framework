@@ -1,0 +1,104 @@
+{
+  "date": "2026-11-09",
+  "backend_version": "0.10.0",
+  "desktop_version": "0.12.0",
+  "tiktoken_version": "0.14.0",
+  "billing_usage": false,
+  "measured_savings": false,
+  "memory_budget_utf8_bytes": 12000,
+  "semantic_embeddings_configured": false,
+  "warning": "Public-text tokenization and one isolated fixture only; not Astra billing, production usage or measured savings. Tool schemas and referenced documents add context cost.",
+  "measured": {
+    "install.md": {
+      "utf8_bytes": 66807,
+      "o200k_base": 19378,
+      "cl100k_base": 23911
+    },
+    "skills/agent-hub/SKILL.md": {
+      "utf8_bytes": 7538,
+      "o200k_base": 1930,
+      "cl100k_base": 2461
+    },
+    "skills/agent-hub/references/repositories.md": {
+      "utf8_bytes": 4323,
+      "o200k_base": 1118,
+      "cl100k_base": 1402
+    },
+    "skills/agent-hub/references/task-workflow.md": {
+      "utf8_bytes": 5889,
+      "o200k_base": 1528,
+      "cl100k_base": 1929
+    },
+    "skills/agent-hub/references/role-framework.md": {
+      "utf8_bytes": 2170,
+      "o200k_base": 552,
+      "cl100k_base": 749
+    },
+    "skills/agent-hub/references/work-records.md": {
+      "utf8_bytes": 5568,
+      "o200k_base": 1452,
+      "cl100k_base": 1892
+    },
+    "skills/agent-hub/references/revocation.md": {
+      "utf8_bytes": 2028,
+      "o200k_base": 532,
+      "cl100k_base": 709
+    },
+    "skills/agent-hub/references/shared-memory.md": {
+      "utf8_bytes": 2970,
+      "o200k_base": 787,
+      "cl100k_base": 1027
+    },
+    "tools:revoked": {
+      "tool_count": 3,
+      "utf8_bytes": 1246,
+      "o200k_base": 297,
+      "cl100k_base": 352
+    },
+    "tools:setup": {
+      "tool_count": 5,
+      "utf8_bytes": 2631,
+      "o200k_base": 612,
+      "cl100k_base": 667
+    },
+    "tools:group": {
+      "tool_count": 38,
+      "utf8_bytes": 23193,
+      "o200k_base": 5623,
+      "cl100k_base": 6095
+    },
+    "tools:repository-admin": {
+      "tool_count": 39,
+      "utf8_bytes": 23567,
+      "o200k_base": 5710,
+      "cl100k_base": 6178
+    },
+    "tools:project-reader": {
+      "tool_count": 18,
+      "utf8_bytes": 7795,
+      "o200k_base": 1858,
+      "cl100k_base": 2098
+    },
+    "tools:repository-developer": {
+      "tool_count": 36,
+      "utf8_bytes": 19793,
+      "o200k_base": 4794,
+      "cl100k_base": 5215
+    },
+    "fixture:prepared-memory-section": {
+      "utf8_bytes": 2478,
+      "o200k_base": 856,
+      "cl100k_base": 885
+    },
+    "roles:current-architect": {
+      "utf8_bytes": 580,
+      "o200k_base": 172,
+      "cl100k_base": 212
+    },
+    "roles:full-catalog": {
+      "utf8_bytes": 4392,
+      "o200k_base": 1265,
+      "cl100k_base": 1462
+    }
+  }
+}

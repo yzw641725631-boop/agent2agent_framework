@@ -54,7 +54,7 @@ class CloseoutRuntime{
           for(const b of [...p.bindings,...p.retiredBindings || []].filter(b=>this.match(b,job))){
             b.closeout_id=job.id;b.status=job.local_state==='complete'?'uninstalled':'blocked';b.errorCode='PROJECT_CLOSEOUT_REQUIRED';
             b.message=this.publicJob(job).message;
-            for(const run of Object.values(p.workRuns || {}).filter(run=>run.binding_id===b.id)){run.stopped='revoked';delete run.memory;}
+            for(const run of Object.values(p.workRuns || {}).filter(run=>run.binding_id===b.id)){run.stopped='revoked';delete run.memory;delete run.role;}
           }
           if(raw.scope.repository_ids===null)c.cancelWatch(raw.project_id);
         }

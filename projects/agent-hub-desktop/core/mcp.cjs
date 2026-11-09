@@ -2,6 +2,7 @@
 const {version}=require('../package.json');
 const taskTools=require('./task-tools.cjs');
 const repositoryTools=require('./repository-tools.cjs');
+const frameworkTools=require('./framework-tools.cjs');
 
 const versionTool={
   name:'hub_check_version',title:'检查 Agent Hub 版本',
@@ -82,7 +83,7 @@ async function dispatch(request,invoke,checkVersion,{omitToolText=false,scope='p
   const management=scope==='management';
   const setup=scope==='setup';
   const memoryTools=require('./memory-tools.cjs').tools;
-  const available=setup?setupTools:management?managementTools:[...closeoutTools,...readTools,...documentTools,...memoryTools,...repositoryTools.tools,reportTool,...taskTools.tools(['tasks:publish','tasks:claim','tasks:write','tasks:review','tasks:test','logs:read'])];
+  const available=setup?setupTools:management?managementTools:[...closeoutTools,...readTools,...frameworkTools.tools,...documentTools,...memoryTools,...repositoryTools.tools,reportTool,...taskTools.tools(['tasks:publish','tasks:claim','tasks:write','tasks:review','tasks:test','logs:read'])];
   const id=request?.id??null;
   if (!object(request) || request.jsonrpc!=='2.0' || typeof request.method!=='string' ||
       ('id' in request && !['string','number'].includes(typeof request.id))) return error(id,-32600,'Invalid Request');
@@ -102,7 +103,7 @@ async function dispatch(request,invoke,checkVersion,{omitToolText=false,scope='p
   else if(request.method==='tools/list'){
     const meta=await invoke('metadata',{});
     const tools=setup?setupTools:management?managementTools.filter(tool=>meta.capabilities.includes(tool.name==='hub_create_project'?'projects:create':'projects:list')):
-      meta.closeout_required?closeoutTools:[...closeoutTools,...readTools,...memoryTools,...taskTools.tools(meta.capabilities),...repositoryTools.available(meta),
+      meta.closeout_required?closeoutTools:[...closeoutTools,...readTools,...frameworkTools.tools,...memoryTools,...taskTools.tools(meta.capabilities),...repositoryTools.available(meta),
         ...(meta.capabilities.includes('documents:read')?documentTools:[]),...(meta.capabilities.includes('tasks:write')?[reportTool]:[])];
     result={tools:[...(checkVersion?[versionTool]:[]),...tools]};
   } else if(request.method==='tools/call'){

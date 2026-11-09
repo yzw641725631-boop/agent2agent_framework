@@ -184,7 +184,7 @@ async function replace(file, bytes, expected) {
   } finally { await fs.unlink(temporary).catch(error => { if (error.code !== 'ENOENT') throw error; }); }
 }
 
-async function applyPlans(plans, guard = () => {}) {
+async function applyPlans(plans, guard = () => {}, { backupDirectory = null } = {}) {
   const changes = plans.flatMap(plan => plan.changes), written = [], backups = [];
   try {
     for (const change of changes) {
@@ -193,7 +193,9 @@ async function applyPlans(plans, guard = () => {}) {
       if (!same(current, change.previous)) throw new HubError('CONFIGURATION_CHANGED');
       if (current?.equals(change.next)) continue;
       if (current) {
-        const backup = change.file + '.agent-hub-' + crypto.randomUUID() + '.bak';
+        const backup = backupDirectory ? path.join(backupDirectory,digest(change.file)+'-'+crypto.randomUUID()+'.bak') :
+          change.file + '.agent-hub-' + crypto.randomUUID() + '.bak';
+        if(backupDirectory){await safePath(backupDirectory);await fs.mkdir(backupDirectory,{recursive:true,mode:0o700});await safePath(backupDirectory);}
         await fs.writeFile(backup, current, { flag: 'wx', mode: 0o600 }); backups.push(backup);
       }
       guard(); await replace(change.file, change.next, change.previous); written.push(change);
@@ -285,7 +287,7 @@ async function deployFramework({ workspace, receiptDirectory, name, files, guard
     changes.push({ file: target, previous, next: entry.bytes }); owned[entry.path] = digest(entry.bytes);
   }
   changes.push({ file, previous: before, next: Buffer.from(JSON.stringify({ version: 1, workspace, name, files: owned })) });
-  return applyPlans([{ target: root, skill: null, changes }], guard);
+  return applyPlans([{ target: root, skill: null, changes }], guard, {backupDirectory:path.join(receiptDirectory,'backups')});
 }
 
 async function uninstallProject({ workspace, receiptDirectories, name, installed, guard = () => {} }) {

@@ -51,6 +51,20 @@ test('observer refuses dirty starts, protected modifications, ignored declaratio
   await assert.rejects(observer.safeRead(dir,'tests/linked/hidden.ts'),{code:'WORK_PATH_UNSAFE'});
 });
 
+test('owned untracked framework files can be omitted without hiding tracked or unknown changes',async t=>{
+  const dir=await repo(t),relative='.agent-hub/framework/agent-hub-test/main.md';
+  await fs.mkdir(path.dirname(path.join(dir,relative)),{recursive:true});await fs.writeFile(path.join(dir,relative),'local framework');
+  const options={ignoreUntracked:[relative]},base=await observer.initialize(dir,options);
+  assert.equal((await observer.capture(dir,base.base_commit,scope,policy,options)).evidence.files.length,0);
+  await fs.writeFile(path.join(dir,'.agent-hub/unknown.md'),'not owned');
+  await assert.rejects(observer.initialize(dir,options),{code:'WORKTREE_NOT_CLEAN'});
+  await assert.rejects(observer.capture(dir,base.base_commit,scope,policy,options),{code:'TASK_PATH_OUT_OF_SCOPE'});
+  await fs.unlink(path.join(dir,'.agent-hub/unknown.md'));
+  await execute('git',['-C',dir,'add','--',relative],{windowsHide:true});
+  await assert.rejects(observer.initialize(dir,options),{code:'WORKTREE_NOT_CLEAN'});
+  await assert.rejects(observer.capture(dir,base.base_commit,scope,policy,options),{code:'TASK_PATH_OUT_OF_SCOPE'});
+});
+
 test('encrypted checkpoint store survives reopen, hides other identities and exports into a new directory',async t=>{
   const dir=await repo(t),data=await temporary(t),key=protector(),base=await observer.initialize(dir);
   await fs.writeFile(path.join(dir,'src/main.ts'),'private changed code');
@@ -164,6 +178,18 @@ test('logout during background capture stops renewal and keeps the checkpoint un
   t.after(()=>{observer.capture=original;});
   await f.runtime.tick();assert.equal(f.uploads(),0);assert.equal(f.heartbeats(),0);
   assert.equal((await f.runtime.store.list(f.runtime.owner())).length,1);
+});
+
+test('rejected heartbeat stops renewal and projections while retaining the closeout baseline',async t=>{
+  const f=await runtimeFixture(t),run=f.profile.workRuns[f.lease.run_id],invoke=f.c.invokeProjectRemote;
+  run.memory={items:[]};run.role={id:'architect'};run.next_heartbeat=0;
+  f.c.invokeProjectRemote=async(b,action,args)=>{
+    if(action==='hub_heartbeat_task')throw new HubError('PROJECT_ACCESS_REVOKED');
+    return invoke(b,action,args);
+  };
+  await f.runtime.tick();
+  assert.equal(run.stopped,'PROJECT_ACCESS_REVOKED');assert.equal(run.memory,undefined);assert.equal(run.role,undefined);
+  assert.equal(run.acknowledged,true);assert.ok(run.base_commit);
 });
 
 test('export cleanup requires a shared log and verifies both the exported notes and code',async t=>{

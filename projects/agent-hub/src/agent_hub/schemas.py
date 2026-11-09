@@ -146,6 +146,7 @@ class NewTask(Input):
     acceptance: str = Field(min_length=1, max_length=8000)
     scope: TaskScope
     execution_mode: Literal["observed", "declaration"] = "observed"
+    execution_role: Literal["project-manager", "architect", "designer", "developer"] = "developer"
 
     @model_validator(mode="after")
     def bounded_record(self):

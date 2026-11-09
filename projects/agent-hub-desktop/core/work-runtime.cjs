@@ -49,7 +49,7 @@ class WorkRuntime{
         try{
           await c.invokeProjectRemote(b,'hub_heartbeat_task',{task_id:r.task_id,run_id:r.run_id,lease_epoch:r.lease_epoch,operation_id:r.heartbeat_operation});
           c.ensureCurrent(p,remote);r.next_heartbeat=Date.now()+120000;delete r.heartbeat_operation;
-        }catch(error){if(!retryable.has(error.code)){r.stopped=error.code;r.acknowledged=false;}r.next_heartbeat=Date.now()+30000;}
+        }catch(error){if(!retryable.has(error.code)){r.stopped=error.code;delete r.memory;delete r.role;}r.next_heartbeat=Date.now()+30000;}
       }
       if(c.profile===p)await c.persist();
       if(c.connection!=='active' || c.profile!==p || c.remote!==remote)return;
@@ -71,7 +71,8 @@ class WorkRuntime{
     }
     const previous=this.runs()[args.run_id];
     if(previous)this.run(binding,args);
-    const baseline=previous?{workspace:previous.workspace,base_commit:previous.base_commit}:await observer.initialize(binding.workspace);
+    const baseline=previous?{workspace:previous.workspace,base_commit:previous.base_commit}:
+      await observer.initialize(binding.workspace,{ignoreUntracked:await this.managedPaths(binding)});
     if(baseline.workspace!==binding.workspace)throw new HubError('WORKSPACE_CHANGED');
     const context=await c.invokeProjectRemote(binding,'hub_prepare_work',args);
     c.ensureCurrent(p,remote);
@@ -79,6 +80,7 @@ class WorkRuntime{
       lease_epoch:args.lease_epoch,owner:this.owner(),...baseline,context_id:context.id,context_hash:context.content_hash,
       scope:context.payload.task.scope,policy:context.payload.policy,acknowledged:false,last_activity:Date.now(),next_heartbeat:0,
       memory:context.payload.memory || null,memory_required:context.payload.schema_version>=2,
+      role:context.payload.role || null,role_required:context.payload.schema_version>=3,
       execution_mode:context.payload.task.execution_mode};
     await c.persist();this.start();return {...context,baseline_commit:baseline.base_commit,local_write_isolation:false,
       local_memory:{storage:'os-encrypted-vault',scope:'account-device-repository-run',context_id:context.id,
@@ -86,7 +88,7 @@ class WorkRuntime{
   }
   async validateMemory(binding,r){
     if(!r.memory_required)return null;
-    if(!r.memory)throw new HubError('WORK_CONTEXT_REQUIRED','本机执行记忆已失效，请重新准备并确认。');
+    if(!r.memory || r.role_required && !r.role)throw new HubError('WORK_CONTEXT_REQUIRED','本机执行职责或记忆已失效，请重新准备并确认。');
     const c=this.c,p=c.profile,remote=c.remote;
     if(c.connection!=='active' || binding.status!=='active')throw new HubError('NETWORK_UNAVAILABLE','联网核验来源权限后再加载执行记忆。');
     try{
@@ -96,16 +98,22 @@ class WorkRuntime{
       if(result.content_hash!==r.context_hash)throw new HubError('WORK_CONTEXT_STALE');
       return result;
     }catch(error){
-      if(!retryable.has(error.code)){delete r.memory;await c.persist();}
+      if(!retryable.has(error.code)){delete r.memory;delete r.role;await c.persist();}
       throw error;
     }
+  }
+  async managedPaths(binding){
+    return this.c.closeouts?require('./host-install.cjs').ownedProjectPaths(this.c.closeouts.options(binding)):[];
+  }
+  async capture(binding,r){
+    return observer.capture(binding.workspace,r.base_commit,r.scope,r.policy,{ignoreUntracked:await this.managedPaths(binding)});
   }
   async loadMemory(binding,args){
     const r=this.run(binding,args);
     if(!r.acknowledged)throw new HubError('WORK_CONTEXT_ACK_REQUIRED');
     const status=await this.validateMemory(binding,r);
     if(!r.memory)throw new HubError('WORK_CONTEXT_REQUIRED','请升级服务器并重新准备共享记忆。');
-    return {context_id:r.context_id,content_hash:r.context_hash,memory:r.memory,
+    return {context_id:r.context_id,content_hash:r.context_hash,memory:r.memory,role:r.role || null,
       current_status:status?.memory,storage:'os-encrypted-vault',fresh_source_authorization:true};
   }
   async acknowledge(binding,args){
@@ -133,7 +141,7 @@ class WorkRuntime{
       const rejected=observer.violations(args.proposed_paths,r.scope,r.policy);
       if(rejected.length)throw new HubError(rejected[0].code,'拟修改路径被任务范围或保护规则拒绝。',{violations:rejected});
     }
-    const snapshot=await observer.capture(binding.workspace,r.base_commit,r.scope,r.policy);
+    const snapshot=await this.capture(binding,r);
     this.c.ensureCurrent(p,remote);
     r.last_activity=Date.now();await this.c.persist();
     return {can_continue:true,evidence:snapshot.evidence,evidence_hash:snapshot.evidence_hash,
@@ -143,7 +151,7 @@ class WorkRuntime{
     if(r.execution_mode!=='observed')return;
     r.automatic_checkpoint_id??=crypto.randomUUID();
     return this.serialize(r.automatic_checkpoint_id,async()=>{
-    const snapshot=await observer.capture(binding.workspace,r.base_commit,r.scope,r.policy);
+    const snapshot=await this.capture(binding,r);
     if(snapshot.evidence_hash===r.observed_hash || !snapshot.evidence.files.length && !r.observed_hash)return;
     const record={schema:1,operation_id:r.automatic_checkpoint_id,owner:r.owner,binding_id:binding.id,
       project_id:binding.projectId,repository_id:binding.repositoryId || null,task_id:r.task_id,run_id:r.run_id,lease_epoch:r.lease_epoch,workspace:binding.workspace,
@@ -176,7 +184,7 @@ class WorkRuntime{
       if(typeof args.summary!=='string' || !args.summary.trim() || typeof args.notes!=='string' || !args.notes.trim() ||
          typeof args.tests!=='string' || !args.tests.trim() || typeof args.next_steps!=='string' || !args.next_steps.trim())
         throw new HubError('INVALID_REQUEST');
-      const snapshot=await observer.capture(binding.workspace,r.base_commit,r.scope,r.policy);
+      const snapshot=await this.capture(binding,r);
       const paths=snapshot.evidence.files.map(f=>f.path);
       if(args.changed_paths && observer.canonical([...args.changed_paths].sort())!==observer.canonical([...paths].sort()))
         throw new HubError('WORK_CHANGE_PATHS_MISMATCH','申报路径与实际 Git 改动不一致，未上传。');
@@ -244,7 +252,7 @@ class WorkRuntime{
   async submit(binding,args){
     const r=this.run(binding,args),p=this.c.profile,remote=this.c.remote;
     if(!r.acknowledged || r.last_worklog_id!==args.worklog_id)throw new HubError('TASK_LATEST_CHECKPOINT_REQUIRED');
-    const snapshot=await observer.capture(binding.workspace,r.base_commit,r.scope,r.policy);
+    const snapshot=await this.capture(binding,r);
     this.c.ensureCurrent(p,remote);
     if(snapshot.evidence_hash!==r.last_evidence_hash)throw new HubError('WORK_EVIDENCE_CHANGED','检查点之后代码已变化，请先保存本轮日志。');
     if(this.c.backups && binding.repositoryId){
@@ -253,7 +261,7 @@ class WorkRuntime{
         throw new HubError('WORK_REMOTE_BACKUP_REQUIRED');
     }
     const result=await this.c.invokeProjectRemote(binding,'hub_submit_task',{...args,evidence_hash:snapshot.evidence_hash},{internal:true});
-    r.stopped='submitted';delete r.memory;await this.c.persist();return result;
+    r.stopped='submitted';delete r.memory;delete r.role;await this.c.persist();return result;
   }
   async export(id,destination){
     return this.serialize(id,async()=>{

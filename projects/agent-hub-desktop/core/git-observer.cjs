@@ -43,10 +43,12 @@ async function repository(workspace){
   if(!/^[a-f0-9]{40,64}$/.test(head))fail('WORK_GIT_BASE_REQUIRED','工程需要已存在的 Git 基线提交。');
   return {workspace:actual,head};
 }
-async function initialize(workspace){
+async function initialize(workspace,{ignoreUntracked=[]}={}){
   const repo=await repository(workspace);
   const status=await git(repo.workspace,['status','--porcelain=v1','-z','--untracked-files=all']);
-  if(status.length)fail('WORKTREE_NOT_CLEAN','首次准备任务需要干净的 Git 工作区，请先保存原有修改或使用独立 worktree。');
+  const entries=status.toString('utf8').split('\0').filter(Boolean);
+  if(entries.some(entry=>!entry.startsWith('?? ') || !ignoreUntracked.includes(entry.slice(3))))
+    fail('WORKTREE_NOT_CLEAN','首次准备任务需要干净的 Git 工作区，请先保存原有修改或使用独立 worktree。');
   return {workspace:repo.workspace,base_commit:repo.head};
 }
 async function safeRead(workspace,relative){

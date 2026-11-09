@@ -1,0 +1,242 @@
+{
+  "date": "2026-11-09",
+  "backend": "0.10.0",
+  "desktop": "0.12.0",
+  "database_schema": "0013",
+  "backend_tests_passed": 168,
+  "desktop_tests_passed": 117,
+  "legacy_active_run_migration_verified": true,
+  "actual_http_and_database_integration": {
+    "passed": true,
+    "realWindowsController": true,
+    "realHTTP": true,
+    "realDPoP": true,
+    "realPostgreSQL": true,
+    "realMemoryWorker": true,
+    "documentAndCoworkerMemoryLoaded": true,
+    "byteBudgetChecked": true,
+    "sourceOriginalRead": true,
+    "repositoryDenied": true,
+    "conflictForcesRefresh": true,
+    "localProjectionInvalidated": true,
+    "incrementalLogVisible": true,
+    "nextColleaguePrepared": true,
+    "revocationDenied": true,
+    "workingCodePreserved": true,
+    "semanticEmbeddingsConfigured": false,
+    "roleBound": "architect",
+    "realFrameworkDeployment": true,
+    "managedFilesDoNotPolluteCodeEvidence": true,
+    "roleRevocationHandoffAndUninstall": true,
+    "physicalWindowsHosts": 1,
+    "logicalDevices": 3
+  },
+  "packaged_runtime": {
+    "passed": true,
+    "version": "0.12.0",
+    "packagedRuntime": true,
+    "sharedMemoryNavigationListed": true,
+    "signedOutProjectAccessBlocked": true,
+    "closeToTrayDefault": true,
+    "trayLifetimeVerifiedInSourceSmoke": true,
+    "profileIsolated": true
+  },
+  "public_online_upgrade": {
+    "passed": true,
+    "old_version": "0.11.0",
+    "new_version": "0.12.0",
+    "clicked_from_signed_out_client": true,
+    "signed_release_activated": true,
+    "native_restart_completed": true,
+    "publicDownload": true,
+    "profileIsolated": true
+  },
+  "installed_release": {
+    "passed": true,
+    "version": "0.12.0",
+    "publicInstallerDownloadVerified": true,
+    "installerSha256": "e99245dd09bd295eb3f216dc7ea2af74ce7c4bbe94358272f86ebfac638d1fd1",
+    "installedManifestMatchesSignedRelease": true,
+    "installedFilesVerified": 159,
+    "unlistedApplicationResourcesAbsent": true,
+    "managedSkillMatchesPackagedVersion": true,
+    "managedSkillFilesVerified": 8,
+    "existingDataDirectoryUsed": "D:/agent_cache/agent-hub",
+    "codexConfigurationUpdated": true,
+    "loginPerformedByAgent": false,
+    "authenticodeSigned": false
+  },
+  "installed_mcp": {
+    "passed": true,
+    "installedVersion": "0.12.0",
+    "realStdioMcp": true,
+    "configurationFromInstalledCodex": true,
+    "signedFeedVerified": true,
+    "loginState": "LOGIN_REQUIRED",
+    "authenticationNotBypassed": true
+  },
+  "server": {
+    "production_recovery": {
+      "production_backup_verified": true,
+      "new_schema_restored": true,
+      "operator_checks_healthy": true,
+      "snapshot_id": "d7221d3a6e0d0a39955356a5ab15429e06f3fdd4b1628f3cdffc3128cc155f94",
+      "verified_archives": 0,
+      "memory": {
+        "documents": 0,
+        "exact_originals": 0,
+        "cards": 0,
+        "errors": [],
+        "healthy": true
+      },
+      "continuous_offsite_backup": false,
+      "actual_business_memory_data": false
+    },
+    "restore_drill": {
+      "restored_database": "hub_restore_20261109T060230Z",
+      "snapshot_id": "d7221d3a6e0d0a39955356a5ab15429e06f3fdd4b1628f3cdffc3128cc155f94",
+      "database_schema": "0013",
+      "role_bindings_verified": true,
+      "verified_archives": 0,
+      "memory": {
+        "documents": 0,
+        "exact_originals": 0,
+        "cards": 0,
+        "errors": [],
+        "healthy": true
+      },
+      "passed": true,
+      "created_at": "2026-11-09T06:02:35.923204+00:00"
+    },
+    "ops": {
+      "schema": 1,
+      "created_at": "2026-11-09T06:05:33.156229+00:00",
+      "checks": [
+        {
+          "id": "container:agent-hub-postgres",
+          "state": "ok"
+        },
+        {
+          "id": "container:agent-hub-app-api-1",
+          "state": "ok"
+        },
+        {
+          "id": "container:agent-hub-app-document-worker-1",
+          "state": "ok"
+        },
+        {
+          "id": "container:agent-hub-app-memory-worker-1",
+          "state": "ok"
+        },
+        {
+          "id": "container:agent-hub-edge",
+          "state": "ok"
+        },
+        {
+          "id": "database:query",
+          "state": "ok"
+        },
+        {
+          "id": "memory:queue",
+          "state": "ok"
+        },
+        {
+          "id": "public:https",
+          "state": "ok",
+          "version": "0.10.0"
+        },
+        {
+          "id": "desktop:signed-feed",
+          "state": "ok",
+          "version": "0.12.0",
+          "remaining_hours": 719
+        },
+        {
+          "id": "disk:capacity",
+          "state": "ok",
+          "free_bytes": 20602224640
+        },
+        {
+          "id": "agent-hub-backup",
+          "state": "ok",
+          "age_hours": 0.05,
+          "maximum_hours": 36
+        },
+        {
+          "id": "agent-hub-archive-audit",
+          "state": "ok",
+          "age_hours": 0.05,
+          "maximum_hours": 36
+        },
+        {
+          "id": "agent-hub-restore-drill",
+          "state": "ok",
+          "age_hours": 0.05,
+          "maximum_hours": 1080
+        },
+        {
+          "id": "offsite:continuous-copy",
+          "state": "warning",
+          "configured": false
+        },
+        {
+          "id": "alerts:external-delivery",
+          "state": "warning",
+          "configured": false
+        }
+      ],
+      "healthy": true,
+      "has_warnings": true,
+      "scope": "local-operator-checks-only"
+    },
+    "health": {
+      "status": "ok",
+      "phase": "P6-role-framework",
+      "version": "0.10.0"
+    },
+    "database": {
+      "schema": "0013",
+      "vector_version": "0.8.7",
+      "users": 1,
+      "devices": 4,
+      "projects": 0,
+      "settings": 1,
+      "repositories": 0,
+      "tasks": 0,
+      "memory_embeddings": 0,
+      "unique_primary_lease": true,
+      "task_tables_forced_rls": true
+    }
+  },
+  "release": {
+    "schema": 1,
+    "platform": "win-x64",
+    "version": "0.12.0",
+    "installer": {
+      "url": "https://47.109.23.86:18180/desktop-updates/win-x64/AgentHub-Setup-0.12.0.exe",
+      "bytes": 123140857,
+      "sha256": "e99245dd09bd295eb3f216dc7ea2af74ce7c4bbe94358272f86ebfac638d1fd1"
+    },
+    "files_sha256": "6d057202b61662e87ea38d4716bfa3bebd4667b264bcdfbfce64bc53babd0bb7"
+  },
+  "signed_update_metadata": {
+    "schema": 1,
+    "channel": "stable",
+    "platform": "win-x64",
+    "version": "0.12.0",
+    "metadata_version": 13,
+    "issued_at": "2026-11-09T05:59:23.934Z",
+    "expires_at": "2026-12-09T05:59:23.934Z",
+    "bytes": 159970106,
+    "sha256": "f81c6933ace23a5ee576d2f5166ac2abf33a7d34901e11623e385b6f6772ce60",
+    "files_sha256": "6d057202b61662e87ea38d4716bfa3bebd4667b264bcdfbfce64bc53babd0bb7"
+  },
+  "one_time_encrypted_offsite_copy": true,
+  "continuous_offsite_backup": false,
+  "external_alert_delivery": false,
+  "semantic_embeddings_configured": false,
+  "cross_harness_scheduler_implemented": false,
+  "production_business_pilot_completed": false,
+  "overall_production_acceptance": false,
+  "secrets_scan_findings": 0
+}

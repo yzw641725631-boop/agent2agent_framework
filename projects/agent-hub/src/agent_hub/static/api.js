@@ -19,6 +19,7 @@ export const messages = {
   GITHUB_APP_NOT_CONFIGURED:'请先在后台配置 GitHub App。',GITHUB_APP_AUTHORIZATION_FAILED:'GitHub App 授权失败，请核对 App、安装 ID 及仓库授权。',
   WORK_CONTEXT_REQUIRED:'请在项目 MCP 准备开工规则。', WORK_CONTEXT_ACK_REQUIRED:'请读取并确认全部当前规则。',
   WORK_CONTEXT_STALE:'规则或任务范围已更新，请重新准备。', WORK_CONTEXT_ACK_MISMATCH:'规则哈希或确认列表不匹配。',
+  WORK_ROLE_STALE:'当前任务职责已更新，请在工程 MCP 重新准备并确认。',
   WORK_CHANGE_EVIDENCE_REQUIRED:'代码任务需要桌面端采集实际改动。', WORK_EVIDENCE_CHANGED:'检查点已变化，请保存最新日志。',
   WORK_CHANGE_PATHS_MISMATCH:'申报路径与实际改动清单不一致。', WORK_PATH_PROTECTED:'修改了受保护路径。',
   POLICY_VERSION_CONFLICT:'规则已有新版本，请刷新后重试。', WORKLOG_NOT_ACCESSIBLE:'没有这条日志的访问权限。',

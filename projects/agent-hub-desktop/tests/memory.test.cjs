@@ -60,11 +60,12 @@ test('run memory is encrypted at rest and stale/offline/other-instance loads can
   vault.data.profiles.account=profile;vault.data.current='account';
   const lease={task_id:crypto.randomUUID(),run_id:crypto.randomUUID(),lease_epoch:1},context=crypto.randomUUID();
   const contentHash='a'.repeat(64),body={items:[{id:crypto.randomUUID(),body:'private-memory-content-不要写入工程'}]};
+  const role={id:'architect',content_hash:'b'.repeat(64),responsibilities:['private-role-guidance']};
   let denied=false;
   const c={profile,directory:data,vault,connection:'active',remote:{},persist:()=>vault.save(),emitState(){},
     ensureCurrent(p,r){assert.equal(this.profile,p);assert.equal(this.remote,r);},
     async invokeProjectRemote(b,action){
-      if(action==='hub_prepare_work')return {id:context,content_hash:contentHash,payload:{schema_version:2,memory:body,
+      if(action==='hub_prepare_work')return {id:context,content_hash:contentHash,payload:{schema_version:3,memory:body,role,
         policy:{rules:[]},task:{scope:{paths:['src']},execution_mode:'observed'}}};
       if(action==='hub_acknowledge_work')return {can_record:true};
       if(action==='hub_validate_work_context'){
@@ -80,14 +81,17 @@ test('run memory is encrypted at rest and stale/offline/other-instance loads can
   const loaded=await runtime.loadMemory(binding,lease);
   assert.equal(loaded.memory.items[0].body,body.items[0].body);
   assert.equal(loaded.fresh_source_authorization,true);
+  assert.deepEqual(loaded.role,role);
   const encrypted=await fs.readFile(path.join(data,'vault.bin'));
   assert.ok(!encrypted.includes(Buffer.from('private-memory-content')));
+  assert.ok(!encrypted.includes(Buffer.from('private-role-guidance')));
   assert.deepEqual(await fs.readdir(workspace),['.git','README.md']);
   await assert.rejects(runtime.loadMemory(binding,{...lease,run_id:crypto.randomUUID()}),{code:'WORK_CONTEXT_REQUIRED'});
   c.connection='offline';await assert.rejects(runtime.loadMemory(binding,lease),{code:'NETWORK_UNAVAILABLE'});
   c.connection='active';denied=true;
   await assert.rejects(runtime.loadMemory(binding,lease),{code:'WORK_MEMORY_STALE'});
   assert.equal(profile.workRuns[lease.run_id].memory,undefined);
+  assert.equal(profile.workRuns[lease.run_id].role,undefined);
   // Keep the acknowledged baseline for revocation closeout code capture.
   assert.equal(profile.workRuns[lease.run_id].acknowledged,true);
 });
