@@ -506,6 +506,9 @@ class Controller extends EventEmitter {
       const insightRequest=require('./insight-tools.cjs').request(action,args,b,context.capabilities);
       if(insightRequest)return await remote.request(insightRequest.method,insightRequest.path,insightRequest.body,
         {slot,idempotency:insightRequest.operation_id});
+      const distillationRequest=require('./distillation-tools.cjs').request(action,args,b,context.capabilities);
+      if(distillationRequest)return await remote.request(distillationRequest.method,distillationRequest.path,distillationRequest.body,
+        {slot,idempotency:distillationRequest.operation_id});
       const guideRequest=require('./guide-tools.cjs').request(action,args,b,context.capabilities);
       if(guideRequest)return await remote.request(guideRequest.method,guideRequest.path,guideRequest.body,
         {slot,idempotency:guideRequest.operation_id});

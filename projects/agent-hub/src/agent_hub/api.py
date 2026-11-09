@@ -267,6 +267,8 @@ def create_app(
     guides.install(app, hub, actor, mutate, db_dependency)
     from . import delivery_evidence
     delivery_evidence.install(app, hub, actor, token, mutate, db_dependency, security_sessions)
+    from . import distillation
+    distillation.install(app, hub, actor, mutate, db_dependency)
 
     @app.get("/healthz")
     def health():

@@ -16,13 +16,18 @@ log = logging.getLogger(__name__)
 class MemoryWorker:
     def __init__(self, settings, *, factory=None):
         self.sessions = factory or session_factory(settings, security=True)
+        self.last_scheduled = 0
+        self.sources_changed = True
 
     def run_once(self):
         with self.sessions.begin() as db:
             job = db.scalar(select(MemoryJob).where(MemoryJob.status == "queued")
                             .order_by(MemoryJob.created_at, MemoryJob.id).limit(1).with_for_update(skip_locked=True))
             if not job:
-                return False
+                if not self.sources_changed and time.monotonic() - self.last_scheduled < 30:
+                    return False
+                self.last_scheduled, self.sources_changed = time.monotonic(), False
+                return bool(db.scalar(text("SELECT hub.schedule_distillation()")))
             job.attempts += 1
             try:
                 with db.begin_nested():
@@ -34,6 +39,7 @@ class MemoryWorker:
                             extractor=EXTRACTOR, **card,
                         ).on_conflict_do_nothing())
                 job.status, job.finished_at, job.error_code = "succeeded", now(), None
+                self.sources_changed = True
             except Exception:
                 job.error_code = "MEMORY_EXTRACTION_FAILED"
                 if job.attempts >= 3:

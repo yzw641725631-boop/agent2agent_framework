@@ -5,6 +5,10 @@ const encode = value => btoa(String.fromCharCode(...new Uint8Array(value)))
 const json = value => encode(encoder.encode(JSON.stringify(value)));
 
 export const messages = {
+  DISTILLATION_NOT_ACCESSIBLE:'该批次或其中部分来源当前不可读取。',DISTILLATION_POLICY_VERSION_CONFLICT:'记忆整理设置已变化，请刷新。',
+  DISTILLATION_VERSION_CONFLICT:'提炼批次已被其他实例处理，请刷新。',DISTILLATION_NOT_CLAIMABLE:'该批次尚有有效认领，或已结束，请查看当前状态。',
+  DISTILLATION_LEASE_STALE:'提炼认领已过期或属于其他实例，请重新核验。',DISTILLATION_SOURCE_CHANGED:'来源或整理设置已变化，旧批次不能继续提交，请读取新批次。',
+  DISTILLATION_CITATION_OUTSIDE_BATCH:'候选引用必须全部来自本批固定来源，请逐条核对。',DISTILLATION_INPUT_BUDGET_EXCEEDED:'本批资料超出输入上限，请由负责人调整整理设置。',
   DELIVERY_EXTERNAL_EVIDENCE_REQUIRED:'当前提交缺少有效的外部交付凭据，请查看任务的“交付核验”。',
   DELIVERY_POLICY_VERSION_CONFLICT:'交付规则已变化，请刷新后重新配置。',DELIVERY_CHECKPOINT_NOT_PUSHED:'此工作检查点尚无 Git 推送核验回执。',
   DELIVERY_PROVIDER_UNAVAILABLE:'暂时无法读取 GitHub 结果，请检查仓库凭证和服务器网络后重试。',

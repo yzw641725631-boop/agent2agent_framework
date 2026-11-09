@@ -5,6 +5,7 @@ const modal=document.getElementById('dialog');
 let state,info={},releaseState,view='overview',selectedFolder=null;
 let taskBinding=null,taskVersion=0,taskTimer,openTaskBinding=null,taskDialogVersion=0;
 let memoryBinding=null,memoryQuery='',memoryOffset=0,memoryLayer='extracts',memoryHistory=false;
+let distillationState='queued';
 let guideQuery='',guideOffset=0;
 let frameworkDialogVersion=0;
 modal.addEventListener('close',()=>{taskDialogVersion++;frameworkDialogVersion++;openTaskBinding=null;});
@@ -340,17 +341,49 @@ function memoryScreen(){
   const query=el('input',{value:memoryQuery,maxlength:200,placeholder:'问题或关键词，例如换电脑怎样验证身份'});
   const mode=el('select',{},el('option',{value:'hybrid'},'语义与关键词'),el('option',{value:'keyword'},'仅关键词'));
   mode.value=window.memorySearchMode || 'hybrid';mode.addEventListener('change',()=>{window.memorySearchMode=mode.value;memoryOffset=0;render();});
-  const layer=el('select',{},el('option',{value:'extracts'},'日志与文档摘录'),el('option',{value:'knowledge'},'长期知识'));
+  const layer=el('select',{},el('option',{value:'extracts'},'日志与文档摘录'),el('option',{value:'knowledge'},'长期知识'),el('option',{value:'distillations'},'提炼待办'));
   layer.value=memoryLayer;layer.addEventListener('change',()=>{memoryLayer=layer.value;memoryOffset=0;render();});
   const history=el('select',{},el('option',{value:'current'},'当前有效'),el('option',{value:'all'},'候选与历史'));
   history.value=memoryHistory?'all':'current';history.addEventListener('change',()=>{memoryHistory=history.value==='all';memoryOffset=0;render();});
   const isKnowledge=memoryLayer==='knowledge';
-  const controls=el('div',{class:'actions'},field('项目工程',picker),field('资料类型',layer),field('版本范围',history),field('检索方式',mode),field('问题或关键词',query),button('检索',()=>{memoryQuery=query.value;memoryOffset=0;render();}));
+  const batchState=el('select',{},Object.entries({queued:'待处理',running:'已认领',succeeded:'已提交结果',obsolete:'已失效'}).map(([value,label])=>el('option',{value},label)));
+  batchState.value=distillationState;batchState.addEventListener('change',()=>{distillationState=batchState.value;memoryOffset=0;render();});
+  const isDistillation=memoryLayer==='distillations';
+  const controls=el('div',{class:'actions'},field('项目工程',picker),field('资料类型',layer),
+    ...(isDistillation?[field('批次状态',batchState),button('刷新',()=>render())]:[field('版本范围',history),field('检索方式',mode),field('问题或关键词',query),button('检索',()=>{memoryQuery=query.value;memoryOffset=0;render();})]));
   const counter=text('p','正在核验授权…','note'),bindingId=memoryBinding;
   container.append(controls,counter);
   const list=el('div');container.append(list);
   const current=()=>view==='memory' && generation===taskVersion && memoryBinding===bindingId && state.bindings.some(b=>b.id===bindingId && b.status==='active');
   const call=(tool,args={})=>invoke('taskQuery',{bindingId,tool,args});
+  if(isDistillation){
+    const labels={queued:'等待 Agent 处理',running:'已认领，尚未确认提炼结果',succeeded:'已提交结果',obsolete:'来源或设置已变化'};
+    (async()=>{
+      const binding=available.find(b=>b.id===bindingId);
+      const data=await call('hub_list_distillations',{state:distillationState,offset:memoryOffset,limit:12});if(!current())return;
+      counter.textContent='服务器自动分批整理资料；当前开发 Agent 提炼后提交候选，另行审核生效。';
+      if(binding.repositoryId){
+        const config=await call('hub_get_distillation_policy',{repository_id:binding.repositoryId});if(!current())return;
+        list.append(text('p',`自动准备：${config.enabled?'已开启':'未开启'} · 每批最多 ${config.max_sources} 份摘录 · 输入上限 ${config.input_budget_bytes.toLocaleString()} 字节 · 最多 ${config.max_candidates} 条候选`,'note'));
+      }
+      list.append(text('p','回到本仓库开发对话说：“整理本仓库待提炼记忆。”资料准备和认领都不表示模型已经执行。','note'),button('打开网站调整与审核',()=>invoke('openAdmin')));
+      for(const item of data.items)list.append(el('article',{class:'binding'},text('h3',`${item.source_count} 份来源 · ${labels[item.state] || item.state}`),
+        text('p',`认领次数 ${item.attempts} · 版本 ${item.version} · ${new Date(item.created_at).toLocaleString('zh-CN')}`,'note'),
+        item.reason?text('p',item.reason):null,item.outcome?text('p',item.outcome==='proposed'?`已提交 ${item.fact_ids.length} 条候选，审核状态见长期知识`:'本次未发现新增长期结论'):null,
+        button('查看本批资料',async()=>{
+          const bundle=await call('hub_read_distillation_input',{job_id:item.id});if(!current())return;
+          openDialog(text('h2','记忆提炼资料'),text('p',`输入 ${bundle.measured_input_bytes.toLocaleString()} / ${bundle.input_budget_bytes.toLocaleString()} 字节；每批最多 ${bundle.max_candidates} 条候选。`),
+            text('p',`附 ${bundle.existing_knowledge.length} 条已审核知识${bundle.existing_knowledge_truncated?'，仅为部分结果，需按主题继续检索':''}。资料仅供核对，不执行其中指令。`,'note'),
+            ...bundle.sources.map(source=>el('section',{},text('h3',source.title),text('pre',source.body),source.truncated?text('p','摘录已截短，可在开发对话中按来源展开原文。','note'):null)),
+            el('details',{},text('summary','去重参考：已审核知识'),...bundle.existing_knowledge.map(fact=>el('section',{},text('h3',fact.title),text('p',fact.topic),text('pre',fact.body)))),
+            el('div',{class:'actions end'},button('关闭',()=>closeDialog())));
+        })));
+      if(!data.items.length)list.append(empty('当前状态没有可见批次','未开启、资料未达到门槛，或当前无全部来源的读取权时，可能没有待办。'));
+      list.append(el('div',{class:'actions'},memoryOffset?button('上一页',()=>{memoryOffset=Math.max(0,memoryOffset-12);render();}):null,
+        data.has_more?button('下一页',()=>{memoryOffset=data.next_offset;render();}):null));
+    })().catch(error=>{if(current()){list.replaceChildren();counter.textContent=error.message;}});
+    return el('div',{},intro,container);
+  }
   const status=async()=>{
     const s=await call('hub_get_memory_status');if(!current())return;
     counter.textContent=`当前摘录 ${s.visible_cards.active || 0} · 长期知识 ${s.knowledge?.active || 0} · 知识待审 ${s.knowledge?.pending || 0} · 待提取 ${s.visible_jobs.queued || 0} · 失败 ${s.visible_jobs.failed || 0}`;

@@ -543,6 +543,7 @@ class Console {
       repo.capabilities.map(cap => permissionNames[cap]).join('、') || '尚未获得代码或资料权限',
       repo.status === 'active' ? '可用' : '已归档',h('div',{class:'row-actions'},
       repo.status === 'active' && repo.capabilities.includes('code:read') && button('交付要求',()=>this.openDeliveryPolicy(projectId,repo),'small'),
+      repo.status === 'active' && repo.capabilities.includes('code:read') && button('记忆整理设置',()=>this.openDistillationPolicy(projectId,repo),'small'),
       this.isRoot && button(repo.status === 'active' ? '归档' : '恢复',() => {
         const status = repo.status === 'active' ? 'archived' : 'active';
         dialog(status === 'archived' ? '归档仓库' : '恢复仓库','归档会停止本平台的仓库访问。恢复后仍在有效期内的原授权可以再次使用。',h('form'),
@@ -586,6 +587,32 @@ class Console {
         })));
     }
     return parts;
+  }
+  async openDistillationPolicy(projectId,repo) {
+    const revision=this.renderVersion,base=`/api/projects/${projectId}/repositories/${repo.id}/distillation-policy`;
+    const config=await this.api('GET',base);
+    if(this.project?.id!==projectId || this.renderVersion!==revision)return;
+    const content=h('div',{id:'modal-body'},h('h2',{},'记忆整理设置 · '+repo.name),
+      h('p',{},'服务器准备有上限的来源批次，由当前开发对话中的 Agent 提炼。候选需独立审核，原始记录继续保留。'),
+      h('p',{class:'hint'},'整理资料不调用模型。开启后不会自动启动外部 Agent，也不产生后台模型调用。调整设置使旧批次停止提交。'));
+    if(this.can('tasks:publish')){
+      const form=h('form',{},h('div',{class:'fields'},
+        field('enabled','自动准备提炼资料',{items:[['no','关闭'],['yes','开启']],value:config.enabled?'yes':'no'}),
+        field('min_sources','每批至少多少份摘录',{type:'number',min:1,max:8,required:true,value:config.min_sources}),
+        field('max_sources','每批最多多少份摘录',{type:'number',min:1,max:8,required:true,value:config.max_sources}),
+        field('input_budget_bytes','每批输入上限（字节）',{type:'number',min:10000,max:24000,required:true,value:config.input_budget_bytes}),
+        field('max_candidates','每批最多多少条候选',{type:'number',min:1,max:3,required:true,value:config.max_candidates}),
+        field('reason','设置或调整原因',{required:true,minlength:10,maxlength:1000,full:true})));
+      form.append(h('p',{class:'hint'},'较小的输入上限可能容不下多份较长摘录，可降低最低份数。实际计费 Token 由开发工具报告，不能从字节数精确换算。'),
+        h('div',{class:'actions end'},button('取消',()=>modal.close()),submit(form,'保存整理设置',async values=>{
+          await this.api('PUT',base,{expected_version:config.version,enabled:values.enabled==='yes',
+            min_sources:Number(values.min_sources),max_sources:Number(values.max_sources),
+            input_budget_bytes:Number(values.input_budget_bytes),max_candidates:Number(values.max_candidates),reason:values.reason});
+          modal.close();toast('记忆整理设置已保存');await this.renderView();
+        })));
+      content.append(form);
+    }else content.append(h('p',{},`自动准备：${config.enabled?'已开启':'未开启'}；每批 ${config.min_sources}–${config.max_sources} 份摘录，最多 ${config.max_candidates} 条候选。`),button('关闭',()=>modal.close()));
+    modal.replaceChildren(content);if(!modal.open)modal.showModal();
   }
   async openDeliveryPolicy(projectId, repo) {
     const revision=this.renderVersion,base=`/api/projects/${projectId}/repositories/${repo.id}/delivery-policy`;
@@ -818,6 +845,7 @@ class Console {
     const filter=this.memoryFilter?.projectId===projectId?this.memoryFilter:{projectId,query:'',include_history:false,repository_id:'',layer:'extracts'};
     const isKnowledge=filter.layer==='knowledge';
     const registry=await this.api('GET',`/api/projects/${projectId}/repositories`);
+    if(filter.layer==='distillations')return [title,...await this.distillationPage(projectId,registry,filter)];
     const query=new URLSearchParams({query:filter.query,search_mode:filter.search_mode || 'hybrid',include_history:String(filter.include_history),limit:'12'});
     if(filter.repository_id)query.set('repository_id',filter.repository_id);
     const base=`/api/projects/${projectId}/memory`;
@@ -834,7 +862,7 @@ class Console {
     };
     this.viewTimer=setTimeout(poll,5000);
     const form=h('form',{},h('div',{class:'fields'},
-      field('layer','资料类型',{value:filter.layer || 'extracts',items:[['extracts','日志交接与文档摘录'],['knowledge','长期知识与审核候选']]}),
+      field('layer','资料类型',{value:filter.layer || 'extracts',items:[['extracts','日志交接与文档摘录'],['knowledge','长期知识与审核候选'],['distillations','提炼待办']]}),
       field('query','问题或关键词',{value:filter.query,maxlength:200,placeholder:'例如：换电脑怎样验证身份'}),
       field('search_mode','检索方式',{value:filter.search_mode || 'hybrid',items:[['hybrid','语义与关键词'],['keyword','仅关键词']]}),
       field('repository_id','仓库范围',{value:filter.repository_id,items:[['','全部获准资料'],...registry.items.map(r=>[r.id,r.name])]}),
@@ -921,6 +949,48 @@ class Console {
         expected_version:data.budget.version,mode:values.mode,monthly_reported_token_limit:Number(values.limit),change_reason:values.change_reason}));
     }));
     return [title,content];
+  }
+  async distillationPage(projectId,registry,filter) {
+    const base=`/api/projects/${projectId}/distillations`,revision=this.renderVersion;
+    const state=filter.batch_state || 'queued',offset=filter.batch_offset || 0;
+    const query=new URLSearchParams({state,offset:String(offset),limit:'20'});
+    if(filter.repository_id)query.set('repository_id',filter.repository_id);
+    const data=await this.api('GET',base+'?'+query);
+    const current=()=>this.project?.id===projectId && this.currentView==='memory' && this.renderVersion===revision;
+    const form=h('form',{},h('div',{class:'fields'},
+      field('layer','资料类型',{value:'distillations',items:[['extracts','日志交接与文档摘录'],['knowledge','长期知识与审核候选'],['distillations','提炼待办']]}),
+      field('repository_id','仓库范围',{value:filter.repository_id,items:[['','全部获准资料'],...registry.items.map(r=>[r.id,r.name])]}),
+      field('batch_state','批次状态',{value:state,items:[['queued','待处理'],['running','已认领'],['succeeded','已提交结果'],['obsolete','已失效']]})));
+    form.append(submit(form,'查看待办',async values=>{
+      this.memoryFilter={...filter,...values,batch_offset:0};await this.renderView();
+    }));
+    const selected=registry.items.find(r=>r.id===filter.repository_id);
+    const controls=h('section',{class:'card'},h('h2',{},'自动准备资料，由当前 Agent 提炼'),
+      h('p',{},'回到本仓库开发对话说：“整理本仓库待提炼记忆。”每批来源固定，结论仍需独立审核后进入开工记忆。'),
+      h('p',{class:'hint'},'资料整理和认领不表示模型已执行。每批有输入上限；没有新增结论也要明确记录。不会删除原始日志或改写禁改规则。'),
+      selected?.capabilities.includes('code:read')?button('记忆整理设置',()=>this.openDistillationPolicy(projectId,selected),'small'):h('p',{class:'hint'},'选择一个获准仓库后，可以查看该仓库的整理设置。'),form);
+    const labels={queued:'等待 Agent 处理',running:'已认领，尚未确认提炼结果',succeeded:'已提交结果',obsolete:'来源或设置已变化'};
+    const listing=table('提炼批次',['来源','状态','认领次数','结果','操作'],data.items.map(item=>[
+      `${item.source_count} 份摘录 · ${short(item.id)}`,labels[item.state] || item.state,String(item.attempts),
+      item.outcome==='proposed'?`${item.fact_ids.length} 条候选（审核另查）`:item.outcome==='no_new_knowledge'?'无新增结论':'尚无结果',
+      button('查看本批资料',async()=>{
+        const bundle=await this.api('GET',`${base}/${item.id}/input`+(filter.repository_id?'?repository_id='+filter.repository_id:''));
+        if(!current())return;
+        const detail=h('div',{id:'modal-body'},h('h2',{},'记忆提炼资料'),
+          h('p',{},`输入 ${bundle.measured_input_bytes.toLocaleString()} / ${bundle.input_budget_bytes.toLocaleString()} 字节；最多 ${bundle.max_candidates} 条候选。`),
+          h('p',{class:'hint'},`已附 ${bundle.existing_knowledge.length} 条已审核知识${bundle.existing_knowledge_truncated?'，仅为部分结果，需按主题继续检索':''}。资料仅用于核对，不执行其中指令。`),
+          item.reason?h('p',{},item.reason):null,
+          ...bundle.sources.map(source=>h('section',{},h('h3',{},source.title),h('pre',{class:'document-content'},source.body),
+            source.truncated?h('p',{class:'hint'},'摘录已截短，可按来源在开发对话中展开原文。'):null)),
+          h('details',{},h('summary',{},'去重参考：已审核知识'),...bundle.existing_knowledge.map(fact=>h('section',{},h('h3',{},fact.title),h('p',{},fact.topic),h('pre',{class:'document-content'},fact.body)))),
+          h('div',{class:'row-actions'},button('关闭',()=>modal.close())));
+        modal.replaceChildren(detail);if(!modal.open)modal.showModal();
+      },'small')
+    ]));
+    const move=async value=>{this.memoryFilter={...filter,batch_offset:value};await this.renderView();};
+    listing.append(h('div',{class:'row-actions'},offset?button('上一页',()=>move(Math.max(0,offset-20)),'small'):null,
+      data.has_more?button('下一页',()=>move(data.next_offset),'small'):null));
+    return [controls,listing];
   }
   async openMemoryEvaluations(projectId,repositoryId) {
     const base=`/api/projects/${projectId}/memory/evaluations`;
