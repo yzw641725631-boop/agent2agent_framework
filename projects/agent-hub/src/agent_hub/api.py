@@ -17,6 +17,7 @@ from sqlalchemy.exc import TimeoutError as PoolTimeout
 
 from . import (
     __version__,
+    closeouts,
     documents,
     git_gateway,
     github_credentials,
@@ -237,9 +238,11 @@ def create_app(
             action,
         )
 
+    closeouts.install(app, hub, actor, token, proof, db_dependency)
+
     @app.get("/healthz")
     def health():
-        return {"status": "ok", "phase": "P4-durable-handoff", "version": __version__}
+        return {"status": "ok", "phase": "P4-revocation-closeout", "version": __version__}
 
     @app.post("/api/auth/enrollments")
     def enroll(body: S.Enroll, request: Request, db: DB):
@@ -383,6 +386,8 @@ def create_app(
             "name": p.name,
             "repository_mode": p.repository_mode,
             "resource_visibility": repositories.visibility(db, p),
+            "authorization": {"grant_id": str(identity.grant.id) if identity.grant else None,
+                "user_epoch": identity.user.auth_epoch, "device_epoch": identity.device.epoch},
             "capabilities": sorted(ADMIN_CAPS) if identity.user.platform_role == "superadmin" else identity.grant.capabilities,
         }
 

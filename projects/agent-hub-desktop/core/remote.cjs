@@ -2,6 +2,10 @@
 const crypto = require('node:crypto');
 
 const messages = {
+  PROJECT_CLOSEOUT_REQUIRED:'权限已撤销。必须停止本项目开发，调用 hub_run_closeout 上传工作并按安装收据卸载框架；失败时保留原工作。',
+  CLOSEOUT_EXPIRED:'撤权收尾窗口已过期，请超管延长收尾授权；原工作继续保留。',
+  CLOSEOUT_UNREGISTERED_WORK:'存在无法关联原执行记录的工作，请联系管理员处理交接；未卸载、未删除原工作。',
+  CLOSEOUT_LOCAL_STATE_MISSING:'服务器已记录完成，但本机缺少对应收尾凭据；已保留工作，请联系管理员核对。',
   WORK_REMOTE_BACKUP_REQUIRED:'请先完成最新检查点的服务器代码备份，再提交评审。',
   WORK_ARCHIVE_INTEGRITY_FAILED:'服务器代码备份未通过完整性校验。请保留本机工作并联系管理员恢复制品。',
   WORK_ARCHIVE_NOT_CONFIGURED:'服务器尚未配置代码备份存储，本机检查点已保留。',

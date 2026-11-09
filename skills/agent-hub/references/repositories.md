@@ -25,4 +25,4 @@
 
 服务器只发两分钟以内的平台 Git 票据，每次 HTTP 请求重新检查身份、设备、授权、仓库和写入租约。GitHub App/PAT 保留在服务器。持有其他 GitHub 凭证的人仍可能在平台外访问；本平台不会收回这些凭证或擦除私自复制的代码。
 
-当前仅支持 GitHub HTTPS、普通 Git 对象和单分支拉取，Git 上传请求最大 64 MiB；不自动处理 LFS、submodule、PR、合并或部署。服务器核对提交引用和日志，不独立审计 pack 内所有代码的业务合规性。未提交修改的远程快照须另看 `code_receipt`，见[开发记录与交接](work-records.md)。强制隔离、长期记忆和撤权卸载仍待接入。
+当前仅支持 GitHub HTTPS、普通 Git 对象和单分支拉取，Git 上传请求最大 64 MiB；不自动处理 LFS、submodule、PR、合并或部署。服务器核对提交引用和日志，不独立审计 pack 内所有代码的业务合规性。未提交修改的远程快照须另看 `code_receipt`，见[开发记录与交接](work-records.md)。撤权卸载见[撤权交接](revocation.md)；系统级文件隔离和长期共享记忆仍待实现。

@@ -1,0 +1,199 @@
+{
+  "schema": 1,
+  "created_at": "2026-11-09T03:22:17.223373+00:00",
+  "backend": {
+    "version": "0.8.0",
+    "migration": "0011",
+    "phase": "P4-revocation-closeout",
+    "counts_preserved": {
+      "users": 1,
+      "devices": 4,
+      "projects": 0,
+      "settings": 1,
+      "repositories": 0
+    },
+    "closeout_worklog_snapshot_forced_rls": true,
+    "temporary_restore_databases_remaining": 0
+  },
+  "validation": {
+    "backend_real_postgresql_tests_passed": 142,
+    "desktop_tests_passed": 102,
+    "real_windows_http_dpop_postgresql": {
+      "passed": true,
+      "realController": true,
+      "realHTTP": true,
+      "realDPoP": true,
+      "realPostgreSQL": true,
+      "offlineManualLogRecovered": true,
+      "postLogFinalEditsCaptured": true,
+      "frameworkScriptsAndTestsRemoved": true,
+      "mcpEntryRemoved": true,
+      "normalOperationsDenied": true,
+      "leaseReleased": true,
+      "permittedColleagueRestores": true,
+      "otherRepositoryDenied": true,
+      "binaryAndDeletion": true,
+      "baselineChineseDocument": true,
+      "businessCodePreserved": true,
+      "checkpointsPreserved": true,
+      "newestServerWorklogIsFinalSnapshot": true,
+      "cleanupVerification": "client_report_only",
+      "physicalWindowsHosts": 1
+    },
+    "packaged_electron_ui": {
+      "passed": true,
+      "version": "0.10.1",
+      "packagedRuntime": true,
+      "closeToTrayDefault": true,
+      "trayLifetimeVerifiedInSourceSmoke": true,
+      "profileIsolated": true
+    },
+    "public_online_update": {
+      "passed": true,
+      "old_version": "0.10.0",
+      "new_version": "0.10.1",
+      "clicked_from_signed_out_client": true,
+      "signed_release_activated": true,
+      "native_restart_completed": true,
+      "publicDownload": true,
+      "profileIsolated": true
+    },
+    "installed_stdio": {
+      "passed": true,
+      "installedVersion": "0.10.1",
+      "realStdioMcp": true,
+      "configurationFromInstalledCodex": true,
+      "signedFeedVerified": true,
+      "loginState": "LOGIN_REQUIRED",
+      "authenticationNotBypassed": true
+    },
+    "same_workspace_project_owned_directories_tested": true,
+    "final_snapshot_admitted_after_older_worklogs": true,
+    "physical_windows_hosts": 1,
+    "real_business_repository_pilot": false
+  },
+  "desktop_release": {
+    "schema": 1,
+    "platform": "win-x64",
+    "version": "0.10.1",
+    "installer": {
+      "url": "https://47.109.23.86:18180/desktop-updates/win-x64/AgentHub-Setup-0.10.1.exe",
+      "bytes": 123126473,
+      "sha256": "13e73af603ef041bc28afdfb5512a4fe5f501fe72d84aaeac20a6dbb745052b7"
+    },
+    "files_sha256": "5cd443a4d3bdfcbba5d179f01f237ad5838353a5fa3a3e3e191844b558d8ed72",
+    "zip": {
+      "bytes": 159953912,
+      "sha256": "e124ede33a0de140281cca74348f41f727d8f736db75294f76496a0daeb502e9"
+    },
+    "signed_metadata_version": 11,
+    "metadata_expires_at": "2026-12-09T03:13:36.400Z",
+    "authenticode_signed": false
+  },
+  "backup": {
+    "post_migration_encrypted_backup": {
+      "schema": 1,
+      "snapshot_id": "1bcf37fa10cbc3e2da81c635c9e1878aef448eaa49261980a6a3259af789c0e6",
+      "created_at": "2026-11-09T02:55:31.059035+00:00",
+      "full_repository_check": true,
+      "offsite_confirmed": false
+    },
+    "production_restore_drill": {
+      "restored_database": "hub_restore_20261109T025531Z",
+      "snapshot_id": "1bcf37fa10cbc3e2da81c635c9e1878aef448eaa49261980a6a3259af789c0e6",
+      "verified_archives": 0,
+      "passed": true,
+      "created_at": "2026-11-09T02:55:35.890601+00:00"
+    },
+    "production_artifacts_verified": 0,
+    "operator_checks": {
+      "schema": 1,
+      "created_at": "2026-11-09T03:21:39.976057+00:00",
+      "checks": [
+        {
+          "id": "container:agent-hub-postgres",
+          "state": "ok"
+        },
+        {
+          "id": "container:agent-hub-app-api-1",
+          "state": "ok"
+        },
+        {
+          "id": "container:agent-hub-app-document-worker-1",
+          "state": "ok"
+        },
+        {
+          "id": "container:agent-hub-edge",
+          "state": "ok"
+        },
+        {
+          "id": "database:query",
+          "state": "ok"
+        },
+        {
+          "id": "public:https",
+          "state": "ok",
+          "version": "0.8.0"
+        },
+        {
+          "id": "desktop:signed-feed",
+          "state": "ok",
+          "version": "0.10.1",
+          "remaining_hours": 719
+        },
+        {
+          "id": "disk:capacity",
+          "state": "ok",
+          "free_bytes": 23217709056
+        },
+        {
+          "id": "agent-hub-backup",
+          "state": "ok",
+          "age_hours": 0.44,
+          "maximum_hours": 36
+        },
+        {
+          "id": "agent-hub-archive-audit",
+          "state": "ok",
+          "age_hours": 0.43,
+          "maximum_hours": 36
+        },
+        {
+          "id": "agent-hub-restore-drill",
+          "state": "ok",
+          "age_hours": 0.43,
+          "maximum_hours": 1080
+        },
+        {
+          "id": "offsite:continuous-copy",
+          "state": "warning",
+          "configured": false
+        },
+        {
+          "id": "alerts:external-delivery",
+          "state": "warning",
+          "configured": false
+        }
+      ],
+      "healthy": true,
+      "has_warnings": true,
+      "scope": "local-operator-checks-only"
+    },
+    "continuous_offsite_backup": false,
+    "external_alert_delivery": false,
+    "retention_configured": false
+  },
+  "backend_build_archive_sha256": "a28f8d1b8c1736feefc0cd189d572e7271d3cb2de5a6858d1d8b1fbc4735c8d0",
+  "limitations": [
+    "cleanup_is_client_report_not_proof_of_erasure",
+    "only_registered_unchanged_project_framework_files_are_removed",
+    "full_legacy_install_roles_scripts_tests_are_not_yet_deployed_automatically",
+    "business_code_git_global_skill_desktop_and_checkpoints_are_retained",
+    "offline_or_unknown_work_stops_cleanup_and_preserves_work",
+    "shared_memory_distillation_pgvector_automatic_loading_not_implemented",
+    "per_turn_host_hooks_and_cross_host_role_scheduling_not_implemented",
+    "macos_four_other_harnesses_and_second_physical_device_not_accepted",
+    "continuous_offsite_backup_external_alerting_retention_os_migration_pending"
+  ],
+  "full_platform_production_acceptance": false
+}

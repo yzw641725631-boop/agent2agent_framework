@@ -223,4 +223,150 @@ async function install(options) {
   return applyPlans(plans, options.guard);
 }
 
-module.exports = { install, merge, snapshot, replace, hosts };
+function removeEntry(text, host, name, receipt) {
+  const bom = text.startsWith('\ufeff') ? '\ufeff' : '', source = text.slice(bom.length);
+  let data;
+  try {
+    if (host === 'codex') data = source.trim() ? toml.parse(source) : {};
+    else {
+      const errors = [], tree = jsonc.parseTree(source.trim() ? source : '{}', errors, { allowTrailingComma: true });
+      if (errors.length || tree?.type !== 'object') throw conflict();
+      uniqueJson(tree); data = jsonc.getNodeValue(tree);
+    }
+  } catch { throw conflict(); }
+  const key = host === 'codex' ? 'mcp_servers' : 'mcpServers';
+  const current = data[key]?.[name];
+  if (current === undefined) return text;
+  if (!equivalent(current, receipt.entry)) throw conflict();
+  let next;
+  if (host === 'codex') {
+    // A missing/edited managed block is a conflict; never rewrite unrelated TOML.
+    if (!receipt.block || source.split(receipt.block).length !== 2) throw conflict();
+    next = source.replace(receipt.block, '');
+  } else next = jsonc.applyEdits(source, jsonc.modify(source, [key, name], undefined,
+    { formattingOptions: { insertSpaces: true, tabSize: 2, eol: source.includes('\r\n') ? '\r\n' : '\n' } }));
+  const expected = plain(data); delete expected[key][name];
+  let parsed;
+  try { parsed = host === 'codex' ? toml.parse(next) : jsonc.parse(next); } catch { throw conflict(); }
+  // Removing the last TOML table also removes its empty parent.
+  if (host === 'codex' && !Object.keys(expected[key]).length && parsed[key] === undefined) delete expected[key];
+  if (!equivalent(parsed, expected)) throw conflict();
+  return bom + next;
+}
+
+function inside(root, file) {
+  const relative = path.relative(root, file);
+  return relative && !relative.startsWith('..' + path.sep) && relative !== '..' && !path.isAbsolute(relative);
+}
+
+async function erase(file, expected, guard) {
+  guard(); await safePath(file);
+  const current = await snapshot(file);
+  if (!current) return false;
+  if (!same(current, expected)) throw new HubError('CONFIGURATION_CHANGED');
+  guard(); await fs.unlink(file); return true;
+}
+
+// All project-specific rules, scripts and tests live below one owned directory.
+// The receipt stays in desktop data, never under server-supplied paths.
+async function deployFramework({ workspace, receiptDirectory, name, files, guard = () => {} }) {
+  if (!/^[a-z][a-z0-9-]{2,79}$/.test(name) || !path.isAbsolute(workspace) || !path.isAbsolute(receiptDirectory) || !Array.isArray(files) || files.length > 1000) throw conflict();
+  const root = path.join(workspace, '.agent-hub', 'framework', name), file = path.join(receiptDirectory, 'framework.json');
+  const before = await snapshot(file), receipt = before ? JSON.parse(decode(before)) : { files: {} };
+  if (before && (receipt.version !== 1 || receipt.workspace !== workspace || receipt.name !== name)) throw conflict();
+  const changes = [], owned = { ...receipt.files };
+  for (const entry of files) {
+    if (typeof entry.path !== 'string' || entry.path.includes('\\') || entry.path.split('/').some(p => !p || p === '.' || p === '..') ||
+        !Buffer.isBuffer(entry.bytes) || entry.bytes.length > 2 * 1024 * 1024) throw conflict();
+    const target = path.join(root, ...entry.path.split('/'));
+    if (!inside(root, target)) throw conflict();
+    const previous = await snapshot(target);
+    if (previous && !previous.equals(entry.bytes) && digest(previous) !== receipt.files[entry.path]) throw conflict();
+    changes.push({ file: target, previous, next: entry.bytes }); owned[entry.path] = digest(entry.bytes);
+  }
+  changes.push({ file, previous: before, next: Buffer.from(JSON.stringify({ version: 1, workspace, name, files: owned })) });
+  return applyPlans([{ target: root, skill: null, changes }], guard);
+}
+
+async function uninstallProject({ workspace, receiptDirectories, name, installed, guard = () => {} }) {
+  if (!path.isAbsolute(workspace) || !/^[a-z][a-z0-9-]{2,79}$/.test(name)) throw conflict();
+  await safePath(workspace);
+  if (await fs.realpath(workspace) !== workspace) throw conflict();
+  const result = { removed_files: 0, removed_entries: 0, conflicts: [], retained_shared_components: true };
+  const receipts = [], framework = [];
+  for (const directory of receiptDirectories) {
+    if (!path.isAbsolute(directory)) throw conflict();
+    for (const host of hosts) {
+      try {
+        const { data, previous } = await readReceipt(path.join(directory, host + '.json'));
+        if (!previous) continue;
+        if (data.host !== host || data.name !== name || data.target !== targetFor(host, { workspace }) ||
+            Object.keys(data.files).length || data.skill) throw conflict();
+        receipts.push(data);
+      } catch (error) { result.conflicts.push({ component: host, code: error.code || 'INVALID_INSTALL_RECEIPT' }); }
+    }
+    try {
+      const bytes = await snapshot(path.join(directory, 'framework.json'));
+      if (bytes) {
+        const data = JSON.parse(decode(bytes));
+        if (data.version !== 1 || data.workspace !== workspace || data.name !== name || !data.files || typeof data.files !== 'object' || Array.isArray(data.files)) throw conflict();
+        framework.push(data);
+      }
+    } catch (error) { result.conflicts.push({ component: 'framework', code: error.code || 'INVALID_INSTALL_RECEIPT' }); }
+  }
+  if (installed) {
+    if (installed.target !== targetFor('claude', { workspace }) || !installed.entry) throw conflict();
+    receipts.push({ host: 'claude', target: installed.target, name, entry: installed.entry });
+  }
+  for (const receipt of receipts) try {
+    guard(); const before = await snapshot(receipt.target);
+    if (!before) continue;
+    const next = Buffer.from(removeEntry(decode(before), receipt.host, name, receipt));
+    if (!before.equals(next)) { guard(); await replace(receipt.target, next, before); result.removed_entries++; }
+  } catch (error) { result.conflicts.push({ component: receipt.host, code: error.code || 'CONFIGURATION_CONFLICT' }); }
+  const root = path.join(workspace, '.agent-hub', 'framework', name), directories = new Set();
+  for (const receipt of framework) for (const [relative, sha] of Object.entries(receipt.files)) try {
+    if (relative.includes('\\') || relative.split('/').some(p => !p || p === '.' || p === '..') || !/^[a-f0-9]{64}$/.test(sha)) throw conflict();
+    const file = path.join(root, ...relative.split('/'));
+    if (!inside(root, file)) throw conflict();
+    const bytes = await snapshot(file);
+    if (!bytes) continue;
+    if (digest(bytes) !== sha) throw conflict();
+    if (await erase(file, bytes, guard)) result.removed_files++;
+    for (let dir = path.dirname(file); inside(root, dir) || dir === root; dir = path.dirname(dir)) directories.add(dir);
+  } catch (error) { result.conflicts.push({ component: 'framework', code: error.code || 'CONFIGURATION_CONFLICT' }); }
+  // Remove empty, verified directories only. Unknown files keep their directories intact.
+  for (const directory of [...directories].sort((a, b) => b.length - a.length)) {
+    guard(); await safePath(directory);
+    await fs.rmdir(directory).catch(error => { if (!['ENOENT', 'ENOTEMPTY', 'EEXIST'].includes(error.code)) throw error; });
+  }
+  return { ...result, state: result.conflicts.length ? 'conflicts' : 'complete', recursive_delete_used: false,
+    business_files_deleted: false, local_checkpoints_deleted: false };
+}
+
+async function ownedProjectPaths({workspace,receiptDirectories,name,installed}) {
+  const paths = new Set();
+  if(installed?.target === targetFor('claude',{workspace}) && installed.entry)paths.add('.mcp.json');
+  for(const directory of receiptDirectories) {
+    for(const host of hosts) {
+      const {data,previous} = await readReceipt(path.join(directory,host+'.json'));
+      if(previous) {
+        if(data.host!==host || data.name!==name || data.target!==targetFor(host,{workspace}))throw conflict();
+        paths.add(path.relative(workspace,data.target).split(path.sep).join('/'));
+      }
+    }
+    const bytes = await snapshot(path.join(directory,'framework.json'));
+    if(bytes) {
+      const data = JSON.parse(decode(bytes)), root = path.join(workspace,'.agent-hub','framework',name);
+      if(data.version!==1 || data.workspace!==workspace || data.name!==name || !data.files || Array.isArray(data.files))throw conflict();
+      for(const relative of Object.keys(data.files)) {
+        const file = path.join(root,...relative.split('/'));
+        if(relative.includes('\\') || relative.split('/').some(p=>!p || p==='.' || p==='..') || !inside(root,file))throw conflict();
+        paths.add(path.relative(workspace,file).split(path.sep).join('/'));
+      }
+    }
+  }
+  return [...paths];
+}
+
+module.exports = { install, merge, snapshot, replace, hosts, removeEntry, deployFramework, uninstallProject, ownedProjectPaths };

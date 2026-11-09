@@ -42,6 +42,8 @@ def log_payload(w):
             "outcome": w.outcome, "git_commit": w.git_commit, "created_at": w.created_at.isoformat()}
     if w.context_id:
         value.update(context_id=str(w.context_id), change_evidence=w.change_evidence, evidence_hash=w.evidence_hash)
+    if w.closeout_id:
+        value.update(closeout_id=str(w.closeout_id), record_kind="revocation_handoff")
     return value
 
 

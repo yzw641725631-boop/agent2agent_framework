@@ -75,7 +75,7 @@ class WorkRuntime{
     if(baseline.workspace!==binding.workspace)throw new HubError('WORKSPACE_CHANGED');
     const context=await c.invokeProjectRemote(binding,'hub_prepare_work',args);
     c.ensureCurrent(p,remote);
-    this.runs()[args.run_id]={binding_id:binding.id,project_id:binding.projectId,task_id:args.task_id,run_id:args.run_id,
+    this.runs()[args.run_id]={binding_id:binding.id,project_id:binding.projectId,repository_id:binding.repositoryId || null,task_id:args.task_id,run_id:args.run_id,
       lease_epoch:args.lease_epoch,owner:this.owner(),...baseline,context_id:context.id,context_hash:context.content_hash,
       scope:context.payload.task.scope,policy:context.payload.policy,acknowledged:false,last_activity:Date.now(),next_heartbeat:0,
       execution_mode:context.payload.task.execution_mode};
@@ -118,7 +118,7 @@ class WorkRuntime{
     const snapshot=await observer.capture(binding.workspace,r.base_commit,r.scope,r.policy);
     if(snapshot.evidence_hash===r.observed_hash || !snapshot.evidence.files.length && !r.observed_hash)return;
     const record={schema:1,operation_id:r.automatic_checkpoint_id,owner:r.owner,binding_id:binding.id,
-      project_id:binding.projectId,task_id:r.task_id,run_id:r.run_id,lease_epoch:r.lease_epoch,workspace:binding.workspace,
+      project_id:binding.projectId,repository_id:binding.repositoryId || null,task_id:r.task_id,run_id:r.run_id,lease_epoch:r.lease_epoch,workspace:binding.workspace,
       created_at:new Date().toISOString(),state:'local_only',body:{summary:'后台观察检查点（尚未填写本轮工作说明）',
         notes:'自动保存实际变更，不代表测试或任务完成。'},snapshot};
     if(this.c.backups){
@@ -156,7 +156,7 @@ class WorkRuntime{
       delete body.evidence_hash;
       Object.assign(body,{changed_paths:paths,context_id:r.context_id,change_evidence:snapshot.evidence,git_commit:snapshot.evidence.head_commit});
       if(Buffer.byteLength(JSON.stringify(body))>65536)throw new HubError('WORK_RECORD_LIMIT','日志和文件清单超过 64 KiB，请缩短日志。');
-      const record={schema:1,operation_id,request_hash,owner,binding_id:binding.id,project_id:binding.projectId,
+      const record={schema:1,operation_id,request_hash,owner,binding_id:binding.id,project_id:binding.projectId,repository_id:binding.repositoryId || null,
         task_id,run_id:r.run_id,lease_epoch:r.lease_epoch,workspace:binding.workspace,created_at:new Date().toISOString(),state:'pending',body,snapshot};
       if(this.c.backups){
         record.backup_state='pending';

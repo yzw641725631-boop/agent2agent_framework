@@ -4,7 +4,7 @@ import uuid
 from dataclasses import dataclass
 from datetime import timedelta
 
-from sqlalchemy import select, update
+from sqlalchemy import select, text, update
 
 from . import schemas as S
 from .db import context, coordinate
@@ -416,12 +416,17 @@ class Hub:
             or grant.user_epoch != user.auth_epoch
             or grant.device_epoch != device.epoch
         ):
+            closeout_available = bool(grant) and db.scalar(text("""
+                SELECT EXISTS(SELECT 1 FROM hub.closeout_discover(:thumb) c
+                  WHERE c.project_id=:pid AND c.scope->'grant_ids' @> to_jsonb(CAST(:gid AS text))
+                    AND c.state<>'complete' AND c.expires_at>clock_timestamp())
+            """), {"thumb": device.thumbprint, "pid": grant.project_id, "gid": str(grant.id)})
             raise HubError(
                 "PROJECT_ACCESS_REVOKED",
                 project_id=str(grant.project_id) if grant else None,
                 normal_operations_allowed=False,
-                required_action="stop_normal_operations",
-                closeout_available=False,
+                required_action="upload_work_then_uninstall" if closeout_available else "stop_normal_operations",
+                closeout_available=bool(closeout_available),
             )
         return grant
 
@@ -669,6 +674,21 @@ class Hub:
                     raise HubError("APPROVAL_SUBJECT_CHANGED", 409)
                 from .repositories import validate_permissions
                 permissions = validate_permissions(db, project.id, p.get("repository_permissions", []))
+                from . import closeouts
+                old_permissions = list(db.scalars(select(Grant).where(Grant.project_id == project.id,
+                    Grant.user_id == user.id, Grant.device_id == device.id, Grant.status == "active")))
+                def visible(entries):
+                    return {entry["repository_id"] for entry in entries
+                        if set(entry["capabilities"]) & {"code:read", "documents:read"}}
+                removed = set().union(*(visible(old.repository_permissions) for old in old_permissions)) - visible(permissions)
+                old_write = {entry["repository_id"] for old in old_permissions for entry in old.repository_permissions
+                    if "tasks:write" in old.capabilities and "code:write" in entry["capabilities"]}
+                new_write = {entry["repository_id"] for entry in permissions
+                    if "tasks:write" in p["capabilities"] and "code:write" in entry["capabilities"]}
+                removed |= old_write - new_write
+                if removed:
+                    closeouts.create(self, db, user_id=user.id, project_id=project.id, device_id=device.id,
+                        reason="repository_permission_removed", repository_ids=sorted(removed))
                 self.revoke_grants(db, project_id=project.id, user_id=user.id, device_id=device.id)
                 grant = Grant(
                     project_id=project.id,
@@ -704,6 +724,8 @@ class Hub:
             raise HubError("MEMBER_NOT_ACCESSIBLE", 404)
         if actor.user.platform_role != "superadmin" and member.role == "administrator":
             raise HubError("SUPERADMIN_REQUIRED")
+        from . import closeouts
+        jobs = closeouts.create(self, db, user_id=user_id, project_id=project_id, reason="member_revoked")
         member.status, member.epoch = "revoked", member.epoch + 1
         self.revoke_grants(db, project_id=project_id, user_id=user_id)
         db.add(
@@ -721,7 +743,8 @@ class Hub:
             "status": "revoked",
             "normal_operations_allowed": False,
             "external_revocation": "pending",
-            "closeout_available": False,
+            "closeout_available": bool(jobs),
+            "required_action": "upload_work_then_uninstall",
         }
 
     def user_status(self, db, actor, user_id, status, request_id):
@@ -731,6 +754,9 @@ class Hub:
             raise HubError("USER_STATUS_NOT_ALLOWED", 409)
         if status == "active" and user.email and not user.email_verified_at:
             raise HubError("EMAIL_VERIFICATION_REQUIRED", 409)
+        if status != "active":
+            from . import closeouts
+            closeouts.create(self, db, user_id=user.id, reason="account_" + status)
         user.status, user.auth_epoch = status, user.auth_epoch + 1
         self.revoke_grants(db, user_id=user.id)
         db.add(
@@ -758,11 +784,14 @@ class Hub:
         device = db.get(Device, device_id)
         if not device or device.id == actor.device.id:
             raise HubError("DEVICE_REVOCATION_NOT_ALLOWED", 409)
+        from . import closeouts
+        jobs = closeouts.create(self, db, device_id=device.id, reason="device_revoked")
         device.status, device.epoch = "revoked", device.epoch + 1
         self.revoke_grants(db, device_id=device.id)
         db.add(Outbox(kind="device.revoked", payload={"device_id": str(device.id), "epoch": device.epoch}))
         self.audit(db, actor.user.id, "device.revoked", device.id, request_id)
-        return {"status": "revoked", "normal_operations_allowed": False, "closeout_available": False}
+        return {"status": "revoked", "normal_operations_allowed": False, "closeout_available": bool(jobs),
+                "required_action": "upload_work_then_uninstall"}
 
     def idempotent(self, db, actor, scope, key, body, action):
         if not key or not 8 <= len(key) <= 128 or not key.isascii():

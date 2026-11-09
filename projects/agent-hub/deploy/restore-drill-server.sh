@@ -47,7 +47,7 @@ docker run --rm --network agent-hub-database --read-only --tmpfs /tmp --memory 3
   -e HUB_ENVIRONMENT=test -e HUB_MAIL_MODE=memory -e HUB_RESTORE_DATABASE="$target" \
   -e HUB_RESTORE_SNAPSHOT="$snapshot" \
   -e HUB_PUBLIC_URL=http://127.0.0.1:8765 -e HUB_ARTIFACT_DIRECTORY=/restored-archives \
-  -v "$stage/data/work-archives:/restored-archives:ro" --entrypoint python agent-hub:0.7.0 -c '
+  -v "$stage/data/work-archives:/restored-archives:ro" --entrypoint python agent-hub:0.8.0 -c '
 import datetime,json,os,re
 from urllib.parse import quote
 from sqlalchemy import text

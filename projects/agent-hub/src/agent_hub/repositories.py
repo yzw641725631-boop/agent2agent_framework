@@ -161,6 +161,9 @@ def change_status(hub, db, actor, project_id, repository_id, body, request_id):
         raise HubError("REPOSITORY_NOT_ACCESSIBLE", 404)
     if row.version != body.expected_version:
         raise HubError("REPOSITORY_VERSION_CONFLICT", 409)
+    if body.status == "archived" and row.status != "archived":
+        from . import closeouts
+        closeouts.create(hub, db, project_id=project_id, reason="repository_archived", repository_ids=[str(repository_id)])
     row.status, row.version = body.status, row.version + 1
     db.flush()
     hub.audit(

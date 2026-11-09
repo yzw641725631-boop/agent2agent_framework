@@ -68,7 +68,7 @@ async function safeRead(workspace,relative){
     fail('WORK_SECRET_DETECTED','检测到私钥内容，未建立检查点。请从任务变更中排除凭证。');
   return {data,mode:process.platform==='win32'?null:(after.mode & 0o111?'100755':'100644')};
 }
-async function captureOnce(workspace,baseCommit,scope,policy){
+async function captureOnce(workspace,baseCommit,scope,policy,{ignoreUntracked=[]}={}){
   const repo=await repository(workspace);
   if(!/^[a-f0-9]{40,64}$/.test(baseCommit))fail('WORK_GIT_BASE_REQUIRED');
   const raw=(await git(workspace,['diff','--no-ext-diff','--no-textconv','--no-renames','--name-status','-z',baseCommit,'--'])).toString('utf8').split('\0');
@@ -79,7 +79,7 @@ async function captureOnce(workspace,baseCommit,scope,policy){
     changes.set(file,{status:{A:'added',M:'modified',D:'deleted'}[status]});
   }
   for(const file of (await git(workspace,['ls-files','--others','--exclude-standard','-z'])).toString('utf8').split('\0').filter(Boolean))
-    changes.set(file,{status:'added'});
+    if(!ignoreUntracked.includes(file))changes.set(file,{status:'added'});
   if(changes.size>100)fail('WORK_SNAPSHOT_LIMIT','单个检查点最多 100 个变更文件，请拆分任务。');
   const rejected=violations([...changes.keys()],scope,policy);
   if(rejected.length)throw new HubError(rejected[0].code,'实际 Git 改动触及禁止路径或超出任务范围。',{violations:rejected});
@@ -99,9 +99,9 @@ async function captureOnce(workspace,baseCommit,scope,policy){
   const evidence={schema_version:1,source:'desktop-git-observer',base_commit:baseCommit,head_commit:repo.head,files};
   return {evidence,evidence_hash:digest(evidence),contents,bytes};
 }
-async function capture(workspace,baseCommit,scope,policy){
-  const first=await captureOnce(workspace,baseCommit,scope,policy);
-  const second=await captureOnce(workspace,baseCommit,scope,policy);
+async function capture(workspace,baseCommit,scope,policy,options){
+  const first=await captureOnce(workspace,baseCommit,scope,policy,options);
+  const second=await captureOnce(workspace,baseCommit,scope,policy,options);
   if(first.evidence_hash!==second.evidence_hash)fail('WORKTREE_CHANGED','工程在采集期间发生变化，请保存后重试。');
   return first;
 }

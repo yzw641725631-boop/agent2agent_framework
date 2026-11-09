@@ -140,7 +140,7 @@ def get_log(hub, db, identity, project_id, task_id, log_id, *, upload=False, evi
     return row
 
 
-def save(hub, db, identity, log, data):
+def save(hub, db, identity, log, data, *, closeout=False):
     _, manifest_hash, metadata = archive_codec.decode(data, log)
     existing = db.scalar(select(WorkSnapshot).where(WorkSnapshot.worklog_id == log.id))
     if existing:
@@ -164,9 +164,13 @@ def save(hub, db, identity, log, data):
         raise HubError("WORK_ARCHIVE_STORAGE_UNAVAILABLE", 503)
     db.add(row)
     db.flush()
-    task = tasks.get_task(db, log.project_id, log.task_id)
-    tasks.emit(hub, db, identity, task, "work.snapshot_saved", "archive:" + str(row.id),
-               run_id=log.run_id, worklog_id=log.id)
+    if not closeout:
+        task = tasks.get_task(db, log.project_id, log.task_id)
+        tasks.emit(hub, db, identity, task, "work.snapshot_saved", "archive:" + str(row.id),
+                   run_id=log.run_id, worklog_id=log.id)
+    else:
+        hub.audit(db, identity.user.id, "closeout.snapshot_saved", row.id, "closeout-upload", log.project_id,
+                  closeout_id=str(log.closeout_id), worklog_id=str(log.id))
     return snapshot_view(row)
 
 

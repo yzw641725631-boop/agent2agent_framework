@@ -321,6 +321,7 @@ class Worklog(Identity, Base):
     context_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))
     change_evidence: Mapped[dict | None] = mapped_column(JSONB)
     evidence_hash: Mapped[str | None] = mapped_column(String(64))
+    closeout_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("closeout_jobs.id"))
 
 
 class WorkSnapshot(Identity, Base):
@@ -352,6 +353,38 @@ class CodeDelivery(Identity, Base):
     device_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("devices.id"))
     git_commit: Mapped[str] = mapped_column(String(64))
     git_ref: Mapped[str] = mapped_column(String(200))
+    receipt_hash: Mapped[str] = mapped_column(String(64))
+
+
+class CloseoutJob(Identity, Base):
+    __tablename__ = "closeout_jobs"
+    project_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("projects.id"), index=True)
+    user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id"))
+    device_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("devices.id"), index=True)
+    reason: Mapped[str] = mapped_column(String(40))
+    scope: Mapped[dict] = mapped_column(JSONB)
+    token_digest: Mapped[str] = mapped_column(String(64))
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    state: Mapped[str] = mapped_column(String(24), default="pending")
+    seal_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))
+    cleanup_report: Mapped[dict | None] = mapped_column(JSONB)
+
+
+class CloseoutRun(Base):
+    __tablename__ = "closeout_runs"
+    job_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("closeout_jobs.id"), primary_key=True)
+    run_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("task_runs.id"), primary_key=True)
+    task_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("tasks.id"))
+    repository_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("project_repositories.id"))
+    lease_epoch: Mapped[int] = mapped_column(Integer)
+    context_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))
+    payload: Mapped[dict] = mapped_column(JSONB)
+
+
+class CloseoutSeal(Identity, Base):
+    __tablename__ = "closeout_seals"
+    job_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("closeout_jobs.id"), index=True)
+    inventory: Mapped[list] = mapped_column(JSONB)
     receipt_hash: Mapped[str] = mapped_column(String(64))
 
 

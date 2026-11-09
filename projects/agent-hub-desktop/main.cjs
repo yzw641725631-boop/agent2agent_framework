@@ -146,6 +146,7 @@ async function start(){
       return controller.work.list();
     },
     retryCheckpoint:data=>controller.work.retry(data.id),
+    retryCloseout:async()=>{await controller.closeouts.tick();return controller.closeouts.status();},
     recoverCheckpoint:data=>controller.invokeProject(controller.binding(data.bindingId),'hub_download_work_backup',{
       task_id:data.taskId,worklog_id:data.worklogId,operation_id:crypto.randomUUID()}),
     exportCheckpoint:async data=>{

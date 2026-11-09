@@ -169,7 +169,8 @@ def test_member_revocation_immediately_blocks_access_and_renewal(world):
     assert response.status_code == 403
     assert response.json()["code"] == "PROJECT_ACCESS_REVOKED"
     assert response.json()["normal_operations_allowed"] is False
-    assert response.json()["closeout_available"] is False  # P4 isn't implemented yet.
+    assert response.json()["closeout_available"] is True
+    assert response.json()["required_action"] == "upload_work_then_uninstall"
     refreshed = world.call(
         "POST", "/api/auth/refresh", key=member.key, token=member.tokens["refresh_token"], body={}
     )

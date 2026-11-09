@@ -1,8 +1,8 @@
 # Agent Hub：身份与项目基础服务
 
-> 2026-11-09｜0.7.0 / 迁移 0010：加密代码工作树快照、跨设备恢复、不可覆盖的 Git 交付回执与恢复运维，配套 Windows 0.9.0。验证与边界见[本轮实施](../../设计文档/24_持久代码交接与恢复验收.md)。
+> 2026-11-09｜0.8.0 / 迁移 0011：设备绑定的撤权交接、冻结原运行范围、释放任务、持久清单确认和卸载报告。配套 Windows 0.10.1，验证与边界见[本轮实施](../../设计文档/26_撤权收尾与归属卸载验收.md)。
 
-本服务提供身份、设备审批、逐仓库授权、任务租约、不可覆盖工作日志、代码快照和 Git 交付回执，含 REST API、中文后台、PostgreSQL 迁移及运维 CLI。通过 [Electron 桌面端](../agent-hub-desktop/README.md) 提供本机 stdio MCP。自动记忆和撤权收尾卸载仍待接入。文档接入步骤见 [Git 文档索引](../../设计文档/11_Git文档索引与MCP查询.md)。
+本服务提供身份、设备审批、逐仓库授权、任务租约、不可覆盖工作日志、代码快照和 Git 交付回执，含 REST API、中文后台、PostgreSQL 迁移及运维 CLI。通过 [Electron 桌面端](../agent-hub-desktop/README.md) 提供本机 stdio MCP。自动记忆仍待接入。文档接入步骤见 [Git 文档索引](../../设计文档/11_Git文档索引与MCP查询.md)。
 
 ## 已实现
 
@@ -31,7 +31,7 @@
 
 这套内部 REST 登录**尚不是标准 OAuth 授权服务器**。授权码/PKCE、正式 MCP 授权入口、密码重置和成员自主领取邀请仍待实现。账号目前由获授权管理员在创建时设置初始密码。后台保存的服务地址需要部署端配合才实际切换；当前 IP HTTPS 已发布，QQ 验证码投递与正式超管初始化已完成。
 
-撤销现在会立即阻止普通操作，并写入待处理 outbox。正常授权下的快照上传回执和跨人恢复已实现；独立撤权收尾身份及完整框架卸载尚未实现，返回 `closeout_available: false`，当前版本不执行本地删除。Hub Git 票据逐请求复核，但不能撤销用户在平台外另行取得的 GitHub 凭证。七种 harness 的完整接入仍待验收。
+撤销立即阻止普通操作、释放任务租约，并冻结原执行范围。独立设备 DPoP 收尾凭证只允许上传原工作及回报按收据清理的结果；普通会话继续被拒绝，设备报告不是擦除证明。Hub Git 票据逐请求复核，不能撤销用户在平台外另行取得的 GitHub 凭证。七种 harness 的完整接入仍待验收。
 
 运行角色对认证内部表有服务所需的读写权；项目元数据、审计、文档、任务、规则和上下文表均有相应 RLS。代码快照及交付回执表启用并强制 RLS，普通运行角色只有 SELECT/INSERT 权。RLS 上下文只能由服务端根据已验证身份设置，客户端不能传入数据库身份。短身份事务使用数据库协调锁；文档网络拉取发生在事务外。
 
@@ -61,7 +61,7 @@
 | `src/agent_hub/repositories.py` | 仓库登记、权限与多源文档范围 |
 | `src/agent_hub/git_gateway.py` | Git 代理、短期票据与任务分支限制 |
 | `src/agent_hub/github_credentials.py` | 加密 App 配置及指定仓库安装令牌 |
-| `migrations/versions/` | 十份可执行数据库迁移 |
+| `migrations/versions/` | 十一份可执行数据库迁移 |
 | `tests/` | 真实 PostgreSQL 上的权限与会话测试 |
 | `deploy/compose.server-db.yaml` | 已在指定服务器运行的数据库配置 |
 | `deploy/compose.server-app.yaml` | 已部署的应用配置，复用服务器数据库 |
@@ -77,14 +77,14 @@
 |---|---|
 | 部署目录 | `/opt/agent-hub/database` |
 | 容器 | `agent-hub-postgres`，PostgreSQL 18.6 |
-| 数据库 | `agent_hub`，发行版对应迁移 `0009` |
+| 数据库 | `agent_hub`，发行版对应迁移 `0011` |
 | 数据卷 | `agent-hub-postgres-data` |
 | 私有网络 | `agent-hub-database`，内部主机名 `postgres:5432` |
 | 运行/迁移角色 | `hub_runtime` / `hub_owner` |
 | 文档 Worker | `hub_document_worker` 登录，继承 `hub_indexer`；与 API 角色分开 |
 | 凭证 | 服务器 `.env`，root 所有，权限 `0600` |
 | 对外端口 | 数据库不发布宿主机或公网端口 |
-| 应用目录 | `/opt/agent-hub/application/current`，发行版目录 `releases/0.7.0` |
+| 应用目录 | `/opt/agent-hub/application/current`，发行版目录 `releases/0.8.0` |
 | 应用容器 | `agent-hub-app-api-1`，仅发布服务器 `127.0.0.1:8765` |
 | 公网入口 | `https://47.109.23.86:18180`，容器 `agent-hub-edge` |
 | 入口与证书状态 | `/opt/agent-hub/edge`；每六小时检查证书续期 |

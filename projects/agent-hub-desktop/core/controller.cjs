@@ -12,6 +12,7 @@ const {SetupConnection}=require('./setup-connection.cjs');
 const {WorkRuntime}=require('./work-runtime.cjs');
 const {RepositoryRuntime}=require('./repository-runtime.cjs');
 const {BackupRuntime}=require('./backup-runtime.cjs');
+const {CloseoutRuntime}=require('./closeout-runtime.cjs');
 const {version}=require('../package.json');
 
 const stopped=new Set(['PROJECT_ACCESS_REVOKED','ACCOUNT_INACTIVE','DEVICE_NOT_ALLOWED','SESSION_REVOKED',
@@ -32,6 +33,7 @@ class Controller extends EventEmitter {
     this.work=new WorkRuntime(this);
     this.repositories=new RepositoryRuntime(this);
     this.backups=new BackupRuntime(this);
+    this.closeouts=new CloseoutRuntime(this);
   }
   get profile(){return this.vault.data.profiles[this.vault.data.current] || null;}
   persist(){return this.vault.save();}
@@ -68,6 +70,7 @@ class Controller extends EventEmitter {
       this.scheduleRecovery();
     }
     await this.persist();this.emitState();
+    if(terminal)this.closeouts.schedule();
   }
   state(){
     const p=this.profile;
@@ -79,6 +82,7 @@ class Controller extends EventEmitter {
       managementEnabled:visible && !!p?.management,
       setupEnabled:!!this.setup.binding,
       setupAccountMatches:visible && !!this.setup.binding && !!this.setup.matches(this.setup.binding),
+      closeouts:this.closeouts.status().items,
       projects:visible?this.projects:[],bindings:(visible?p?.bindings || []:[]).map(b=>({id:b.id,projectId:b.projectId,projectName:b.projectName,
         repositoryId:b.repositoryId || null,repositoryName:b.repositoryName || null,
         workspace:b.workspace,status:b.status,message:b.message || '',configuration:this.configuration(b),
@@ -92,6 +96,7 @@ class Controller extends EventEmitter {
     await this.broker.start();
     await this.setup.restore();
     this.work.start();
+    this.closeouts.start();
     const p=this.profile;
     if(!p)return this.state();
     this.remote=new Remote(p,()=>this.persist(),this.transport);
@@ -103,7 +108,7 @@ class Controller extends EventEmitter {
       this.connection=transient.has(error.code)?'offline':'reauth_required';this.message=error.message;
       if(p.sessions.platform)await this.failure(error,{platform:true});
     }
-    return this.state();
+    this.closeouts.schedule();return this.state();
   }
   async login(data){
     if(['active','offline'].includes(this.connection) && this.profile?.sessions.platform)throw new HubError('ALREADY_LOGGED_IN','请先退出当前账号再切换账号。');
@@ -235,6 +240,7 @@ class Controller extends EventEmitter {
       if(!visibility.code_read_ids.includes(binding.repositoryId) && !visibility.document_read_ids.includes(binding.repositoryId)){
         if(binding.status!=='blocked' || binding.errorCode!=='REPOSITORY_NOT_ACCESSIBLE')changed=true;
         binding.status='blocked';binding.errorCode='REPOSITORY_NOT_ACCESSIBLE';binding.message='该仓库的授权已失效，请保留未交付工作。';
+        this.closeouts.schedule();
       }
     }
     return changed || count!==p.events.length;
@@ -268,8 +274,9 @@ class Controller extends EventEmitter {
       if(!repository)throw new HubError('REPOSITORY_NOT_ACCESSIBLE');
     }
     const binding={id:crypto.randomUUID(),secret:crypto.randomBytes(32).toString('base64url'),projectId,
-      ...(repository?{repositoryId,repositoryName:repository.name}:{}),
-      projectName:context.name,workspace:actual,status:'active'};
+      ...(repository?{repositoryId,repositoryName:repository.name,repositoryVersion:repository.version}:{}),
+      projectName:context.name,workspace:actual,status:'active',created_at:new Date().toISOString(),authorization:context.authorization};
+    try{binding.initial_commit=(await require('./git-observer.cjs').initialize(actual)).base_commit;}catch{/* A project-group directory need not be a Git repository. */}
     p.bindings.push(binding);await this.writeDescriptor(binding);await this.persist();
     this.watch(projectId);this.emitState();return this.state();
   }
@@ -277,6 +284,7 @@ class Controller extends EventEmitter {
     const profile=this.profile,remote=this.remote;
     await this.management.restore();
     for(const binding of profile.bindings){
+      if(binding.closeout_id)continue;
       try{
         const context=await this.context(binding.projectId);this.ensureCurrent(profile,remote);
         if(binding.repositoryId && context.resource_visibility &&
@@ -290,6 +298,7 @@ class Controller extends EventEmitter {
         const blocked=stopped.has(error.code) || error.code==='REPOSITORY_NOT_ACCESSIBLE';
         binding.status=blocked?'blocked':'offline';binding.message=error.message;binding.errorCode=error.code;
         if(!blocked)this.scheduleRecovery();
+        else this.closeouts.schedule();
       }
     }
     await this.persist();
@@ -297,6 +306,7 @@ class Controller extends EventEmitter {
   binding(id){const binding=this.profile?.bindings.find(b=>b.id===id);if(!binding)throw new HubError('BINDING_NOT_FOUND');return binding;}
   async disconnect(id){
     const binding=this.binding(id);await fs.unlink(this.descriptorPath(binding)).catch(e=>{if(e.code!=='ENOENT')throw e;});
+    (this.profile.retiredBindings??=[]).push(binding);
     this.profile.bindings=this.profile.bindings.filter(b=>b.id!==id);
     if(!this.profile.bindings.some(b=>b.projectId===binding.projectId)){
       this.watches.get(binding.projectId)?.abort();this.watches.delete(binding.projectId);
@@ -309,7 +319,8 @@ class Controller extends EventEmitter {
     return {target:result.target,previousHash:result.previousHash,previous:result.previous,next:result.next};
   }
   async installConfiguration({id,expectedHash}){
-    const b=this.binding(id);const config=this.configuration(b).mcpServers,name=Object.keys(config)[0];
+    const b=this.binding(id);if(b.closeout_id)throw new HubError('PROJECT_CLOSEOUT_REQUIRED');
+    const config=this.configuration(b).mcpServers,name=Object.keys(config)[0];
     b.installed=await workspaces.apply(b.workspace,name,config[name],expectedHash,{entry:b.installed?.entry,fileHash:b.installed?.installedHash});
     await this.persist();this.emitState();return b.installed;
   }
@@ -327,6 +338,17 @@ class Controller extends EventEmitter {
     return this.invokeProject(b,request.action,request.args);
   }
   async invokeProject(b,action,args){
+    if(action==='metadata' && (b.closeout_id || ['blocked','uninstalled'].includes(b.status) || this.connection==='reauth_required'))
+      return {project_id:b.projectId,capabilities:[],closeout_required:true};
+    if(['hub_closeout_status','hub_run_closeout'].includes(action)){
+      if(!args || Object.keys(args).length || this.closed || this.binding(b.id)!==b)throw new HubError('INVALID_REQUEST');
+      if(action==='hub_run_closeout')await this.closeouts.tick();
+      return this.closeouts.status(b);
+    }
+    if(b.closeout_id){
+      if(action!=='hub_list_local_work')throw new HubError('PROJECT_CLOSEOUT_REQUIRED',undefined,
+        {normal_operations_allowed:false,required_action:'upload_work_then_uninstall',closeout:this.closeouts.status(b)});
+    }
     if(action==='hub_download_work_backup'){
       if(this.closed || this.draining || this.binding(b.id)!==b || !this.profile?.sessions.platform || this.connection!=='active')throw new HubError('LOGIN_REQUIRED');
       require('./task-tools.cjs').validate(action,args);
@@ -371,6 +393,7 @@ class Controller extends EventEmitter {
   }
   async drainProjectOperations(){
     this.draining=true;
+    await this.closeouts.drain();
     await Promise.allSettled(this.projectOperations);
     await this.work.drain();
   }
@@ -553,7 +576,7 @@ class Controller extends EventEmitter {
     this.message=complete?'':'本机已退出，部分服务器会话撤销或连接清理未确认。';this.emitState();
     return {serverLogoutComplete:complete};
   }
-  async close(){this.closed=true;this.work.stop();this.cancelRecovery();this.stopWatches();this.remote?.close();
+  async close(){this.closed=true;this.work.stop();this.cancelRecovery();this.stopWatches();this.remote?.close();await this.closeouts.drain();
     await Promise.allSettled(this.projectOperations);await this.work.drain();await this.broker.close();await this.vault.pending;}
 }
 module.exports={Controller};

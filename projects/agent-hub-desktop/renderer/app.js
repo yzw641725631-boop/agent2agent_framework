@@ -8,7 +8,7 @@ modal.addEventListener('close',()=>{taskDialogVersion++;openTaskBinding=null;});
 const taskLabels={draft:'待准入',ready:'待认领',in_progress:'开发中',review:'待评审',testing:'待测试',release_ready:'待发布确认',completed:'已完成'};
 const labels={active:'已连接',pending:'等待验证 / 审批',offline:'连接中断',blocked:'已拦截',signed_out:'未登录',
   reauth_required:'需要重新登录',running:'执行中',checkpoint:'检查点',completed:'已完成',approved:'已批准'};
-const titles={overview:'协作概览',workspaces:'项目与 MCP',tasks:'任务与日志',checkpoints:'本机检查点',activity:'项目动态',connection:'账号与设备',desktop:'桌面设置'};
+const titles={overview:'协作概览',workspaces:'项目与 MCP',tasks:'任务与日志',checkpoints:'本机检查点',closeouts:'撤权交接',activity:'项目动态',connection:'账号与设备',desktop:'桌面设置'};
 function el(tag,props={},...children){
   const element=document.createElement(tag);
   for(const [key,value] of Object.entries(props)){
@@ -187,6 +187,20 @@ function overview(){
     el('div',{class:'split'},el('section',{class:'card'},el('div',{class:'card-head'},text('h2','项目动态'),
       button('查看全部',()=>{view='activity';render();},'quiet')),events(5)),
       el('section',{class:'card'},el('div',{class:'card-head'},text('h2','本机连接'),state.projects.length?button('绑定项目',bindDialog,'primary'):null),bindings(3))));
+}
+function closeoutsScreen(){
+  const names={pending:'待收尾',uploading:'正在上传',uninstalling:'正在卸载',report_pending:'结果待回报',
+    blocked:'收尾阻塞，原工作保留',conflicts:'已上传，存在清理冲突',complete:'已完成'};
+  return el('div',{},heading('ACCESS REVOCATION','撤权交接与卸载','权限失效后停止普通开发。工作上传并取得服务器确认后，程序按安装收据卸载本项目框架；共享组件和本机检查点保留。'),
+    el('section',{class:'card'},el('div',{class:'card-head'},text('h2','本设备收尾记录'),
+      button('重试收尾',async()=>{await invoke('retryCloseout');await update();},'primary')),
+      ...(state.closeouts || []).map(job=>el('article',{class:'binding'},text('h3',names[job.state] || job.state),
+        text('p','项目 '+job.project_id,'mono'),text('p',job.message,'note'),
+        text('p',job.server_upload_confirmed?'已有服务器上传确认':'尚未确认完整上传'),
+        job.error?text('p','阻塞原因：'+job.error,'warning'):null,
+        job.cleanup?text('p',`已移除 ${job.cleanup.removed_files} 个受管文件、${job.cleanup.removed_entries} 个连接项；${job.cleanup.conflicts} 个冲突。`):null,
+        text('small','收尾授权有效期：'+new Date(job.expires_at).toLocaleString('zh-CN')))),
+      !(state.closeouts || []).length?empty('没有撤权收尾任务','正常退出登录、会话自然过期或网络中断不会自行卸载项目。'):null));
 }
 function tasksScreen(){
   const bindings=state.bindings.filter(b=>b.status==='active');
@@ -378,13 +392,14 @@ function render(){
     el('img',{src:'../assets/agent-hub.png',alt:'',class:'brand-icon'}),
     el('div',{},'Agent Hub',text('small','CONNECT · BUILD · SYNC'))),
     el('nav',{class:'nav'},Object.entries(titles).map(([name,title])=>button(title,()=>{
-      if(authenticated || name==='desktop'){view=name;render();}
-    },view===name && (authenticated || name==='desktop')?'active':''))),
+      if(authenticated || ['desktop','closeouts'].includes(name)){view=name;render();}
+    },view===name && (authenticated || ['desktop','closeouts'].includes(name))?'active':''))),
     el('div',{class:'side-foot'},button('网站管理后台',()=>invoke('openAdmin'),'admin-shortcut'),
       text('strong',authenticated?state.login:'项目协作桌面端'),text('div','v'+(info.version || state.version)+' · Windows'),
       text('div',info.desktop?.closeToTray?'关闭窗口后留在托盘':'关闭窗口后退出后台')));
   let content;
   if(view==='desktop')content=desktopScreen();
+  else if(view==='closeouts')content=closeoutsScreen();
   else if(!authenticated)content=state.connection==='pending'?pendingScreen():loginScreen();
   else content=view==='overview'?overview():view==='workspaces'?workspaces():view==='tasks'?tasksScreen():view==='checkpoints'?checkpointsScreen():view==='activity'?
     el('div',{},heading('PROJECT ACTIVITY','项目动态','记录来自服务器。断线恢复后按游标补齐，重复记录会自动合并。'),el('section',{class:'card'},events())):connection();

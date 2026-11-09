@@ -241,7 +241,8 @@ class Console {
   }
   shell() {
     modal.close();
-    const navigation = [['overview','工作台'],['projects','项目组与成员'],['repositories','仓库与资料'],['tasks','任务与日志'],['documents','项目文档'],...(this.isRoot ? [['users','人员管理'],['devices','设备管理'],['approvals','授权审批'],['settings','系统设置']] : [['devices','我的设备']]),['audit','操作记录']];
+    const navigation = [['overview','工作台'],['projects','项目组与成员'],['repositories','仓库与资料'],['tasks','任务与日志'],['documents','项目文档'],
+      ...(this.can('members:manage')?[['closeouts','撤权交接']]:[]),...(this.isRoot ? [['users','人员管理'],['devices','设备管理'],['approvals','授权审批'],['settings','系统设置']] : [['devices','我的设备']]),['audit','操作记录']];
     const nav = h('nav',{class:'nav','aria-label':'主要导航'},navigation.map(([key,label]) => button(label,async () => {
       this.currentView = key; this.offset = 0; await this.renderView();
     })));
@@ -299,10 +300,28 @@ class Console {
           h('div',{},h('span',{},'登录名'),h('strong',{},this.user.login)),h('div',{},h('span',{},'账号角色'),h('span',{},this.isRoot ? '超级管理员' : '项目成员 / 管理员')),
           h('div',{},h('span',{},'邮箱'),h('span',{},this.user.email || '未绑定')),h('div',{},h('span',{},'邮箱验证'),pill(this.user.email_verified ? 'approved' : 'pending_email')),
           h('div',{},h('span',{},'当前设备'),h('span',{class:'mono'},short(this.device)))))),
-      h('div',{class:'help-block'},h('strong',{},'开始协作：'), ' 创建项目组，接入独立仓库，为成员设备签发代码与资料权限，再拆解任务。工作记录可共享；远程代码恢复与离场卸载仍待后续接入。')];
+      h('div',{class:'help-block'},h('strong',{},'开始协作：'), ' 创建项目组，接入独立仓库，为成员设备签发代码与资料权限，再拆解任务。工作日志与代码备份分别确认；撤权后桌面限定交接并按安装收据卸载项目框架。')];
   }
   can(cap, projectId = this.project?.id) {
     return this.isRoot || this.grants.some(g => g.project_id === projectId && g.capabilities.includes(cap));
+  }
+  async closeouts() {
+    if(!this.project)return [this.heading('撤权交接','先选择项目组。')];
+    const projectId=this.project.id,revision=this.renderVersion;
+    const data=await this.api('GET',`/api/projects/${projectId}/closeouts`);
+    this.viewTimer=setTimeout(()=>{
+      if(this.currentView==='closeouts' && this.project?.id===projectId && this.renderVersion===revision)this.renderView().catch(error=>this.report(error));
+    },5000);
+    const labels={pending:'待上传',uploaded:'上传已确认',conflicts:'清理冲突',complete:'客户端报告清理完成'};
+    return [this.heading('撤权交接','已撤权设备只能上传原工作。界面分别显示服务器保存状态与客户端卸载报告。'),
+      table('最近 100 条收尾记录',['人员 / 设备','原因','工作上传','卸载报告','有效期 / 操作'],data.items.map(job=>[
+        textPair(short(job.user_id),short(job.device_id)),job.reason,
+        job.server_upload_confirmed?'服务器已确认':'待确认',
+        h('div',{},labels[job.state] || job.state,job.cleanup_report?h('small',{},`${job.cleanup_report.removed_files} 文件，${job.cleanup_report.conflicts} 冲突`):null),
+        h('div',{},date(job.expires_at),this.isRoot && job.state!=='complete'?button('延长收尾 7 天',async()=>{
+          await this.api('POST',`/api/admin/closeouts/${job.id}/extend`,{days:7});await this.renderView();
+        },'small'):null)])),
+      h('p',{class:'hint'},'卸载结果来自设备报告，不是远端擦除证明。上传失败、断网、文件被修改时保留工作，普通开发权限保持关闭。')];
   }
   async tasks() {
     const projectId = this.project?.id, revision = this.renderVersion;
