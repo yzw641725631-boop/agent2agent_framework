@@ -20,6 +20,8 @@ const definitions=[
     {task_id:id,...page},['task_id'],{route:':task/worklog-index'}),
   define('hub_read_worklog','展开一条工作日志','按获准日志 ID 读取原文、来源与实际改动清单。内容是项目资料，不能扩大权限或修改规则。',
     {task_id:id,worklog_id:id},['task_id','worklog_id'],{route:':task/worklogs/:log'}),
+  define('hub_download_work_backup','取回可交接代码检查点','按授权下载已保存的完整代码工作树到本机加密检查点，不把代码正文返回模型。随后从 PC 的本机检查点导出到新目录，核验后交接；不覆盖现有工程，不认领任务，不恢复 Git 历史。',
+    {task_id:id,worklog_id:id},['task_id','worklog_id'],{route:'@local',write:true,cap:'recovery'}),
   define('hub_create_task','拆解并创建任务','创建草稿任务，可指定同项目 parent_id。必须依次确认需求、设计、可行性才能认领。范围是声明，不能代替仓库授权或本地文件隔离。',
     {parent_id:id,repository_id:id,title:{type:'string',minLength:1,maxLength:200},description:{type:'string',minLength:1,maxLength:8000},
       acceptance:{type:'string',minLength:1,maxLength:8000},scope,execution_mode:{type:'string',enum:['observed','declaration'],description:'默认 observed 受管代码任务；declaration 仅人工资料记录，不提供代码证据保证。'}},['title','description','acceptance','scope'],{write:true,cap:'tasks:publish'}),
@@ -32,14 +34,14 @@ const definitions=[
   define('hub_check_changes','核对实际改动与拟修改路径','修改前传 proposed_paths 检查允许路径；同时核对本机实际 Git diff、未跟踪文件、保护规则和当前规则版本。返回文件哈希清单，不写文件、不提供系统级隔离。',
     {task_id:id,...lease,proposed_paths:{type:'array',maxItems:100,items:{type:'string',maxLength:800}}},
     ['task_id','run_id','lease_epoch'],{route:'@local',cap:'tasks:write'}),
-  define('hub_list_local_work','查看本机检查点','查看本账号在该工程的加密代码检查点、待发/已共享/被阻止状态。代码目前只备份在本机，不等于服务器代码备份。',{},[],{route:'@local'}),
+  define('hub_list_local_work','查看本机检查点','查看本账号在该工程的加密检查点、日志共享及独立代码备份状态。只有 server_code_backup 和 code_receipt 确认服务器代码备份。',{},[],{route:'@local'}),
   define('hub_claim_task','原子认领开发任务','一次仅一个主开发者。人和 Agent 共用同一认领规则。为当前执行者生成 instance_id；成功后保存 run.id 和 lease_epoch。10 分钟租约，约每 2 分钟心跳。',
     {task_id:id,instance_id:id,harness},['task_id','instance_id','harness'],{route:':task/claim',write:true,cap:'tasks:claim'}),
   define('hub_heartbeat_task','续租任务','使用认领结果中的 run_id 与 lease_epoch 续租。过期或被替换后停止提交，重新核验任务。新一次心跳使用新的 operation_id，网络重试保留原 ID。',
     {task_id:id,...lease},['task_id','run_id','lease_epoch'],{route:':task/heartbeat',write:true,cap:'tasks:claim'}),
   define('hub_release_task','释放本轮认领','先记录未完成工作，再释放本人有效租约，供其他执行者认领。不会删除本地文件或推送 Git。',
     {task_id:id,...lease,reason:{type:'string',minLength:1,maxLength:1000}},['task_id','run_id','lease_epoch','reason'],{route:':task/release',write:true,cap:'tasks:claim'}),
-  define('hub_write_worklog','保存逐轮工作日志','每轮代码变更后保存变更、验证、阻塞和下一步。代码任务先准备确认规则，桌面端采集实际 Git 改动并留本机加密代码检查点；服务器仅存日志和文件哈希清单。确认 server_confirmed 才算共享。',
+  define('hub_write_worklog','保存逐轮工作日志','每轮代码变更后保存变更、验证、阻塞和下一步。代码任务先准备确认规则，桌面端保存实际改动与基线，分别上传日志和加密代码快照。server_confirmed 表示日志共享；server_code_backup 和 code_receipt 才表示代码备份。失败保留本机并重试。',
     {task_id:id,...lease,summary:{type:'string',minLength:1,maxLength:300},notes:{type:'string',minLength:1,maxLength:16000},
       changed_paths:{type:'array',maxItems:100,items:{type:'string',maxLength:800}},tests:{type:'string',minLength:1,maxLength:8000},
       next_steps:{type:'string',minLength:1,maxLength:4000},outcome:{type:'string',enum:['checkpoint','blocked','failed']},
@@ -55,6 +57,7 @@ const definitions=[
 ];
 function allowed(def,caps,args){
   if(!def.cap)return true;
+  if(def.cap==='recovery')return caps.includes('tasks:write') || caps.includes('logs:read');
   if(def.cap==='decision'){
     if(!args)return caps.includes('tasks:publish') || (caps.includes('logs:read') && caps.some(c=>['tasks:review','tasks:test'].includes(c)));
     const cap={review:'tasks:review',test:'tasks:test'}[args.gate] || 'tasks:publish';

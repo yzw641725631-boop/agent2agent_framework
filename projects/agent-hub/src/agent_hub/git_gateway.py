@@ -44,6 +44,7 @@ def recorded_checkpoint(db, actor, task, run_id, expected_commit):
         raise HubError("GIT_RECORDED_CHECKPOINT_REQUIRED", 409)
     if task.execution_mode == "observed":
         work_policy.require_context(db, actor, task, db.get(TaskRun, run_id), latest.context_id)
+    return latest
 
 
 def issue(hub, db, actor, project_id, repository_id, body, request_id):

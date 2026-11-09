@@ -12,6 +12,7 @@ FROM base AS tests
 RUN apt-get update && apt-get install -y --no-install-recommends git \
     && rm -rf /var/lib/apt/lists/*
 COPY tests ./tests
+COPY deploy ./deploy
 USER 10001
 CMD ["python", "-m", "pytest", "-q", "-p", "no:cacheprovider"]
 

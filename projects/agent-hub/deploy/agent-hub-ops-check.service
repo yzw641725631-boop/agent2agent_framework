@@ -1,0 +1,10 @@
+[Unit]
+Description=Agent Hub backup freshness, disk, runtime and signed feed checks
+After=docker.service
+Requires=docker.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/python3 /opt/agent-hub/application/current/deploy/ops-check-server.py
+UMask=0077
+TimeoutStartSec=90s

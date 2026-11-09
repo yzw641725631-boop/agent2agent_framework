@@ -193,8 +193,16 @@ class RepositoryRuntime{
     const actual=(await git(binding.workspace,['ls-remote','--',verify.origin,access.write_ref],{...verify,support,
       signal:remote.lifetime?.signal})).trim().split(/\s/)[0];
     if(actual!==body.expected_commit)fail('GIT_REMOTE_VERIFICATION_FAILED','远程提交尚未核验成功，请保留本机工作并重新查询。');
+    const logs=await c.invokeProjectRemote(binding,'hub_list_worklogs',{task_id:args.task_id,limit:1});
+    if(!logs.items?.[0]?.id)fail('GIT_RECORDED_CHECKPOINT_REQUIRED');
+    const slot=await c.projectSlot(binding.projectId);
+    const receipt=await remote.request('POST',`/api/projects/${binding.projectId}/tasks/${args.task_id}/deliveries`,
+      {run_id:args.run_id,lease_epoch:args.lease_epoch,worklog_id:logs.items[0].id},{slot});
+    this.guard(p,remote,binding);
+    if(receipt.git_commit!==actual || receipt.ref!==access.write_ref || receipt.worklog_id!==logs.items[0].id ||
+       !/^[a-f0-9]{64}$/.test(receipt.receipt_hash || ''))fail('GIT_REMOTE_VERIFICATION_FAILED');
     return {repository_id:repo.id,task_id:args.task_id,run_id:args.run_id,git_commit:actual,ref:access.write_ref,
-      remote_verified:true,merged:false,deployed:false};
+      remote_verified:true,delivery_receipt:receipt,merged:false,deployed:false};
   }
 }
 module.exports={RepositoryRuntime,git,safePath};

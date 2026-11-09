@@ -13,7 +13,7 @@ services:
     build:
       context: ..
       target: runtime
-    image: agent-hub:0.6.0
+    image: agent-hub:0.7.0
     environment:
       <<: *hub-environment
       HUB_DATABASE_URL: postgresql+psycopg://hub_owner:${HUB_OWNER_PASSWORD}@postgres:5432/agent_hub
@@ -32,11 +32,14 @@ services:
     build:
       context: ..
       target: runtime
-    image: agent-hub:0.6.0
+    image: agent-hub:0.7.0
     environment:
       <<: *hub-environment
       HUB_DATABASE_URL: postgresql+psycopg://hub_runtime:${HUB_RUNTIME_PASSWORD}@postgres:5432/agent_hub
       HUB_BOOTSTRAP_TOKEN: ${HUB_BOOTSTRAP_TOKEN:?Use the server-only application environment file}
+      HUB_ARTIFACT_DIRECTORY: /var/lib/agent-hub/work-archives
+      HUB_ARTIFACT_PROJECT_BYTES: ${HUB_ARTIFACT_PROJECT_BYTES:-1073741824}
+      HUB_ARTIFACT_TOTAL_BYTES: ${HUB_ARTIFACT_TOTAL_BYTES:-17179869184}
       FORWARDED_ALLOW_IPS: ${HUB_TRUSTED_PROXY_IPS:-127.0.0.1}
     command: [agent-hub, serve, --host, 0.0.0.0, --port, "8765"]
     ports:
@@ -44,6 +47,8 @@ services:
     read_only: true
     tmpfs:
       - /tmp
+    volumes:
+      - /opt/agent-hub/artifacts/work:/var/lib/agent-hub/work-archives
     security_opt:
       - no-new-privileges:true
     cap_drop:
@@ -70,8 +75,27 @@ services:
       timeout: 3s
       retries: 5
 
+  archive-maintenance:
+    image: agent-hub:0.7.0
+    profiles: [maintenance]
+    environment:
+      <<: *hub-environment
+      HUB_DATABASE_URL: postgresql+psycopg://hub_owner:${HUB_OWNER_PASSWORD}@postgres:5432/agent_hub
+      HUB_ARTIFACT_DIRECTORY: /var/lib/agent-hub/work-archives
+      HUB_ARTIFACT_TOTAL_BYTES: ${HUB_ARTIFACT_TOTAL_BYTES:-17179869184}
+    command: [agent-hub, archive-audit]
+    read_only: true
+    tmpfs: [/tmp]
+    volumes:
+      - /opt/agent-hub/artifacts/work:/var/lib/agent-hub/work-archives
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    mem_limit: 384m
+    cpus: "0.5"
+    networks: [database]
+
   document-worker:
-    image: agent-hub:0.6.0
+    image: agent-hub:0.7.0
     environment:
       <<: *hub-environment
       HUB_DATABASE_URL: postgresql+psycopg://hub_document_worker:${HUB_INDEXER_PASSWORD:?Use the server-only database environment file}@postgres:5432/agent_hub

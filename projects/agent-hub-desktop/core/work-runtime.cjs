@@ -54,11 +54,12 @@ class WorkRuntime{
       if(c.profile===p)await c.persist();
       if(c.connection!=='active' || c.profile!==p || c.remote!==remote)return;
       for(const record of await this.store.list(this.owner())){
-        if(record.state!=='pending' || c.profile!==p || c.remote!==remote)continue;
+        if((record.state!=='pending' && !(record.state==='shared' && !record.code_receipt && record.backup_state==='pending' &&
+            (!record.next_backup || record.next_backup<=Date.now()))) || c.profile!==p || c.remote!==remote)continue;
         const b=p.bindings.find(b=>b.id===record.binding_id && b.status==='active');
         if(b)await this.serialize(record.operation_id,async()=>{
           const fresh=await this.store.read(record.operation_id);
-          if(fresh?.state==='pending')return this.deliver(b,fresh);
+          if(fresh && ['pending','shared'].includes(fresh.state))return this.deliver(b,fresh);
         });
       }
   }
@@ -120,6 +121,12 @@ class WorkRuntime{
       project_id:binding.projectId,task_id:r.task_id,run_id:r.run_id,lease_epoch:r.lease_epoch,workspace:binding.workspace,
       created_at:new Date().toISOString(),state:'local_only',body:{summary:'后台观察检查点（尚未填写本轮工作说明）',
         notes:'自动保存实际变更，不代表测试或任务完成。'},snapshot};
+    if(this.c.backups){
+      const previous=await this.store.read(record.operation_id);
+      if(previous?.snapshot.baseline)snapshot.baseline=previous.snapshot.baseline;
+      else try{await this.c.backups.prepare(binding,snapshot);}
+      catch(error){record.backup_error=error.code || 'WORK_ARCHIVE_INVALID';}
+    }
     await this.store.write(record);r.observed_hash=snapshot.evidence_hash;r.observation_error=null;r.last_activity=Date.now();
     this.c.emitState();
     });
@@ -151,6 +158,11 @@ class WorkRuntime{
       if(Buffer.byteLength(JSON.stringify(body))>65536)throw new HubError('WORK_RECORD_LIMIT','日志和文件清单超过 64 KiB，请缩短日志。');
       const record={schema:1,operation_id,request_hash,owner,binding_id:binding.id,project_id:binding.projectId,
         task_id,run_id:r.run_id,lease_epoch:r.lease_epoch,workspace:binding.workspace,created_at:new Date().toISOString(),state:'pending',body,snapshot};
+      if(this.c.backups){
+        record.backup_state='pending';
+        try{await this.c.backups.prepare(binding,snapshot);}
+        catch(error){record.backup_state='blocked';record.backup_error=error.code || 'WORK_ARCHIVE_INVALID';}
+      }
       await this.store.write(record,{create:true});
       if(this.c.profile!==profile || this.c.connection==='signed_out')return this.receipt(record);
       r.last_activity=Date.now();await this.c.persist();
@@ -160,29 +172,58 @@ class WorkRuntime{
   async deliver(binding,record){
     const profile=this.c.profile;
     if(!sameOwner(record.owner,this.owner()) || record.binding_id!==binding.id)throw new HubError('WORK_RECORD_NOT_ACCESSIBLE');
-    if(record.state==='shared')return this.receipt(record);
     if(record.state==='blocked' || this.c.connection!=='active' || this.c.draining || binding.status==='blocked')return this.receipt(record);
-    try{
+    if(record.state!=='shared')try{
       const result=await this.c.invokeProjectRemote(binding,'hub_write_worklog',{task_id:record.task_id,operation_id:record.operation_id,...record.body},{internal:true});
       record.state='shared';record.server_receipt=result;record.last_error=null;
       const r=profile?.workRuns?.[record.run_id];
       if(r && this.c.profile===profile && sameOwner(record.owner,this.owner())){r.last_worklog_id=result.id;r.last_evidence_hash=record.snapshot.evidence_hash;await this.c.persist();}
     }catch(error){record.last_error=error.code || 'UPLOAD_FAILED';if(!retryable.has(error.code))record.state='blocked';}
+    if(record.state==='shared' && !record.code_receipt && this.c.backups){
+      try{await this.c.backups.deliver(binding,record);}
+      catch(error){record.backup_error=error.code || 'WORK_ARCHIVE_UPLOAD_FAILED';
+        record.backup_state=retryable.has(error.code) || ['SERVICE_BUSY','WORK_ARCHIVE_UPLOAD_TIMEOUT','INVALID_RESPONSE'].includes(error.code)?'pending':'blocked';
+        record.next_backup=Date.now()+30000;}
+    }
     await this.store.write(record);this.c.emitState();return this.receipt(record);
   }
-  receipt(record){return {local_checkpoint_id:record.operation_id,state:record.state,server_confirmed:record.state==='shared',
-    server_receipt:record.server_receipt || null,evidence_hash:record.snapshot.evidence_hash,local_code_backup:true,server_code_backup:false,
+  receipt(record){
+    const log=record.server_receipt;
+    return {local_checkpoint_id:record.operation_id,state:record.state,server_confirmed:record.state==='shared',
+    server_receipt:log?{id:log.id,receipt_hash:log.receipt_hash,created_at:log.created_at,evidence_hash:log.evidence_hash}:null,
+    evidence_hash:record.snapshot.evidence_hash,local_code_backup:true,
+    server_code_backup:!!record.code_receipt,code_receipt:record.code_receipt || null,backup_state:record.backup_state || 'local_only',
+    backup_error:record.backup_error || null,recovered_from:record.recovered_from || null,
     files:record.snapshot.evidence.files.length,last_error:record.last_error || null,can_remove:record.state==='shared' && !!record.exported_to,
-    message:record.state==='shared'?'日志与改动清单已共享；代码检查点保存在本机。':'本机加密检查点已保留，尚未确认共享；过期或撤权记录等待限定收尾通道。'};}
+    message:record.code_receipt?'日志和完整代码工作树已保存在服务器，可按权限交接；未包含 Git 历史。':
+      record.state==='shared'?'日志已共享，代码备份尚未确认；本机检查点继续保留。':'本机加密检查点已保留，尚未确认共享；过期或撤权记录等待限定收尾通道。'};}
   async list(binding){return {items:(await this.store.list(this.owner())).filter(r=>!binding || r.binding_id===binding.id).map(r=>({
     ...this.receipt(r),binding_id:r.binding_id,project_id:r.project_id,task_id:r.task_id,run_id:r.run_id,summary:r.body.summary,created_at:r.created_at})),
     unreadable_records:this.store.readErrors?.length || 0};}
+  async retry(id){
+    if(!uuid(id))throw new HubError('INVALID_REQUEST');
+    return this.serialize(id,async()=>{
+      const record=await this.store.read(id);
+      if(!record || !sameOwner(record.owner,this.owner()))throw new HubError('WORK_RECORD_NOT_ACCESSIBLE');
+      if(this.c.connection!=='active')throw new HubError('NETWORK_UNAVAILABLE');
+      const binding=this.c.profile.bindings.find(b=>b.id===record.binding_id && b.status==='active');
+      if(!binding)throw new HubError('PROJECT_ACCESS_REVOKED');
+      if(record.state==='local_only')throw new HubError('WORK_LOG_REQUIRED','后台观察尚无本轮工作说明，请先通过 MCP 保存工作日志。');
+      if(record.state==='blocked')throw new HubError(record.last_error || 'WORK_RECORD_BLOCKED','原日志已被权限或租约拦截，请保留原记录并处理收尾。');
+      return this.deliver(binding,record);
+    });
+  }
   async submit(binding,args){
     const r=this.run(binding,args),p=this.c.profile,remote=this.c.remote;
     if(!r.acknowledged || r.last_worklog_id!==args.worklog_id)throw new HubError('TASK_LATEST_CHECKPOINT_REQUIRED');
     const snapshot=await observer.capture(binding.workspace,r.base_commit,r.scope,r.policy);
     this.c.ensureCurrent(p,remote);
     if(snapshot.evidence_hash!==r.last_evidence_hash)throw new HubError('WORK_EVIDENCE_CHANGED','检查点之后代码已变化，请先保存本轮日志。');
+    if(this.c.backups && binding.repositoryId){
+      const rows=await this.store.list(this.owner());
+      if(!rows.some(row=>row.server_receipt?.id===args.worklog_id && row.code_receipt?.evidence_hash===snapshot.evidence_hash))
+        throw new HubError('WORK_REMOTE_BACKUP_REQUIRED');
+    }
     const result=await this.c.invokeProjectRemote(binding,'hub_submit_task',{...args,evidence_hash:snapshot.evidence_hash},{internal:true});
     r.stopped='submitted';await this.c.persist();return result;
   }

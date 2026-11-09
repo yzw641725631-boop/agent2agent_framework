@@ -21,8 +21,8 @@
 - `hub_fetch_repository` 只取得登记分支到 `FETCH_HEAD`，不切分支、不合并、不改工作文件。是否合并及解决冲突按项目流程处理。
 - 完成本轮代码后，按任务要求创建本机 Git 提交。保存含当前提交号的最新 checkpoint 日志，确认日志共享，再调用 `hub_push_task(task_id, run_id, lease_epoch)`。工作区须干净、认领须有效；代码任务的规则确认也须仍有效。
 - 推送仅允许 `refs/heads/hub/{task_id}/{run_id}` 和日志记录的那个提交。不能推主分支、他人任务分支、一次推多分支或删除分支。网络失败保留本机代码，先查询或重试核验，不猜测成功。
-- `remote_verified: true` 表示桌面用远程查询核对了提交号；`merged: false` / `deployed: false` 表示评审、合并、CI 和发布还没有完成。须在 `hub_submit_task` 结束租约之前完成需要的任务推送。
+- 新版 `remote_verified: true` 还须附 `delivery_receipt`：服务器用自己的上游凭证查询 GitHub 的确切任务分支并保存不可覆盖回执。`merged: false` / `deployed: false` 表示合并和发布没有完成。须在 `hub_submit_task` 结束租约之前完成需要的任务推送。
 
 服务器只发两分钟以内的平台 Git 票据，每次 HTTP 请求重新检查身份、设备、授权、仓库和写入租约。GitHub App/PAT 保留在服务器。持有其他 GitHub 凭证的人仍可能在平台外访问；本平台不会收回这些凭证或擦除私自复制的代码。
 
-当前仅支持 GitHub HTTPS、普通 Git 对象和单分支拉取，上传请求最大 64 MiB；不自动处理 LFS、submodule、PR、合并或部署。服务器核对提交引用和日志，不独立审计 pack 内所有代码的业务合规性。未提交修改没有远端代码备份，强制隔离、长期记忆和撤权卸载仍待接入。
+当前仅支持 GitHub HTTPS、普通 Git 对象和单分支拉取，Git 上传请求最大 64 MiB；不自动处理 LFS、submodule、PR、合并或部署。服务器核对提交引用和日志，不独立审计 pack 内所有代码的业务合规性。未提交修改的远程快照须另看 `code_receipt`，见[开发记录与交接](work-records.md)。强制隔离、长期记忆和撤权卸载仍待接入。

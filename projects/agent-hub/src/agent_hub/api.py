@@ -23,6 +23,7 @@ from . import (
     progress,
     repositories,
     tasks,
+    work_archives,
     work_policy,
 )
 from . import schemas as S
@@ -238,7 +239,7 @@ def create_app(
 
     @app.get("/healthz")
     def health():
-        return {"status": "ok", "phase": "P3-tasks", "version": __version__}
+        return {"status": "ok", "phase": "P4-durable-handoff", "version": __version__}
 
     @app.post("/api/auth/enrollments")
     def enroll(body: S.Enroll, request: Request, db: DB):
@@ -1108,6 +1109,7 @@ def create_app(
 
     static = Path(__file__).parent / "static"
     git_gateway.install(app, hub, sessions, db_dependency)
+    work_archives.install(app, hub, actor, token, db_dependency)
     app.mount("/assets", StaticFiles(directory=static), name="assets")
 
     @app.get("/", include_in_schema=False)

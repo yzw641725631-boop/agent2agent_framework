@@ -5,10 +5,10 @@ import uuid
 import pytest
 from sqlalchemy import select, text
 from sqlalchemy.exc import DBAPIError
+from test_tasks import claim, developer, lease, log_body, ready
 
 from agent_hub.db import context, session_factory
-from agent_hub.models import ProjectPolicy, WorkContext
-from test_tasks import claim, developer, gate, lease, log_body, ready
+from agent_hub.models import WorkContext
 
 
 def prepare(w, project, claimed, who=None, acknowledge=True):

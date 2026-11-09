@@ -5,6 +5,9 @@ const encode = value => btoa(String.fromCharCode(...new Uint8Array(value)))
 const json = value => encode(encoder.encode(JSON.stringify(value)));
 
 export const messages = {
+  WORK_REMOTE_BACKUP_REQUIRED:'请先在 PC 端完成最新检查点的服务器代码备份，再提交评审。',
+  WORK_ARCHIVE_INTEGRITY_FAILED:'服务器代码备份未通过完整性校验，已停止恢复和提交。请保留本机工作并联系管理员。',
+  WORK_ARCHIVE_NOT_FOUND:'该日志尚无服务器代码备份。',WORK_ARCHIVE_QUOTA_EXCEEDED:'代码备份容量已达配额，请联系管理员处理。',
   TASK_REPOSITORY_REQUIRED:'请选择任务所属的已接入仓库。',TASK_REPOSITORY_MISMATCH:'任务所属仓库或目标端不匹配。',
   DOCUMENT_SOURCE_NOT_ACCESSIBLE:'当前没有此仓库的资料权限。',DOCUMENT_SOURCE_REPOSITORY_MISMATCH:'文档源须使用登记的仓库、分支和服务器凭证。',
   PROGRESS_REPOSITORY_REQUIRED:'请选择本次进展所属的仓库。',REPOSITORY_ALREADY_REGISTERED:'仓库地址或标识已经接入。',

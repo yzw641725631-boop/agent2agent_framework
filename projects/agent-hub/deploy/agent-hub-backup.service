@@ -1,0 +1,10 @@
+[Unit]
+Description=Agent Hub encrypted database, configuration and code backup
+After=docker.service
+Requires=docker.service
+
+[Service]
+Type=oneshot
+ExecStart=/bin/sh /opt/agent-hub/application/current/deploy/backup-server.sh
+UMask=0077
+TimeoutStartSec=2h

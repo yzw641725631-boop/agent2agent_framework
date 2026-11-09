@@ -323,6 +323,38 @@ class Worklog(Identity, Base):
     evidence_hash: Mapped[str | None] = mapped_column(String(64))
 
 
+class WorkSnapshot(Identity, Base):
+    __tablename__ = "work_snapshots"
+    __table_args__ = (UniqueConstraint("worklog_id"),)
+    project_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("projects.id"))
+    task_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("tasks.id"))
+    run_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("task_runs.id"))
+    worklog_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("worklogs.id"))
+    author_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id"))
+    device_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("devices.id"))
+    evidence_hash: Mapped[str] = mapped_column(String(64))
+    manifest_hash: Mapped[str] = mapped_column(String(64))
+    archive_hash: Mapped[str] = mapped_column(String(64))
+    storage_bytes: Mapped[int] = mapped_column(Integer)
+    receipt_hash: Mapped[str] = mapped_column(String(64))
+    metadata_value: Mapped[dict] = mapped_column("metadata", JSONB)
+
+
+class CodeDelivery(Identity, Base):
+    __tablename__ = "code_deliveries"
+    __table_args__ = (UniqueConstraint("worklog_id", "git_commit"),)
+    project_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("projects.id"))
+    repository_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("project_repositories.id"))
+    task_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("tasks.id"))
+    run_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("task_runs.id"))
+    worklog_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("worklogs.id"))
+    author_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id"))
+    device_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("devices.id"))
+    git_commit: Mapped[str] = mapped_column(String(64))
+    git_ref: Mapped[str] = mapped_column(String(200))
+    receipt_hash: Mapped[str] = mapped_column(String(64))
+
+
 class ProjectPolicy(Base):
     __tablename__ = "project_policies"
     project_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("projects.id"), primary_key=True)

@@ -1,0 +1,11 @@
+[Unit]
+Description=Daily Agent Hub encrypted backup
+
+[Timer]
+# Evaluated in the server's local timezone; compatible with systemd 219.
+OnCalendar=*-*-* 03:15:00
+RandomizedDelaySec=300
+Persistent=true
+
+[Install]
+WantedBy=timers.target

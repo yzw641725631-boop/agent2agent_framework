@@ -26,6 +26,9 @@ class Settings(BaseSettings):
     enrollment_seconds: int = 1800
     otp_seconds: int = 600
     proof_seconds: int = 60
+    artifact_directory: str = ""
+    artifact_project_bytes: int = 1073741824
+    artifact_total_bytes: int = 17179869184
 
     @model_validator(mode="after")
     def validate_security(self):
@@ -56,6 +59,8 @@ class Settings(BaseSettings):
             "enrollment_seconds",
             "otp_seconds",
             "proof_seconds",
+            "artifact_project_bytes",
+            "artifact_total_bytes",
         ):
             if getattr(self, field) <= 0:
                 raise ValueError(f"{field} must be positive")

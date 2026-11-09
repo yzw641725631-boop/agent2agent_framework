@@ -58,6 +58,22 @@ def check_desktop_feed():
         raise typer.Exit(2)
 
 
+@app.command("archive-audit")
+def archive_audit(quarantine_orphans: bool = False):
+    """Verify every encrypted code artifact as database owner; optionally quarantine old orphans."""
+    from .archive_maintenance import audit
+
+    try:
+        settings = get_settings()
+        result = audit(settings, session_factory(settings), quarantine_orphans=quarantine_orphans)
+    except Exception:
+        typer.echo("Artifact verification could not complete; retained existing files", err=True)
+        raise typer.Exit(1) from None
+    typer.echo(json.dumps(result))
+    if not result["healthy"]:
+        raise typer.Exit(2)
+
+
 @app.command("device-key")
 def device_key(output: Path):
     """Create an encrypted P-256 key and its public JWK; never overwrite existing files."""

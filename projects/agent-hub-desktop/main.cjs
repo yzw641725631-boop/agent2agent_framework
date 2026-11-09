@@ -4,6 +4,7 @@ const path=require('node:path');
 const fs=require('node:fs');
 const {pathToFileURL}=require('node:url');
 const os=require('node:os');
+const crypto=require('node:crypto');
 const {Vault}=require('./core/vault.cjs');
 const {Controller}=require('./core/controller.cjs');
 const {HubError}=require('./core/remote.cjs');
@@ -144,6 +145,9 @@ async function start(){
       if(controller.connection==='signed_out')throw new HubError('LOGIN_REQUIRED');
       return controller.work.list();
     },
+    retryCheckpoint:data=>controller.work.retry(data.id),
+    recoverCheckpoint:data=>controller.invokeProject(controller.binding(data.bindingId),'hub_download_work_backup',{
+      task_id:data.taskId,worklog_id:data.worklogId,operation_id:crypto.randomUUID()}),
     exportCheckpoint:async data=>{
       if(controller.connection==='signed_out')throw new HubError('LOGIN_REQUIRED');
       if(typeof data.id!=='string' || !/^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/i.test(data.id))throw new HubError('INVALID_DESKTOP_REQUEST');
@@ -154,7 +158,7 @@ async function start(){
     removeExportedCheckpoint:async data=>{
       if(controller.connection==='signed_out')throw new HubError('LOGIN_REQUIRED');
       const result=await dialog.showMessageBox(window,{type:'question',title:'移除已导出的本机副本',
-        message:'只清理已共享日志对应的加密检查点。',detail:'清理前会重新核验导出文件与原始检查点。请妥善保存导出目录，服务器尚未备份代码。',
+        message:'只清理已共享日志且已导出的加密检查点。',detail:'清理前会重新核验导出说明和代码。请妥善保存导出目录，并确认服务器代码备份状态。',
         buttons:['取消','核验导出并移除本机副本'],defaultId:0,cancelId:0});
       if(result.response!==1)return {cancelled:true};
       return controller.work.removeExported(data.id);

@@ -204,8 +204,9 @@ class World:
 
 
 @pytest.fixture
-def empty_world(database):
+def empty_world(database, tmp_path):
     cfg, owner = database
+    cfg = cfg.model_copy(update={"artifact_directory": str(tmp_path / "work-archives")})
     with owner.begin() as db:
         names = ", ".join(f'"{t.name}"' for t in Base.metadata.sorted_tables)
         db.execute(text(f"TRUNCATE TABLE {names} CASCADE"))

@@ -25,12 +25,14 @@ function violations(paths,scope,policy){
   }
   return result;
 }
-async function git(workspace,args){
+async function git(workspace,args,{input,maxBuffer=4*1024*1024+65536}={}){
   const env=Object.fromEntries(Object.entries(process.env).filter(([k])=>!k.toUpperCase().startsWith('GIT_')));
   Object.assign(env,{GIT_CONFIG_NOSYSTEM:'1',GIT_TERMINAL_PROMPT:'0',GIT_OPTIONAL_LOCKS:'0'});
   try{
-    const r=await run('git',['--no-optional-locks','--literal-pathspecs','-c','core.fsmonitor=false',
-      '-c','core.untrackedCache=false',...args],{cwd:workspace,env,windowsHide:true,encoding:'buffer',maxBuffer:2*1024*1024,timeout:15000});
+    const job=run('git',['--no-optional-locks','--no-replace-objects','--literal-pathspecs','-c','core.fsmonitor=false',
+      '-c','core.untrackedCache=false',...args],{cwd:workspace,env,windowsHide:true,encoding:'buffer',maxBuffer,timeout:15000});
+    if(input!==undefined)job.child.stdin.end(input);
+    const r=await job;
     return r.stdout;
   }catch{fail('WORK_GIT_UNAVAILABLE','无法读取 Git 工程状态，请检查目录、Git 和仓库所有权；工作文件已保留。');}
 }
@@ -103,4 +105,4 @@ async function capture(workspace,baseCommit,scope,policy){
   if(first.evidence_hash!==second.evidence_hash)fail('WORKTREE_CHANGED','工程在采集期间发生变化，请保存后重试。');
   return first;
 }
-module.exports={canonical,digest,keyPath,violations,repository,initialize,capture,safeRead};
+module.exports={canonical,digest,keyPath,violations,repository,initialize,capture,safeRead,git};

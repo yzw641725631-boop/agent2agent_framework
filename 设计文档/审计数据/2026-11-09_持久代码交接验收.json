@@ -1,0 +1,207 @@
+{
+  "schema": 1,
+  "created_at": "2026-11-09T02:00:32.605792+00:00",
+  "backend": {
+    "version": "0.7.0",
+    "phase": "P4-durable-handoff",
+    "migration": "0010",
+    "counts_preserved": {
+      "users": 1,
+      "devices": 4,
+      "projects": 0,
+      "settings": 1,
+      "repositories": 0
+    },
+    "archive_and_delivery_force_rls": true,
+    "temporary_restore_databases_remaining": 0
+  },
+  "validation": {
+    "backend_postgresql_tests_passed": 121,
+    "desktop_tests_passed": 91,
+    "operator_monitor_tests_server_passed": 12,
+    "operator_monitor_tests_windows_passed": 11,
+    "operator_monitor_tests_windows_skipped": 1,
+    "real_windows_http_dpop_postgresql_recovery": true,
+    "source_author_revocation_and_other_repository_denial": true,
+    "actual_electron_ui": {
+      "passed": true,
+      "realElectron": true,
+      "realController": true,
+      "systemEncryptedWorkStore": true,
+      "taskLogShowsSnapshot": true,
+      "recoveryButtonWorks": true,
+      "checkpointShowsIndependentBackupState": true,
+      "newDirectoryExportWorks": true,
+      "originalWorkspacePreserved": true,
+      "apiMode": "isolated metadata; real HTTP/PostgreSQL identity and artifact recovery verified separately",
+      "consoleErrors": []
+    },
+    "packaged_runtime": {
+      "passed": true,
+      "version": "0.9.0",
+      "packagedRuntime": true,
+      "closeToTrayDefault": true,
+      "trayLifetimeVerifiedInSourceSmoke": true,
+      "profileIsolated": true
+    },
+    "installed_stdio": {
+      "passed": true,
+      "installedVersion": "0.9.0",
+      "realStdioMcp": true,
+      "configurationFromInstalledCodex": true,
+      "signedFeedVerified": true,
+      "loginState": "LOGIN_REQUIRED",
+      "authenticationNotBypassed": true
+    },
+    "actual_online_update": {
+      "passed": true,
+      "old_version": "0.8.0",
+      "new_version": "0.9.0",
+      "clicked_from_signed_out_client": true,
+      "signed_release_activated": true,
+      "native_restart_completed": true,
+      "publicDownload": true,
+      "profileIsolated": true
+    },
+    "physical_device_count_in_integration": 1,
+    "real_business_github_repository_acceptance": false,
+    "delivery_github_response_mode": "mocked upstream; database and controller checks tested"
+  },
+  "backup": {
+    "first_production_snapshot": {
+      "schema": 1,
+      "snapshot_id": "68d28fce257b2e58286bb7c608018bb5cbfe3499fe9cc85860890eec8db061c5",
+      "created_at": "2026-11-09T01:35:01.211447+00:00",
+      "full_repository_check": true,
+      "offsite_confirmed": false
+    },
+    "production_restore_drill": {
+      "restored_database": "hub_restore_20261109T013717Z",
+      "snapshot_id": "68d28fce257b2e58286bb7c608018bb5cbfe3499fe9cc85860890eec8db061c5",
+      "verified_archives": 0,
+      "passed": true,
+      "created_at": "2026-11-09T01:37:22.687736+00:00"
+    },
+    "production_restore_artifact_count": 0,
+    "nonempty_isolated_restore_drill": {
+      "passed": true,
+      "encryptedRepositoryCheck": true,
+      "actualDatabaseRestore": true,
+      "nonemptyArtifactRestore": true,
+      "verifiedArchives": 1,
+      "authorRevocationRestored": true
+    },
+    "one_time_encrypted_offsite_copy": {
+      "one_time_offsite_copy": true,
+      "continuous_offsite_backup": false,
+      "sha256": "0687ab47fbfab3b940e9b8ba6db9257ae8477af5387eaa18cba8df91e24dc279",
+      "bytes": 215040,
+      "password_escrow_outside_repository": true,
+      "windows_acl_user_and_system": true
+    },
+    "local_operator_health": {
+      "schema": 1,
+      "created_at": "2026-11-09T01:59:14.130497+00:00",
+      "checks": [
+        {
+          "id": "container:agent-hub-postgres",
+          "state": "ok"
+        },
+        {
+          "id": "container:agent-hub-app-api-1",
+          "state": "ok"
+        },
+        {
+          "id": "container:agent-hub-app-document-worker-1",
+          "state": "ok"
+        },
+        {
+          "id": "container:agent-hub-edge",
+          "state": "ok"
+        },
+        {
+          "id": "database:query",
+          "state": "ok"
+        },
+        {
+          "id": "public:https",
+          "state": "ok",
+          "version": "0.7.0"
+        },
+        {
+          "id": "desktop:signed-feed",
+          "state": "ok",
+          "version": "0.9.0",
+          "remaining_hours": 719
+        },
+        {
+          "id": "disk:capacity",
+          "state": "ok",
+          "free_bytes": 24311459840
+        },
+        {
+          "id": "agent-hub-backup",
+          "state": "ok",
+          "age_hours": 0.4,
+          "maximum_hours": 36
+        },
+        {
+          "id": "agent-hub-archive-audit",
+          "state": "ok",
+          "age_hours": 0.17,
+          "maximum_hours": 36
+        },
+        {
+          "id": "agent-hub-restore-drill",
+          "state": "ok",
+          "age_hours": 0.36,
+          "maximum_hours": 1080
+        },
+        {
+          "id": "offsite:continuous-copy",
+          "state": "warning",
+          "configured": false
+        },
+        {
+          "id": "alerts:external-delivery",
+          "state": "warning",
+          "configured": false
+        }
+      ],
+      "healthy": true,
+      "has_warnings": true,
+      "scope": "local-operator-checks-only"
+    },
+    "retention_and_continuous_offsite_configured": false
+  },
+  "desktop_release": {
+    "schema": 1,
+    "platform": "win-x64",
+    "version": "0.9.0",
+    "installer": {
+      "url": "https://47.109.23.86:18180/desktop-updates/win-x64/AgentHub-Setup-0.9.0.exe",
+      "bytes": 123116923,
+      "sha256": "30af844b1a9cc204b89c73a9e3acaf9d7281844717ac16b94862818a93a61ad8"
+    },
+    "files_sha256": "8ef7b82bb22f9b59dc286d8a23e4cd9f7f1a15bcc434a29c479daee7983dba2c",
+    "signed_metadata_version": 9,
+    "expires_at": "2026-12-09T01:35:45.563Z",
+    "authenticode_signed": false,
+    "zip": {
+      "bytes": 159942895,
+      "sha256": "92af1a3219ca5682499a9c7a2194f6ebdfb8659867fdbfb54748ae1b86453cf9"
+    }
+  },
+  "backend_source_archive_sha256": "8bdab53f1db6ba824b2a6460d1e79b0fa5c5234823bd04003fa6c472d71b9943",
+  "production_acceptance": {
+    "all_seven_goals_passed": false,
+    "remaining": [
+      "revocation_closeout_identity_and_owned_uninstall",
+      "shared_memory_provenance_distillation_pgvector_and_loading",
+      "turn_hooks_and_role_scheduling_cross_task_conflicts",
+      "macos_and_remaining_harness_actual_acceptance",
+      "continuous_offsite_backup_external_alerts_and_retention",
+      "supported_server_os_migration_and_real_multi_device_business_pilot"
+    ]
+  }
+}

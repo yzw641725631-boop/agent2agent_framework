@@ -11,6 +11,7 @@ const {Management}=require('./management.cjs');
 const {SetupConnection}=require('./setup-connection.cjs');
 const {WorkRuntime}=require('./work-runtime.cjs');
 const {RepositoryRuntime}=require('./repository-runtime.cjs');
+const {BackupRuntime}=require('./backup-runtime.cjs');
 const {version}=require('../package.json');
 
 const stopped=new Set(['PROJECT_ACCESS_REVOKED','ACCOUNT_INACTIVE','DEVICE_NOT_ALLOWED','SESSION_REVOKED',
@@ -30,6 +31,7 @@ class Controller extends EventEmitter {
     this.setup=new SetupConnection(this);
     this.work=new WorkRuntime(this);
     this.repositories=new RepositoryRuntime(this);
+    this.backups=new BackupRuntime(this);
   }
   get profile(){return this.vault.data.profiles[this.vault.data.current] || null;}
   persist(){return this.vault.save();}
@@ -325,6 +327,12 @@ class Controller extends EventEmitter {
     return this.invokeProject(b,request.action,request.args);
   }
   async invokeProject(b,action,args){
+    if(action==='hub_download_work_backup'){
+      if(this.closed || this.draining || this.binding(b.id)!==b || !this.profile?.sessions.platform || this.connection!=='active')throw new HubError('LOGIN_REQUIRED');
+      require('./task-tools.cjs').validate(action,args);
+      const operation=this.backups.download(b,args);this.projectOperations.add(operation);
+      try{return await operation;}finally{this.projectOperations.delete(operation);}
+    }
     if(['hub_assemble_project','hub_fetch_repository','hub_push_task'].includes(action)){
       const operation=this.repositories.invoke(b,action,args);
       this.projectOperations.add(operation);

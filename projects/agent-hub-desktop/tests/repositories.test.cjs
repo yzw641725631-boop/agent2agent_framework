@@ -42,7 +42,7 @@ async function fixture(t){
   const origin='http://127.0.0.1:'+server.address().port,projectId=crypto.randomUUID(),webId=crypto.randomUUID(),pcId=crypto.randomUUID();
   const root=path.join(temporary,'workspace'),data=path.join(temporary,'data');await fs.mkdir(root);await fs.mkdir(data);
   const binding={id:crypto.randomUUID(),projectId,workspace:root,status:'active'};
-  const profile={bindings:[binding]},remote={base:origin,lifetime:new AbortController()};
+  const profile={bindings:[binding]},remote={base:origin,lifetime:new AbortController()},worklogId=crypto.randomUUID();
   let allowed=true;
   const repos=[{id:webId,slug:'web',name:'Web',platform:'web',repository_url:'https://github.com/example/web',branch:'main',status:'active',capabilities:['code:read','code:write']},
     {id:pcId,slug:'pc',name:'PC',platform:'pc',repository_url:'https://github.com/example/pc',branch:'main',status:'active',capabilities:['documents:read']}];
@@ -55,10 +55,18 @@ async function fixture(t){
       if(!allowed)throw new HubError('PROJECT_ACCESS_REVOKED');
       if(action==='hub_list_repositories')return {repository_mode:'scoped',items:repos};
       if(action==='hub_get_task')return {task:{repository_id:webId}};
+      if(action==='hub_list_worklogs')return {items:[{id:worklogId}]};
       throw new Error(action);
     }};
   remote.request=async(method,url,body)=>{
-    assert.equal(method,'POST');assert.equal(url,`/api/projects/${projectId}/repositories/${webId}/git-ticket`);
+    assert.equal(method,'POST');
+    if(url.endsWith('/deliveries')){
+      assert.deepEqual(Object.keys(body).sort(),['lease_epoch','run_id','worklog_id']);
+      const taskId=url.split('/').at(-2),ref=`refs/heads/hub/${taskId}/${body.run_id}`;
+      const actual=(await git(['--git-dir='+path.join(upstream,'web.git'),'rev-parse',ref])).stdout.trim();
+      return {id:crypto.randomUUID(),worklog_id:worklogId,git_commit:actual,ref,receipt_hash:'a'.repeat(64)};
+    }
+    assert.equal(url,`/api/projects/${projectId}/repositories/${webId}/git-ticket`);
     if(!allowed)throw new HubError('REPOSITORY_NOT_ACCESSIBLE');
     const secret=crypto.randomBytes(32).toString('base64url');
     tickets.set('Basic '+Buffer.from('agent-hub:'+secret).toString('base64'),body);
@@ -107,6 +115,7 @@ test('real Git fetch preserves dirty files and push verifies the exact task bran
   await f.git(['-c','user.name=Test','-c','user.email=test@example.org','commit','-qm','task'],child.workspace);
   const pushed=await f.runtime.invoke(child,'hub_push_task',lease);
   assert.equal(pushed.remote_verified,true);assert.equal(pushed.merged,false);
+  assert.equal(pushed.delivery_receipt.git_commit,pushed.git_commit);
   assert.equal((await f.git(['--git-dir='+path.join(f.upstream,'web.git'),'rev-parse',pushed.ref])).stdout.trim(),pushed.git_commit);
   assert.equal((await f.git(['--git-dir='+path.join(f.upstream,'web.git'),'rev-parse','main'])).stdout.trim(),baseline);
 });

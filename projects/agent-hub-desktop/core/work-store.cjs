@@ -2,6 +2,7 @@
 const fs=require('node:fs/promises'),path=require('node:path'),crypto=require('node:crypto');
 const {HubError}=require('./remote.cjs');
 const observer=require('./git-observer.cjs');
+const backupCodec=require('./backup-codec.cjs');
 const uuid=value=>typeof value==='string' && /^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/i.test(value);
 class WorkStore{
   constructor(directory,protector){this.directory=path.join(directory,'work-checkpoints');this.protector=protector;this.pending=Promise.resolve();}
@@ -9,7 +10,7 @@ class WorkStore{
   async read(id){
     try{
       const stat=await fs.lstat(this.file(id));
-      if(stat.isSymbolicLink() || !stat.isFile() || stat.size>32*1024*1024)throw new HubError('WORK_STORE_UNAVAILABLE');
+      if(stat.isSymbolicLink() || !stat.isFile() || stat.size>64*1024*1024)throw new HubError('WORK_STORE_UNAVAILABLE');
       const result=await this.protector.decryptStringAsync(await fs.readFile(this.file(id)));
       const record=JSON.parse(result.result);
       if(record.schema!==1 || record.operation_id!==id)throw new HubError('WORK_STORE_UNAVAILABLE');
@@ -26,7 +27,10 @@ class WorkStore{
       const exists=await this.read(record.operation_id);
       if(!exists && names.filter(n=>n.endsWith('.bin')).length>=100)throw new HubError('WORK_STORE_LIMIT','本地已保留 100 个检查点，请导出并整理后继续。');
       const bytes=await this.protector.encryptStringAsync(JSON.stringify(record));
-      if(bytes.length>32*1024*1024)throw new HubError('WORK_SNAPSHOT_LIMIT');
+      if(bytes.length>64*1024*1024)throw new HubError('WORK_SNAPSHOT_LIMIT');
+      let used=0;
+      for(const name of names.filter(n=>n.endsWith('.bin') && n!==record.operation_id+'.bin'))used+=(await fs.lstat(path.join(this.directory,name))).size;
+      if(used+bytes.length>512*1024*1024)throw new HubError('WORK_STORE_LIMIT','本机检查点已达到 512 MiB，请先导出并核验，保留原工作后再整理。');
       const target=this.file(record.operation_id),temporary=target+'.'+crypto.randomUUID()+'.next';
       try{
         const handle=await fs.open(temporary,'wx',0o600);
@@ -46,7 +50,8 @@ class WorkStore{
       try{record=await this.read(name.slice(0,-4));}catch(error){this.readErrors.push({id:name.slice(0,-4),code:error.code});continue;}
       if(record && sameOwner(record.owner,owner)){
         // Retain metadata only: 100 full snapshots can otherwise exhaust desktop memory.
-        const {contents,...snapshot}=record.snapshot;rows.push({...record,snapshot});
+        const {contents,baseline,...snapshot}=record.snapshot;
+        rows.push({...record,snapshot:{...snapshot,baseline_available:!!baseline}});
       }
     }
     return rows.sort((a,b)=>b.created_at.localeCompare(a.created_at));
@@ -65,6 +70,12 @@ class WorkStore{
       const data=await observer.safeRead(path.join(record.exported_to,'changed-files'),file.path);
       if(crypto.createHash('sha256').update(data.data).digest('hex')!==file.sha256)throw new HubError('WORK_EXPORT_NOT_CONFIRMED');
     }
+    if(record.snapshot.baseline){
+      for(const file of this.workingFiles(record)){
+        const data=await observer.safeRead(path.join(target,'working-tree'),file.path);
+        if(!data.data.equals(file.data))throw new HubError('WORK_EXPORT_NOT_CONFIRMED');
+      }
+    }
     await fs.unlink(this.file(record.operation_id));return {removed:true,exported_to:record.exported_to};
     });
     this.pending=job;return job;
@@ -72,8 +83,13 @@ class WorkStore{
   exportContent(record){
     return {task_id:record.task_id,run_id:record.run_id,
       evidence:record.snapshot.evidence,evidence_hash:record.snapshot.evidence_hash,worklog:record.body,
-      server_receipt:record.server_receipt || null,restore:'Checkout base_commit separately, apply changed-files, then apply listed deletions after review.'};
+      server_receipt:record.server_receipt || null,code_receipt:record.code_receipt || null,
+      working_tree_included:!!record.snapshot.baseline,git_history_included:false,
+      restore:record.snapshot.baseline?'working-tree contains all baseline files with checkpoint changes applied; no Git history or credentials are installed.':
+        'Checkout base_commit separately, apply changed-files, then apply listed deletions after review.'};
   }
+  workingFiles(record){return backupCodec.workingFiles({evidence:record.snapshot.evidence,
+    contents:record.snapshot.contents,baseline:record.snapshot.baseline});}
   async export(record,destination){
     if(!path.isAbsolute(destination))throw new HubError('INVALID_WORKSPACE');
     const parent=await fs.realpath(path.dirname(destination)),target=path.join(parent,path.basename(destination));
@@ -90,8 +106,20 @@ class WorkStore{
       const output=path.join(target,'changed-files',...file.path.split('/'));
       await fs.mkdir(path.dirname(output),{recursive:true});await fs.writeFile(output,bytes,{flag:'wx',mode:0o600});
     }
+    if(record.snapshot.baseline){
+      backupCodec.validate({schema:1,worklog_id:record.server_receipt?.id || record.operation_id,
+        evidence:record.snapshot.evidence,evidence_hash:record.snapshot.evidence_hash,
+        contents:record.snapshot.contents,baseline:record.snapshot.baseline});
+      await fs.mkdir(path.join(target,'working-tree'));
+      for(const file of this.workingFiles(record)){
+        const output=path.join(target,'working-tree',...file.path.split('/'));
+        await fs.mkdir(path.dirname(output),{recursive:true});
+        await fs.writeFile(output,file.data,{flag:'wx',mode:file.mode==='100755'?0o700:0o600});
+      }
+    }
     await fs.writeFile(path.join(target,'checkpoint.json'),JSON.stringify(this.exportContent(record),null,2),{flag:'wx',mode:0o600});
-    return {directory:target,base_commit:record.snapshot.evidence.base_commit,files:record.snapshot.evidence.files.length};
+    return {directory:target,base_commit:record.snapshot.evidence.base_commit,files:record.snapshot.evidence.files.length,
+      working_tree_directory:record.snapshot.baseline?path.join(target,'working-tree'):null,git_history_included:false};
   }
 }
 function sameOwner(a,b){return !!a && !!b && a.user_id===b.user_id && a.device_id===b.device_id && a.origin===b.origin;}

@@ -1,0 +1,55 @@
+{
+  "date": "2026-11-09",
+  "backend_version": "0.7.0",
+  "desktop_version": "0.9.0",
+  "tiktoken_version": "0.14.0",
+  "billing_usage": false,
+  "warning": "Public-text tokenization only; not production model usage, cost, or measured savings.",
+  "measured": {
+    "install.md": {
+      "o200k_base": 19302,
+      "cl100k_base": 23788
+    },
+    "skills/agent-hub/SKILL.md": {
+      "o200k_base": 1748,
+      "cl100k_base": 2233
+    },
+    "skills/agent-hub/references/repositories.md": {
+      "o200k_base": 1106,
+      "cl100k_base": 1388
+    },
+    "skills/agent-hub/references/task-workflow.md": {
+      "o200k_base": 1412,
+      "cl100k_base": 1769
+    },
+    "skills/agent-hub/references/work-records.md": {
+      "o200k_base": 1460,
+      "cl100k_base": 1905
+    },
+    "tools:setup": {
+      "tool_count": 5,
+      "o200k_base": 612,
+      "cl100k_base": 667
+    },
+    "tools:group": {
+      "tool_count": 28,
+      "o200k_base": 4326,
+      "cl100k_base": 4624
+    },
+    "tools:repository-admin": {
+      "tool_count": 29,
+      "o200k_base": 4413,
+      "cl100k_base": 4707
+    },
+    "tools:project-reader": {
+      "tool_count": 10,
+      "o200k_base": 889,
+      "cl100k_base": 985
+    },
+    "tools:repository-developer": {
+      "tool_count": 26,
+      "o200k_base": 3533,
+      "cl100k_base": 3786
+    }
+  }
+}

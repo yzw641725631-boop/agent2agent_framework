@@ -8,7 +8,7 @@ from datetime import timedelta
 from sqlalchemy import select
 
 from . import repositories, work_policy
-from .models import ProjectProgress, Task, TaskDecision, TaskRun, Worklog
+from .models import CodeDelivery, ProjectProgress, Task, TaskDecision, TaskRun, Worklog, WorkSnapshot
 from .security import HubError, now
 
 LEASE_SECONDS = 600
@@ -45,9 +45,11 @@ def log_payload(w):
     return value
 
 
-def log_view(w):
-    return {**log_payload(w), "receipt_hash": w.receipt_hash, "code_backup": False,
-            "git_commit_verified": False}
+def log_view(w, snapshot=None, delivery=None):
+    from .work_archives import delivery_view, snapshot_view
+    return {**log_payload(w), "receipt_hash": w.receipt_hash, "code_backup": snapshot is not None,
+            "snapshot": snapshot_view(snapshot) if snapshot else None,
+            "git_commit_verified": delivery is not None, "delivery": delivery_view(delivery) if delivery else None}
 
 
 def decision_view(d):
@@ -87,7 +89,8 @@ def detail(db, project_id, task_id):
 def emit(hub, db, actor, task, kind, request_id, *, run_id=None, worklog_id=None):
     # Full notes and gate evidence stay behind logs:read; the shared stream has only state.
     label = {"task.created": "任务已创建", "task.claimed": "任务已认领", "task.released": "认领已释放",
-             "task.submitted": "任务待评审", "worklog.recorded": "工作日志已保存", "task.gate_decided": "流程已推进"}[kind]
+             "task.submitted": "任务待评审", "worklog.recorded": "工作日志已保存", "task.gate_decided": "流程已推进",
+             "work.snapshot_saved": "代码检查点已备份", "code.delivery_verified": "代码交付已核验"}[kind]
     event = ProjectProgress(project_id=task.project_id, author_id=actor.user.id, device_id=actor.device.id,
                             repository_id=task.repository_id,
                             status="completed" if task.status == "completed" else "checkpoint",
@@ -206,7 +209,11 @@ def logs(db, project_id, task_id, offset, limit):
     get_task(db, project_id, task_id)
     rows = list(db.scalars(select(Worklog).where(Worklog.project_id == project_id, Worklog.task_id == task_id)
                           .order_by(Worklog.created_at.desc(), Worklog.id).offset(offset).limit(limit)))
-    return {"items": [log_view(w) for w in rows], "has_more": len(rows) == limit, "next_offset": offset + len(rows)}
+    ids = [row.id for row in rows]
+    snapshots = {row.worklog_id: row for row in db.scalars(select(WorkSnapshot).where(WorkSnapshot.worklog_id.in_(ids)))}
+    deliveries = {row.worklog_id: row for row in db.scalars(select(CodeDelivery).where(CodeDelivery.worklog_id.in_(ids)))}
+    return {"items": [log_view(w, snapshots.get(w.id), deliveries.get(w.id)) for w in rows],
+            "has_more": len(rows) == limit, "next_offset": offset + len(rows)}
 
 
 def log_index(db, project_id, task_id, offset, limit):
@@ -221,7 +228,9 @@ def read_log(db, project_id, task_id, log_id):
     row = db.scalar(select(Worklog).where(Worklog.project_id == project_id, Worklog.task_id == task_id, Worklog.id == log_id))
     if not row:
         raise HubError("WORKLOG_NOT_ACCESSIBLE", 404)
-    return log_view(row)
+    snapshot = db.scalar(select(WorkSnapshot).where(WorkSnapshot.worklog_id == row.id))
+    delivery = db.scalar(select(CodeDelivery).where(CodeDelivery.worklog_id == row.id))
+    return log_view(row, snapshot, delivery)
 
 
 def check_version(task, version):
@@ -241,6 +250,14 @@ def submit(hub, db, actor, project_id, task_id, body, request_id):
         work_policy.require_context(db, actor, task, run, latest.context_id)
         if not latest.evidence_hash or latest.evidence_hash != body.evidence_hash:
             raise HubError("WORK_EVIDENCE_CHANGED", 409)
+        if task.repository_id:
+            snapshot = db.scalar(select(WorkSnapshot).where(WorkSnapshot.worklog_id == latest.id,
+                                                            WorkSnapshot.evidence_hash == latest.evidence_hash))
+            if not snapshot:
+                raise HubError("WORK_REMOTE_BACKUP_REQUIRED", 409)
+            # Detect a missing/damaged artifact before ending the developer's lease.
+            from .work_archives import ArtifactStore
+            ArtifactStore(hub.settings).read(snapshot)
     task.submission_id, task.status, task.version = latest.id, "review", task.version + 1
     task.active_run_id, task.lease_until = None, None
     run.state, run.ended_at = "submitted", now()

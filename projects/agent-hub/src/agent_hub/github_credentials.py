@@ -74,14 +74,15 @@ def configure_app(hub, db, actor, body, request_id):
     return app_view(hub, db)
 
 
-def credential(hub, db, repository, *, write=False, transport=None):
+def credential_material(hub, db, repository, *, write=False):
+    """Read/sign under authorization locks; perform network exchange after releasing them."""
     if repository.auth_mode == "public":
         if write:
             raise HubError("REPOSITORY_WRITE_CREDENTIAL_REQUIRED", 409)
-        return None
+        return {"token": None}
     if repository.auth_mode == "token":
         try:
-            return token_cipher(hub.settings).decrypt(repository.encrypted_token.encode()).decode()
+            return {"token": token_cipher(hub.settings).decrypt(repository.encrypted_token.encode()).decode()}
         except Exception as exc:
             raise HubError("REPOSITORY_CREDENTIAL_UNAVAILABLE", 503) from exc
     data, _ = app_configuration(hub, db)
@@ -93,18 +94,25 @@ def credential(hub, db, repository, *, write=False, transport=None):
         data["private_key"],
         algorithm="RS256",
     )
+    return {"installation_id": repository.installation_id, "assertion": assertion,
+            "repository": repository.repository_url.rsplit("/", 1)[1], "write": write}
+
+
+def exchange_credential(material, *, transport=None):
+    if "token" in material:
+        return material["token"]
     try:
         with httpx.Client(transport=transport, timeout=15, trust_env=False, follow_redirects=False) as client:
             response = client.post(
-                f"https://api.github.com/app/installations/{repository.installation_id}/access_tokens",
+                f"https://api.github.com/app/installations/{material['installation_id']}/access_tokens",
                 headers={
-                    "Authorization": "Bearer " + assertion,
+                    "Authorization": "Bearer " + material["assertion"],
                     "Accept": "application/vnd.github+json",
                     "X-GitHub-Api-Version": "2026-03-10",
                 },
                 json={
-                    "repositories": [repository.repository_url.rsplit("/", 1)[1]],
-                    "permissions": {"contents": "write" if write else "read"},
+                    "repositories": [material["repository"]],
+                    "permissions": {"contents": "write" if material["write"] else "read"},
                 },
             )
             if response.status_code != 201 or len(response.content) > 2 * 1024 * 1024:
@@ -121,3 +129,7 @@ def credential(hub, db, repository, *, write=False, transport=None):
         raise
     except Exception as exc:
         raise HubError("GITHUB_APP_AUTHORIZATION_FAILED", 502) from exc
+
+
+def credential(hub, db, repository, *, write=False, transport=None):
+    return exchange_credential(credential_material(hub, db, repository, write=write), transport=transport)

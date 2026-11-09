@@ -2,6 +2,17 @@
 const crypto = require('node:crypto');
 
 const messages = {
+  WORK_REMOTE_BACKUP_REQUIRED:'请先完成最新检查点的服务器代码备份，再提交评审。',
+  WORK_ARCHIVE_INTEGRITY_FAILED:'服务器代码备份未通过完整性校验。请保留本机工作并联系管理员恢复制品。',
+  WORK_ARCHIVE_NOT_CONFIGURED:'服务器尚未配置代码备份存储，本机检查点已保留。',
+  WORK_ARCHIVE_STORAGE_UNAVAILABLE:'服务器代码存储暂时不可用，本机检查点已保留。',
+  WORK_ARCHIVE_STORAGE_FULL:'服务器代码存储空间不足，请联系管理员处理。',
+  WORK_ARCHIVE_QUOTA_EXCEEDED:'代码备份达到容量配额，本机检查点已保留，请联系管理员处理。',
+  WORK_ARCHIVE_LIMIT:'代码快照超过支持的文件或容量上限，请保留工作并联系管理员。',
+  WORK_ARCHIVE_SECRET_PATH:'基线或改动含凭证文件路径，请先整理仓库；原工作保留。',
+  WORK_ARCHIVE_SECRET_CONTENT:'基线或改动检测到凭证内容，未上传代码备份，请先清理凭证。',
+  WORK_ARCHIVE_HASH_MISMATCH:'代码快照摘要不匹配，未确认备份，请重试。',
+  WORK_ARCHIVE_NOT_FOUND:'这条日志尚无服务器代码备份。',
   REPOSITORY_NOT_ACCESSIBLE:'当前没有该仓库所需的代码或资料权限。',TASK_REPOSITORY_MISMATCH:'请使用任务所属仓库的连接。',
   TASK_REPOSITORY_REQUIRED:'任务必须绑定已接入的仓库。',DOCUMENT_SOURCE_NOT_ACCESSIBLE:'当前没有该仓库的资料权限。',
   GIT_RECORDED_CHECKPOINT_REQUIRED:'请先提交代码到本机 Git，再保存含该提交号的最新 checkpoint 工作日志。',
@@ -93,20 +104,21 @@ class Remote {
     const data=await response.json(); this.canonical=origin(data.active_origin);
     return data;
   }
-  async raw(method,path,body,token,{idempotency,signal,stream=false}={}) {
+  async raw(method,path,body,token,{idempotency,signal,stream=false,binary=false,contentHash}={}) {
     this.checkOpen();
     if (!/^\/api\/[A-Za-z0-9_/?=&.%:-]+$/.test(path) || path.includes('..') || path.includes('%')) {
       throw new HubError('INVALID_API_PATH');
     }
     const headers={DPoP:proof(this.profile.identity,this.canonical,method,path,token),
-      Accept:stream?'text/event-stream':'application/json'};
+      Accept:stream?'text/event-stream':binary?'application/gzip':'application/json'};
     if (token) headers.Authorization=`DPoP ${token}`;
     if (!['GET','HEAD'].includes(method)) headers['Idempotency-Key']=idempotency || crypto.randomUUID();
-    if (body!==undefined) headers['Content-Type']='application/json';
+    if (body!==undefined) headers['Content-Type']=binary?'application/gzip':'application/json';
+    if(binary && body!==undefined)headers['X-Content-SHA256']=contentHash;
     let response;
     try {
       response=await this.transport(this.base+path,{method,headers,redirect:'error',
-        body:body===undefined?undefined:JSON.stringify(body),signal:AbortSignal.any([this.lifetime.signal,signal || AbortSignal.timeout(18000)])});
+        body:body===undefined?undefined:binary?body:JSON.stringify(body),signal:AbortSignal.any([this.lifetime.signal,signal || AbortSignal.timeout(binary?150000:18000)])});
     } catch (error) {
       this.checkOpen();
       if (signal?.aborted) throw error;
@@ -114,6 +126,19 @@ class Remote {
     }
     this.checkOpen();
     if (response.ok && stream) return response;
+    if(response.ok && binary && method==='GET'){
+      const max=36*1024*1024,parts=[];let total=0;
+      if(Number(response.headers.get('content-length'))>max){await response.body?.cancel();throw new HubError('WORK_ARCHIVE_LIMIT');}
+      try{
+        for await(const part of response.body){total+=part.length;if(total>max)throw new HubError('WORK_ARCHIVE_LIMIT');parts.push(Buffer.from(part));}
+      }catch(error){
+        this.checkOpen();if(error instanceof HubError || signal?.aborted)throw error;
+        throw new HubError('NETWORK_UNAVAILABLE','代码备份下载中断，原检查点仍保留，请恢复网络后重试。');
+      }
+      this.checkOpen();const bytes=Buffer.concat(parts);
+      if(crypto.createHash('sha256').update(bytes).digest('hex')!==response.headers.get('x-content-sha256'))throw new HubError('WORK_ARCHIVE_HASH_MISMATCH');
+      return bytes;
+    }
     let data;
     try { data=await response.json(); } catch { throw new HubError('INVALID_RESPONSE','服务器返回了无法识别的响应。'); }
     this.checkOpen();

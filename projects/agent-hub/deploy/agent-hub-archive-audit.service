@@ -1,0 +1,10 @@
+[Unit]
+Description=Agent Hub encrypted code artifact integrity check
+After=docker.service
+Requires=docker.service
+
+[Service]
+Type=oneshot
+ExecStart=/bin/sh /opt/agent-hub/application/current/deploy/archive-audit-server.sh
+UMask=0077
+TimeoutStartSec=30min

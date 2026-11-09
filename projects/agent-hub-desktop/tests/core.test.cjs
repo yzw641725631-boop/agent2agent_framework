@@ -104,7 +104,7 @@ test('MCP only lists authorized tools and reports permission failures as tool er
   const request={jsonrpc:'2.0',id:1,method:'tools/list'};
   const read=await dispatch(request,async()=>({capabilities:['project:read']}));assert.equal(read.result.tools.length,9);
   assert.ok(!read.result.tools.some(tool=>['hub_push_task','hub_assemble_project'].includes(tool.name)));
-  const write=await dispatch(request,async()=>({capabilities:['project:read','tasks:write']}));assert.equal(write.result.tools.length,15);
+  const write=await dispatch(request,async()=>({capabilities:['project:read','tasks:write']}));assert.equal(write.result.tools.length,16);
   const denied=await dispatch({jsonrpc:'2.0',id:2,method:'tools/call',params:{name:'hub_report_progress',arguments:{summary:'x'}}},async()=>{throw new HubError('PROJECT_ACCESS_REVOKED');});
   assert.equal(denied.result.isError,true);assert.match(denied.result.content[0].text,/PROJECT_ACCESS_REVOKED/);
   assert.equal((await dispatch({...request,method:'arbitrary_shell'},async()=>{})).error.code,-32601);

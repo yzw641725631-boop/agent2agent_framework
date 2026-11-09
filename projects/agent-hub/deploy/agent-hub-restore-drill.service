@@ -1,0 +1,10 @@
+[Unit]
+Description=Agent Hub isolated database and artifact recovery drill
+After=docker.service
+Requires=docker.service
+
+[Service]
+Type=oneshot
+ExecStart=/bin/sh /opt/agent-hub/application/current/deploy/restore-drill-server.sh
+UMask=0077
+TimeoutStartSec=2h

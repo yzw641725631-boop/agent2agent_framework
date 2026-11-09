@@ -10,7 +10,7 @@ from sqlalchemy import select, text
 from sqlalchemy.exc import DBAPIError
 
 from agent_hub.db import context, session_factory
-from agent_hub.models import Task, TaskDecision, TaskRun, Worklog
+from agent_hub.models import Task, TaskRun, Worklog
 from agent_hub.security import now
 
 
@@ -148,7 +148,8 @@ def test_worklog_receipt_privacy_scope_and_database_immutability(world, database
     key = str(uuid.uuid4())
     note = w.ok("POST", path, who=dev, body=log_body(claimed), idem=key)
     assert w.ok("POST", path, who=dev, body=log_body(claimed), idem=key) == note
-    payload = {k: v for k, v in note.items() if k not in {"receipt_hash", "code_backup", "git_commit_verified"}}
+    # Backup and delivery are independent, later receipts; they never change the log receipt.
+    payload = {k: v for k, v in note.items() if k not in {"receipt_hash", "code_backup", "git_commit_verified", "snapshot", "delivery"}}
     assert hashlib.sha256(json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode()).hexdigest() == note["receipt_hash"]
     assert note["code_backup"] is False
     assert w.ok("GET", path, who=outsider)["items"] == []

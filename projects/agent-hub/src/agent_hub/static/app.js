@@ -489,12 +489,15 @@ class Console {
       h('h3',{},`工作日志 · ${logs.visibility === 'project' ? '共享原文' : '仅本人记录'}`),
       logs.items.length ? logs.items.map(log => h('details',{},h('summary',{},`${date(log.created_at)} · ${log.summary} · ${log.outcome}`),
         h('pre',{class:'document-content'},`${log.notes}\n\n变更：${log.changed_paths.join('、')}\n验证：${log.tests}\n下一步：${log.next_steps}`),
-        h('p',{class:'mono'},`Git 引用 ${log.git_commit || '未提供'}（未核验）\n回执 ${log.receipt_hash}`))) : h('p',{class:'hint'},'没有当前账号可见的日志。'),
+        h('p',{class:'mono'},`Git 引用 ${log.git_commit || '未提供'}${log.delivery ? '（服务器已核验任务分支）' : '（未核验）'}\n日志回执 ${log.receipt_hash}`),
+        log.snapshot ? h('div',{},h('p',{class:'hint'},`代码工作树已备份：${log.snapshot.baseline_files} 个基线文件，${log.snapshot.changed_files} 个新增或修改文件。不含 Git 历史。请在 PC 端或工程 MCP 取回。`),
+          h('p',{class:'mono'},`备份回执 ${log.snapshot.receipt_hash}`)) : h('p',{class:'hint'},'尚无服务器代码备份回执。'),
+        log.delivery && h('p',{class:'mono'},`Git 交付回执 ${log.delivery.receipt_hash}\n${log.delivery.ref}（未合并、未部署）`))) : h('p',{class:'hint'},'没有当前账号可见的日志。'),
       h('div',{class:'row-actions'},offset > 0 && button('较新日志',() => this.openTask(projectId,taskId,Math.max(0,offset-20))),
         logs.has_more && button('较早日志',() => this.openTask(projectId,taskId,logs.next_offset))),
       table('执行身份',['角色','人员 / 设备','工具','状态'],data.runs.map(r => [r.role,textPair(short(r.user_id),short(r.device_id)),r.harness,r.state])),
       table('可见流程证据',['关口','结果','依据','记录时间'],data.decisions.map(d => [gateNames[d.gate],d.approved ? '通过' : '退回',
-        textPair(d.evidence,d.override_reason),date(d.created_at)])),h('p',{class:'hint'},'日志已持久保存；代码快照备份和自动逐轮钩子尚未接入。'));
+        textPair(d.evidence,d.override_reason),date(d.created_at)])),h('p',{class:'hint'},'日志、代码备份和 Git 交付独立记录。请核对各自回执；代码恢复通过 PC 端或工程 MCP。'));
     modal.replaceChildren(content); if (!modal.open) modal.showModal();
   }
   writeTaskLog(base, lease) {

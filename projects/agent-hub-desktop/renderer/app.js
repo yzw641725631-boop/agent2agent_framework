@@ -219,7 +219,7 @@ function tasksScreen(){
   return el('div',{},heading('TASKS & HANDOFF','任务与工作日志','查看与网站共用的任务、执行角色和流程记录。Agent 通过项目 MCP 认领与提交。'),
     el('section',{class:'card'},bindings.length?el('div',{},field('项目连接',selector),sync,rows):
       empty('先连接项目','前往“项目与 MCP”绑定获准项目的工程目录。')),
-    text('p','代码任务通过工程 MCP 认领和保存；创建任务与流程确认在网站操作。日志和改动清单共享，代码检查点保存在本机。','note'),
+    text('p','代码任务通过工程 MCP 认领和保存；创建任务与流程确认在网站操作。日志共享、代码备份与 Git 交付分别显示回执。','note'),
     button('打开网站后台',()=>invoke('openAdmin')));
 }
 function checkpointsScreen(){
@@ -231,14 +231,19 @@ function checkpointsScreen(){
       el('div',{class:'row between'},text('h3',item.summary),text('span',names[item.state] || item.state,'pill')),
       text('p',`${new Date(item.created_at).toLocaleString('zh-CN')} · ${item.files} 个变更文件`,'note'),
       text('p',item.message,'note'),item.last_error?text('p',item.last_error,'warning'):null,
+      text('p','代码备份：'+(item.server_code_backup?'服务器已接收':({pending:'等待补传',blocked:'补传受阻',local_only:'仅本机'}[item.backup_state] || '尚未确认')),'note'),
+      item.backup_error?text('p','备份未完成：'+item.backup_error,'warning'):null,
+      ['pending','shared'].includes(item.state) && !item.server_code_backup?button('重试上传',async()=>{
+        const result=await invoke('retryCheckpoint',{id:item.local_checkpoint_id});toast(result.message,result.server_code_backup);render();}):null,
       button('导出检查点',async()=>{const result=await invoke('exportCheckpoint',{id:item.local_checkpoint_id});
-        if(!result.cancelled){toast('已导出到 '+result.directory+'。先单独检出基线，再核对清单恢复。',true);render();}}),
+        if(!result.cancelled){toast(result.working_tree_directory?'完整代码工作树已导出到 '+result.working_tree_directory+'。请审查后接续开发；不含 Git 历史。':
+          '已导出到 '+result.directory+'。需单独检出基线，再核对变更清单恢复。',true);render();}}),
       item.can_remove?button('移除已导出的本机副本',async()=>{const result=await invoke('removeExportedCheckpoint',{id:item.local_checkpoint_id});
         if(!result.cancelled){toast('导出内容核验通过，本机加密副本已清理。',true);render();}}):null)));
     if(!data.items.length)rows.append(empty('还没有本机检查点','通过项目 MCP 准备代码任务并确认规则后，后台观察变更；每轮保存工作日志时另留独立检查点。'));
     if(data.unreadable_records)rows.prepend(text('p',`${data.unreadable_records} 个加密记录暂时无法读取，原文件已保留。请保留本机凭证并检查存储状态。`,'warning'));
   }).catch(error=>{rows.replaceChildren(text('p',error.message,'warning'));});
-  return el('div',{},heading('LOCAL CHECKPOINTS','本机检查点与待发记录','检查点通过系统凭证保护加密。代码当前保存在这台电脑；“日志已共享”表示服务器确认了日志及文件哈希清单。'),
+  return el('div',{},heading('LOCAL CHECKPOINTS','本机检查点与待发记录','本机检查点加密保存。“日志已共享”与“代码备份成功”各有独立回执；只有后者确认服务器接收了完整代码工作树。'),
     el('section',{class:'card'},el('div',{class:'actions'},button('刷新',render)),
       ...(state.workRuns || []).filter(r=>r.observation_error).map(r=>text('p','后台观察未完成：'+r.observation_error+' · '+r.task_id,'warning')),rows));
 }
@@ -260,7 +265,14 @@ async function taskDetail(bindingId,taskId,generation,offset=0){
         try{const full=await invoke('taskQuery',{bindingId,tool:'hub_read_worklog',args:{task_id:taskId,worklog_id:log.id}});
           if(!current() || !details.isConnected)return;
           body.replaceChildren(text('pre',`${full.notes}\n\n改动：${full.changed_paths.join('、')}\n验证：${full.tests}\n下一步：${full.next_steps}`),
-            text('p','Git 引用：'+(full.git_commit || '未提供')+'（上游未核验）','mono'),text('p','回执：'+full.receipt_hash,'mono'));
+            text('p','Git 引用：'+(full.git_commit || '未提供')+(full.delivery?'（服务器已核验任务分支）':'（上游未核验）'),'mono'),
+            text('p','日志回执：'+full.receipt_hash,'mono'),
+            full.snapshot?el('div',{},text('p',`服务器代码备份：${full.snapshot.baseline_files} 个基线文件 / ${full.snapshot.changed_files} 个新增或修改文件。可恢复代码工作树，不含 Git 历史。`,'note'),
+              text('p','备份回执：'+full.snapshot.receipt_hash,'mono'),button('取回到本机检查点',async()=>{
+                await invoke('recoverCheckpoint',{bindingId,taskId,worklogId:log.id});
+                if(current())toast('代码已加密保存到本机；在“本机检查点”导出到新目录后审查。',true);
+              })):text('p','尚无服务器代码备份回执。','warning'),
+            full.delivery?text('p','Git 交付回执：'+full.delivery.receipt_hash+' · '+full.delivery.ref+'（未合并、未部署）','mono'):null);
         }catch(error){loaded=false;body.replaceChildren(text('p',error.message,'warning'));}
       });return details;
     }),
@@ -270,7 +282,7 @@ async function taskDetail(bindingId,taskId,generation,offset=0){
     text('h3','执行身份'),...data.runs.map(run=>text('p',`${run.role} · ${run.harness} · ${run.user_id.slice(0,8)} / ${run.device_id.slice(0,8)} · ${run.state}`)),
     text('h3','可见流程证据'),...data.decisions.map(d=>el('details',{},text('summary',`${d.gate} · ${d.approved?'通过':'退回'}`),
       text('pre',d.evidence+(d.override_reason?'\n自审原因：'+d.override_reason:'')))),
-    text('p','当前保存日志原文和提交引用；代码快照备份、自动逐轮钩子仍待接入。','note'),
+    text('p','取回代码会保存为本机加密检查点，导出到新目录后审查。自动逐轮记录仍需宿主钩子配合。','note'),
     el('div',{class:'actions end'},button('刷新',()=>taskDetail(bindingId,taskId,generation,offset)),button('关闭',()=>{openTaskBinding=null;closeDialog();},'primary')));
 }
 function workspaces(){return el('div',{},heading('PROJECT CONNECTIONS','项目与 MCP','每个连接绑定一个项目和一个工作目录。服务端在每次 MCP 调用时检查当前权限。'),
