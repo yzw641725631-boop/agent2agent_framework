@@ -9,7 +9,13 @@ from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.orm import aliased
 
 from .models import (
-    DocumentVersion, MemoryCard, MemoryEvent, MemoryJob, ProjectDocument, Task, Worklog,
+    DocumentVersion,
+    MemoryCard,
+    MemoryEvent,
+    MemoryJob,
+    ProjectDocument,
+    Task,
+    Worklog,
 )
 from .security import HubError
 
@@ -175,6 +181,7 @@ def read_card(db, project_id, card_id, *, repository_id=None):
 
 
 def status(db, project_id, repository_id=None):
+    from . import knowledge
     # Count only rows whose original source is currently visible to this session.
     cards = base_query(project_id, repository_id).subquery()
     counts = dict(db.execute(select(cards.c.state, func.count()).group_by(cards.c.state)).all())
@@ -186,15 +193,19 @@ def status(db, project_id, repository_id=None):
                 .where(or_(Task.repository_id == repository_id, DocumentVersion.source_id == repository_id)))
     queue = dict(db.execute(jobs.group_by(MemoryJob.status)).all())
     return {"mode": EXTRACTOR, "automatic_extraction": True, "semantic_distillation": False,
+            "knowledge": knowledge.status(db, project_id, repository_id), "knowledge_review_required": True,
             "semantic_search": "not-configured", "visible_cards": counts, "visible_jobs": queue,
             "source_visibility": "current-original-source-permissions", "vector_index": "provisioned-empty"}
 
 
 def prepare_bundle(db, project_id, task, budget=DEFAULT_BUDGET):
+    from . import knowledge
     from .schemas import MemorySearch
     selected = search(db, project_id, MemorySearch(query=(task.title + " " + task.description)[:200],
                                                    repository_id=task.repository_id, limit=24), task=task)
-    result = {"schema_version": 1, "mode": EXTRACTOR, "items": [], "recent_unindexed": [],
+    facts = knowledge.search(db, project_id, MemorySearch(query=(task.title + " " + task.description)[:200],
+                                                       repository_id=task.repository_id, limit=12), compact=True)
+    result = {"schema_version": 2, "mode": EXTRACTOR, "items": [], "knowledge": [], "recent_unindexed": [],
               "byte_budget": budget, "budget_measure": "serialized-utf8-bytes; model token count is not measured",
               "omitted_candidates": 0, "coverage": status(db, project_id, task.repository_id),
               "content_trust": "untrusted-project-data", "gaps": []}
@@ -206,19 +217,20 @@ def prepare_bundle(db, project_id, task, budget=DEFAULT_BUDGET):
     candidates = [("recent_unindexed", {"id": str(log.id), "summary": clipped(log.summary, 900)[0],
                                         "next_steps": clipped(log.next_steps, 900)[0],
                                         "receipt_hash": log.receipt_hash}) for log in logs]
+    candidates.extend(("knowledge", fact) for fact in facts["items"])
     candidates.extend(("items", card) for card in selected["items"])
     for target, item in candidates:
         result[target].append(item)
         if len(encoded(result)) + 300 > budget:
             result[target].pop()
             result["omitted_candidates"] += 1
-    if selected["has_more"] or result["omitted_candidates"]:
+    if selected["has_more"] or facts["has_more"] or result["omitted_candidates"]:
         result["gaps"].append("budget-or-candidate-limit: search and read original sources when needed")
     if result["coverage"]["visible_jobs"].get("queued", 0):
         result["gaps"].append("extraction-pending: current-task fresh logs included separately")
     if result["coverage"]["visible_jobs"].get("failed", 0):
         result["gaps"].append("extraction-failed: use original document/log tools")
-    if not result["items"] and not result["recent_unindexed"]:
+    if not result["items"] and not result["knowledge"] and not result["recent_unindexed"]:
         result["gaps"].append("no-matching-visible-memory: do not infer that no coworker history exists")
     result["serialized_bytes"] = len(encoded(result)) + 32
     return result
@@ -227,6 +239,8 @@ def prepare_bundle(db, project_id, task, budget=DEFAULT_BUDGET):
 def validate_bundle(db, project_id, payload):
     """New history does not invalidate an active run; lost authority and retired facts do."""
     bundle = payload.get("memory", {})
+    from . import knowledge
+    knowledge.validate_bundle(db, project_id, bundle)
     for item in bundle.get("items", []):
         try:
             current = read_card(db, project_id, uuid.UUID(item["id"]))

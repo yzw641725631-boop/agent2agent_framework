@@ -4,7 +4,7 @@ const notice=document.getElementById('notice');
 const modal=document.getElementById('dialog');
 let state,info={},releaseState,view='overview',selectedFolder=null;
 let taskBinding=null,taskVersion=0,taskTimer,openTaskBinding=null,taskDialogVersion=0;
-let memoryBinding=null,memoryQuery='',memoryOffset=0;
+let memoryBinding=null,memoryQuery='',memoryOffset=0,memoryLayer='extracts',memoryHistory=false;
 let frameworkDialogVersion=0;
 modal.addEventListener('close',()=>{taskDialogVersion++;frameworkDialogVersion++;openTaskBinding=null;});
 const taskLabels={draft:'待准入',ready:'待认领',in_progress:'开发中',review:'待评审',testing:'待测试',release_ready:'待发布确认',completed:'已完成'};
@@ -240,13 +240,18 @@ function closeoutsScreen(){
 function memoryScreen(){
   const generation=taskVersion,available=state.bindings.filter(b=>b.status==='active');
   const container=el('section',{class:'card'},text('h2','共享记忆'));
-  const intro=heading('SHARED MEMORY','共享记忆','查看获准日志与文档的自动摘录。原文保留，默认排除过时、冲突及退役内容；当前未配置语义模型。');
+  const intro=heading('SHARED MEMORY','共享记忆','查看日志交接、文档摘录及经审核的长期知识。原文保留，默认加载当前有效内容。');
   if(!available.length)return el('div',{},intro,empty('尚无可用项目连接','先在“项目与 MCP”接入一个获准工程。'));
   memoryBinding=available.some(b=>b.id===memoryBinding)?memoryBinding:available[0].id;
   const picker=el('select',{},available.map(b=>el('option',{value:b.id,...(b.id===memoryBinding?{selected:true}:{})},b.projectName+' · '+(b.repositoryName || b.workspace))));
   picker.addEventListener('change',()=>{memoryBinding=picker.value;memoryOffset=0;render();});
   const query=el('input',{value:memoryQuery,maxlength:200,placeholder:'关键词，例如 Web、登录、接口'});
-  const controls=el('div',{class:'actions'},field('项目工程',picker),field('关键词',query),button('检索',()=>{memoryQuery=query.value;memoryOffset=0;render();}));
+  const layer=el('select',{},el('option',{value:'extracts'},'日志与文档摘录'),el('option',{value:'knowledge'},'长期知识'));
+  layer.value=memoryLayer;layer.addEventListener('change',()=>{memoryLayer=layer.value;memoryOffset=0;render();});
+  const history=el('select',{},el('option',{value:'current'},'当前有效'),el('option',{value:'all'},'候选与历史'));
+  history.value=memoryHistory?'all':'current';history.addEventListener('change',()=>{memoryHistory=history.value==='all';memoryOffset=0;render();});
+  const isKnowledge=memoryLayer==='knowledge';
+  const controls=el('div',{class:'actions'},field('项目工程',picker),field('资料类型',layer),field('版本范围',history),field('关键词',query),button('检索',()=>{memoryQuery=query.value;memoryOffset=0;render();}));
   const counter=text('p','正在核验授权…','note'),bindingId=memoryBinding;
   container.append(controls,counter);
   const list=el('div');container.append(list);
@@ -254,18 +259,20 @@ function memoryScreen(){
   const call=(tool,args={})=>invoke('taskQuery',{bindingId,tool,args});
   const status=async()=>{
     const s=await call('hub_get_memory_status');if(!current())return;
-    counter.textContent=`当前 ${s.visible_cards.active || 0} · 过时 ${s.visible_cards.superseded || 0} · 待提取 ${s.visible_jobs.queued || 0} · 失败 ${s.visible_jobs.failed || 0} · 自动规则摘录`;
+    counter.textContent=`当前摘录 ${s.visible_cards.active || 0} · 长期知识 ${s.knowledge?.active || 0} · 知识待审 ${s.knowledge?.pending || 0} · 待提取 ${s.visible_jobs.queued || 0} · 失败 ${s.visible_jobs.failed || 0}`;
     taskTimer=setTimeout(()=>status().catch(error=>{if(current()){list.replaceChildren();counter.textContent=error.message;}}),5000);
   };
   (async()=>{
-    const data=await call('hub_search_memory',{query:memoryQuery,offset:memoryOffset,limit:12});if(!current())return;
+    const data=await call(isKnowledge?'hub_search_knowledge':'hub_search_memory',{query:memoryQuery,offset:memoryOffset,limit:12,include_history:memoryHistory});if(!current())return;
     for(const card of data.items){
       const raw=el('div'),source=card.source;
       list.append(el('article',{class:'event'},el('span',{class:'dot'}),el('div',{},text('h3',card.title),
         text('small',source.kind==='document'?`${source.path} · 行 ${card.line_start}–${card.line_end}`:`工作日志 ${source.id.slice(0,8)} · 任务 ${source.task_id.slice(0,8)}`),
+        isKnowledge?el('div',{},text('small',`${card.topic} · ${card.state} · 版本 ${card.version}`)):null,
         text('pre',card.body),card.truncated?text('p','摘录已截短，可展开来源原文。','note'):null,
+        isKnowledge?text('p',card.state_reason,'note'):null,
         button('展开来源',async()=>{
-          const original=await call('hub_read_memory_source',{card_id:card.id,start_line:card.line_start || 1,limit:100});
+          const original=await call('hub_read_memory_source',{card_id:isKnowledge?card.source_card_id:card.id,start_line:card.line_start || 1,limit:100});
           if(current())raw.replaceChildren(text('pre',original.content),original.has_more?text('small','此处仅显示一段，完整内容可通过 MCP 分段继续读取。'):text('small','来源原文已显示。'));
         }),raw)));
     }
@@ -273,6 +280,7 @@ function memoryScreen(){
     const pagination=el('div',{class:'actions'});
     if(memoryOffset)pagination.append(button('上一页',()=>{memoryOffset=Math.max(0,memoryOffset-12);render();}));
     if(data.has_more)pagination.append(button('下一页',()=>{memoryOffset=data.next_offset;render();}));
+    if(isKnowledge)list.append(button('打开网站审核知识',()=>invoke('openAdmin')));
     list.append(pagination);await status();
   })().catch(error=>{if(current()){list.replaceChildren();counter.textContent=error.message;}});
   return el('div',{},intro,container);

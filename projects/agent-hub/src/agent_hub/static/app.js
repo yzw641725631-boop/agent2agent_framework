@@ -38,9 +38,9 @@ const short = value => value ? value.slice(0, 8) : '—';
 const date = value => value ? new Date(value).toLocaleString('zh-CN', {hour12:false}) : '—';
 
 function field(name, title, options = {}) {
-  const {full, hint, items, ...attrs} = options;
+  const {full, hint, items, multiline, ...attrs} = options;
   const control = items ? h('select', {name, ...attrs}, items.map(([value, label]) => h('option', {value}, label)))
-    : h('input', {name, ...attrs});
+    : multiline ? h('textarea', {name, rows:4, ...attrs}) : h('input', {name, ...attrs});
   if (attrs.value !== undefined) control.value = attrs.value;
   return h('label', {class:full ? 'full' : ''}, title, control, hint && h('small', {}, hint));
 }
@@ -564,14 +564,15 @@ class Console {
     const title=this.heading('共享记忆','日志交接与文档章节按原文权限共享；旧版本留档，默认加载当前内容。',[button('刷新',()=>this.renderView())]);
     if(!this.project)return [title,h('section',{class:'card empty'},'请先选择项目组。')];
     const projectId=this.project.id,revision=this.renderVersion;
-    const filter=this.memoryFilter?.projectId===projectId?this.memoryFilter:{projectId,query:'',include_history:false,repository_id:''};
+    const filter=this.memoryFilter?.projectId===projectId?this.memoryFilter:{projectId,query:'',include_history:false,repository_id:'',layer:'extracts'};
+    const isKnowledge=filter.layer==='knowledge';
     const registry=await this.api('GET',`/api/projects/${projectId}/repositories`);
     const query=new URLSearchParams({query:filter.query,include_history:String(filter.include_history),limit:'12'});
     if(filter.repository_id)query.set('repository_id',filter.repository_id);
     const base=`/api/projects/${projectId}/memory`;
-    const data=await this.api('GET',base+'?'+query);
+    const data=await this.api('GET',base+(isKnowledge?'/knowledge':'')+'?'+query);
     const status=await this.api('GET',base+'/status'+(filter.repository_id?'?repository_id='+filter.repository_id:''));
-    const statusText=s=>`当前 ${s.visible_cards.active || 0} · 过时 ${s.visible_cards.superseded || 0} · 冲突 ${s.visible_cards.conflicted || 0} · 退役 ${s.visible_cards.retired || 0} · 待提取 ${s.visible_jobs.queued || 0} · 失败 ${s.visible_jobs.failed || 0}`;
+    const statusText=s=>`当前摘录 ${s.visible_cards.active || 0} · 长期知识 ${s.knowledge?.active || 0} · 知识待审 ${s.knowledge?.pending || 0} · 过时 ${s.visible_cards.superseded || 0} · 冲突 ${s.visible_cards.conflicted || 0} · 待提取 ${s.visible_jobs.queued || 0} · 失败 ${s.visible_jobs.failed || 0}`;
     const counts=h('p',{class:'mono'},statusText(status));
     const poll=async()=>{
       if(this.currentView!=='memory' || this.project?.id!==projectId || this.renderVersion!==revision)return;
@@ -581,37 +582,66 @@ class Console {
     };
     this.viewTimer=setTimeout(poll,5000);
     const form=h('form',{},h('div',{class:'fields'},
+      field('layer','资料类型',{value:filter.layer || 'extracts',items:[['extracts','日志交接与文档摘录'],['knowledge','长期知识与审核候选']]}),
       field('query','关键词',{value:filter.query,maxlength:200,placeholder:'例如：登录、Web、接口'}),
       field('repository_id','仓库范围',{value:filter.repository_id,items:[['','全部获准资料'],...registry.items.map(r=>[r.id,r.name])]}),
-      field('history','版本范围',{value:filter.include_history?'all':'current',items:[['current','当前有效卡片'],['all','含过时、冲突和退役卡片']]})));
+      field('history','版本范围',{value:filter.include_history?'all':'current',items:[['current','当前有效卡片'],['all','含候选、过时、冲突和退役卡片']]})));
     form.append(h('div',{class:'actions'},submit(form,'检索',async values=>{
-      this.memoryFilter={projectId,query:values.query,repository_id:values.repository_id,include_history:values.history==='all'};
+      this.memoryFilter={projectId,query:values.query,repository_id:values.repository_id,include_history:values.history==='all',layer:values.layer};
       await this.renderView();
     })));
-    const labels={active:'当前',superseded:'已被新版本替代',conflicted:'存在冲突',retired:'已退役'};
+    const labels={active:'当前生效',pending:'候选待审核',superseded:'已被新版本替代',conflicted:'存在冲突',retired:'已退役',rejected:'已驳回',source_stale:'来源已失效，需重新核对'};
     const cards=data.items.map(card=>{
       const source=card.source;
       const original=h('div');
       const actions=[button('展开来源原文',async()=>{
-        const raw=await this.api('GET',`${base}/${card.id}/original?start_line=${card.line_start || 1}&limit=100`);
+        const raw=await this.api('GET',`${base}/${isKnowledge?card.source_card_id:card.id}/original?start_line=${card.line_start || 1}&limit=100`);
         if(this.renderVersion!==revision || this.project?.id!==projectId)return;
         original.replaceChildren(h('p',{class:'hint'},`原文共 ${raw.line_count} 行${raw.has_more?' · 此处仅显示一段，可通过 MCP 继续读取':''}`),h('pre',{class:'document-content'},raw.content));
       },'small')];
-      if(this.can('tasks:publish'))for(const [state,label] of [['conflicted','标记冲突'],['retired','退役'],['active','恢复使用']]){
+      if(!isKnowledge && this.can('tasks:write'))actions.push(button('提炼为长期知识候选',()=>{
+        const candidate=h('form',{},h('div',{class:'fields'},
+          field('topic','主题标识',{required:true,pattern:'[a-z0-9][a-z0-9._/-]{0,119}',maxlength:120,placeholder:'例如 web.auth.device-approval'}),
+          field('kind','知识类型',{items:[['constraint','约束'],['decision','决定'],['interface','接口'],['lesson','经验'],['pitfall','错误预防']]}),
+          field('title','标题',{required:true,maxlength:200,value:card.title.slice(0,200)}),
+          field('body','长期结论',{required:true,minlength:10,maxlength:2000,full:true,multiline:true}),
+          field('source_quote','逐字原文引用',{required:true,minlength:8,maxlength:1200,value:card.body.slice(0,800),full:true,multiline:true}),
+          field('reason','提炼原因',{required:true,minlength:10,maxlength:1000,full:true,multiline:true})));
+        dialog('提交长期知识候选','每条绑定一个获准来源。候选经独立审核后生效，原文继续保留。',candidate,'提交候选',values=>
+          this.api('POST',base+'/knowledge',{...values,source_card_id:card.id,source_hash:card.source_hash,
+            generation:{method:'human'},...(filter.repository_id?{repository_id:filter.repository_id}:{})}));
+      },'small'));
+      const decisions=isKnowledge?[['active','审核生效'],['conflicted','标记冲突'],['retired','退役'],['rejected','驳回']]:[['conflicted','标记冲突'],['retired','退役'],['active','恢复使用']];
+      if(this.can('tasks:publish'))for(const [state,label] of decisions){
         actions.push(button(label,()=>{
-          const reason=h('form',{},h('label',{},'处理原因',h('textarea',{name:'reason',required:true,maxlength:2000,rows:3})));
-          dialog(label,'原文与卡片保留。恢复不会让已经被替代的历史文档或日志成为当前版本。',reason,'保存',values=>
-            this.api('POST',`${base}/${card.id}/decisions`,{expected_version:card.state_version,state,reason:values.reason}));
+          const reason=h('form',{},h('label',{},'处理原因',h('textarea',{name:'reason',required:true,minlength:isKnowledge?10:1,maxlength:2000,rows:3})));
+          if(isKnowledge && state==='active')reason.append(h('div',{class:'fields'},
+            field('override_reason','超管本人批准时填写自审原因',{maxlength:2000,full:true}),
+            field('replaces_id','替换的生效知识 ID（可选）',{maxlength:36}),
+            field('replaces_version','替换知识的当前版本（可选）',{type:'number',min:1})));
+          dialog(label,isKnowledge?'作者需由其他有权人员审核；超管自审记录原因。同主题替换须核对旧知识 ID 和版本。':'原文与卡片保留。恢复不会让已经被替代的历史文档或日志成为当前版本。',reason,'保存',values=>{
+            const body={expected_version:isKnowledge?card.version:card.state_version,state,reason:values.reason};
+            if(isKnowledge){
+              if(filter.repository_id)body.repository_id=filter.repository_id;
+              if(values.override_reason)body.override_reason=values.override_reason;
+              if(values.replaces_id){body.replaces_id=values.replaces_id;body.replaces_version=Number(values.replaces_version);}
+            }
+            return this.api('POST',`${base}/${isKnowledge?'knowledge/':''}${card.id}/decisions`,body);
+          });
         },'quiet small'));
       }
       return h('article',{class:'card'},h('h2',{},card.title),h('p',{class:'hint'},labels[card.state] || card.state),
+        isKnowledge?h('p',{class:'mono'},`${card.topic} · ${card.kind} · 知识 ${card.id} · 版本 ${card.version}`):null,
         h('p',{class:'mono'},source.kind==='document'?`${source.path} · ${short(source.git_commit)} · 行 ${card.line_start}–${card.line_end}`:`日志 ${short(source.id)} · 任务 ${short(source.task_id)}`),
         h('pre',{class:'document-content'},card.body),card.truncated?h('p',{class:'hint'},'摘录已截短；完整内容保存在来源原文。'):null,
+        isKnowledge?h('details',{},h('summary',{},'引用与生成记录'),h('pre',{class:'document-content'},card.source_quote),
+          h('p',{class:'hint'},`生成方式：${card.generation.method}；模型及用量为作者报告。${card.generation.model_reported || ''}`),
+          card.review_override_reason?h('p',{},'超管自审原因：'+card.review_override_reason):null):null,
         card.state_reason?h('p',{},card.state_reason):null,h('div',{class:'row-actions'},actions),original);
     });
     return [title,h('section',{class:'card'},h('h2',{},'增量处理状态'),counts,
       this.can('tasks:publish') && status.visible_jobs.failed?button('重试失败提取',async()=>{await this.api('POST',base+'/retry',{});await this.renderView();},'small'):null,
-      h('p',{class:'hint'},'当前使用自动规则摘录与关键词检索。服务器已准备 pgvector；语义 Embedding 和模型蒸馏尚未配置。开工包默认最多 12,000 UTF-8 字节，保留缺口与来源，不全量加载历史。')),
+      h('p',{class:'hint'},'日志交接持续自动摘录；本地 Agent 或成员可引用来源提炼长期知识，经审核后纳入开工记忆。来源变化或撤权时重新校验。开工记忆默认最多 12,000 UTF-8 字节，语义向量检索尚未配置。')),
       h('section',{class:'card'},form),...cards,
       !cards.length?h('p',{class:'hint'},'当前检索范围没有匹配卡片。请查看文档同步、队列状态或调整关键词；这不代表没有其他历史记录。'):null,
       data.has_more?h('p',{class:'hint'},'这里只显示前 12 条，缩小检索范围或通过 MCP 翻页。'):null].filter(Boolean);

@@ -561,3 +561,53 @@ class MemoryDecision(Input):
     expected_version: int = Field(ge=0)
     state: Literal["active", "conflicted", "retired"]
     reason: str = Field(min_length=1, max_length=2000)
+
+
+class KnowledgeGeneration(Input):
+    method: Literal["local-agent", "human"] = "local-agent"
+    harness: Harness | None = None
+    model_reported: str = Field(default="", max_length=120)
+    prompt_version: str = Field(default="knowledge-v1", min_length=1, max_length=80)
+    input_tokens_reported: int | None = Field(default=None, ge=0, le=10000000)
+    output_tokens_reported: int | None = Field(default=None, ge=0, le=10000000)
+
+
+class KnowledgeInput(Input):
+    source_card_id: UUID
+    repository_id: UUID | None = None
+    source_hash: str = Field(pattern=r"^[a-f0-9]{64}$")
+    source_quote: str = Field(min_length=8, max_length=1200)
+    topic: str = Field(pattern=r"^[a-z0-9][a-z0-9._/-]{0,119}$")
+    kind: Literal["constraint", "decision", "interface", "lesson", "pitfall"]
+    title: str = Field(min_length=1, max_length=200)
+    body: str = Field(min_length=10, max_length=2000)
+    reason: str = Field(min_length=10, max_length=1000)
+    generation: KnowledgeGeneration = Field(default_factory=KnowledgeGeneration)
+
+    @model_validator(mode="after")
+    def bounded_knowledge(self):
+        if any(not value.strip() for value in (self.title, self.body, self.source_quote, self.reason)):
+            raise ValueError("Knowledge content must not be blank")
+        if len(self.body.encode()) > 6000 or len(self.source_quote.encode()) > 4000:
+            raise ValueError("Knowledge content exceeds its UTF-8 byte budget")
+        return self
+
+
+class KnowledgeDecision(Input):
+    repository_id: UUID | None = None
+    expected_version: int = Field(ge=1)
+    state: Literal["active", "conflicted", "retired", "rejected"]
+    reason: str = Field(min_length=10, max_length=2000)
+    override_reason: str = Field(default="", max_length=2000)
+    replaces_id: UUID | None = None
+    replaces_version: int | None = Field(default=None, ge=1)
+
+    @model_validator(mode="after")
+    def replacement(self):
+        if (self.replaces_id is None) != (self.replaces_version is None):
+            raise ValueError("Replacement requires both the fact ID and its current version")
+        if self.replaces_id and self.state != "active":
+            raise ValueError("Only activation may replace an active fact")
+        if not self.reason.strip() or self.override_reason and len(self.override_reason.strip()) < 10:
+            raise ValueError("A meaningful reason is required")
+        return self

@@ -448,6 +448,9 @@ class Controller extends EventEmitter {
       }
       const memoryRequest=require('./memory-tools.cjs').request(action,args,b.projectId,b.repositoryId);
       if(memoryRequest)return await remote.request('GET',memoryRequest.path,undefined,{slot});
+      const knowledgeRequest=require('./knowledge-tools.cjs').request(action,args,b.projectId,b.repositoryId,context.capabilities);
+      if(knowledgeRequest)return await remote.request(knowledgeRequest.method,knowledgeRequest.path,knowledgeRequest.body,
+        {slot,idempotency:knowledgeRequest.operation_id});
       const taskRequest=require('./task-tools.cjs').request(action,args,context.capabilities,b.projectId,{internal});
       if(taskRequest){
         if(b.repositoryId){

@@ -47,7 +47,7 @@ docker run --rm --network agent-hub-database --read-only --tmpfs /tmp --memory 3
   -e HUB_ENVIRONMENT=test -e HUB_MAIL_MODE=memory -e HUB_RESTORE_DATABASE="$target" \
   -e HUB_RESTORE_SNAPSHOT="$snapshot" \
   -e HUB_PUBLIC_URL=http://127.0.0.1:8765 -e HUB_ARTIFACT_DIRECTORY=/restored-archives \
-  -v "$stage/data/work-archives:/restored-archives:ro" --entrypoint python agent-hub:0.11.0 -c '
+  -v "$stage/data/work-archives:/restored-archives:ro" --entrypoint python agent-hub:0.12.0 -c '
 import datetime,json,os,re
 from urllib.parse import quote
 from sqlalchemy import text
@@ -63,7 +63,7 @@ factory=session_factory(cfg)
 with factory() as db:
     assert db.scalar(text("SELECT current_database()"))==target
     schema=db.scalar(text("SELECT version_num FROM alembic_version"))
-    assert schema=="0014"
+    assert schema=="0015"
     assert db.scalar(text("SELECT count(*) FROM task_runs r JOIN tasks t ON r.task_id=t.id WHERE r.state=:state AND r.role<>t.execution_role"),{"state":"active"})==0
     assert db.scalar(text("SELECT count(*) FROM pg_indexes WHERE indexname=:name"),{"name":"one_active_primary_run"})==1
     assert db.scalar(text("SELECT relrowsecurity AND relforcerowsecurity FROM pg_class WHERE relname=:name"),{"name":"task_dependencies"})

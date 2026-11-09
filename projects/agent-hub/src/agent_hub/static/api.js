@@ -6,6 +6,12 @@ const json = value => encode(encoder.encode(JSON.stringify(value)));
 
 export const messages = {
   MEMORY_NOT_FOUND:'该记忆或来源当前不可读取。',MEMORY_VERSION_CONFLICT:'记忆处理状态已变化，请刷新后重试。',
+  KNOWLEDGE_NOT_FOUND:'该知识或其原文当前不可读取。',KNOWLEDGE_VERSION_CONFLICT:'知识版本或待替换结论已变化，请刷新。',
+  KNOWLEDGE_QUOTE_MISMATCH:'引用须逐字出现在来源摘录中，请重新核对。',KNOWLEDGE_SOURCE_HASH_MISMATCH:'来源摘要不一致，请重新读取。',
+  KNOWLEDGE_SOURCE_STALE:'来源已换版、退役或存在冲突，请引用当前资料。',KNOWLEDGE_STATE_UNCHANGED:'该知识已经处于所选状态。',
+  KNOWLEDGE_INDEPENDENT_REVIEW_REQUIRED:'请由其他有权人员审核；超管本人批准时须填写明确自审原因。',
+  KNOWLEDGE_TOPIC_CONFLICT:'同一主题已有生效结论，请核对后显式填写替换 ID 和版本；不可读时联系有权负责人。',
+  KNOWLEDGE_REPLACEMENT_MISMATCH:'待替换结论须属于同一项目、资料范围和主题。',KNOWLEDGE_OVERRIDE_NOT_APPLICABLE:'仅超管本人批准自己的知识时填写自审原因。',
   WORK_MEMORY_ACCESS_CHANGED:'已载入记忆的原文权限已变化，请重新准备。',WORK_MEMORY_STALE:'已载入资料已换版、退役或存在冲突，请重新准备。',
   MEMORY_SOURCE_CURSOR_INVALID:'原文读取位置无效，请从来源返回的游标继续。',
   WORK_REMOTE_BACKUP_REQUIRED:'请先在 PC 端完成最新检查点的服务器代码备份，再提交评审。',

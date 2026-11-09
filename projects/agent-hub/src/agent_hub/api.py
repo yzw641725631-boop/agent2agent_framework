@@ -244,7 +244,7 @@ def create_app(
 
     @app.get("/healthz")
     def health():
-        return {"status": "ok", "phase": "P7-task-coordination", "version": __version__}
+        return {"status": "ok", "phase": "P8-reviewed-knowledge", "version": __version__}
 
     @app.post("/api/auth/enrollments")
     def enroll(body: S.Enroll, request: Request, db: DB):
@@ -871,6 +871,39 @@ def create_app(
         row, _ = work_policy.require_context(db, identity, task, run, context_id)
         return {"can_continue": True, "context_id": str(row.id), "content_hash": row.content_hash,
                 "memory": memory.status(db, project_id, task.repository_id)}
+
+    @app.get("/api/projects/{project_id}/memory/knowledge")
+    def knowledge_search(project_id: uuid.UUID, request: Request, db: DB, query: str = Query("", max_length=200),
+                         repository_id: uuid.UUID | None = None, include_history: bool = False,
+                         offset: int = Query(0, ge=0, le=100000), limit: int = Query(12, ge=1, le=50)):
+        from . import knowledge
+        identity = actor(request, db)
+        hub.project(db, identity, project_id)
+        rate_limit(security_sessions, hub.secret, f"memory-read:{identity.user.id}", 180, 60)
+        return knowledge.search(db, project_id, S.MemorySearch(query=query, repository_id=repository_id,
+                                include_history=include_history, offset=offset, limit=limit))
+
+    @app.post("/api/projects/{project_id}/memory/knowledge")
+    def knowledge_proposal(project_id: uuid.UUID, body: S.KnowledgeInput, request: Request, db: DB):
+        from . import knowledge
+        identity = actor(request, db)
+        hub.project(db, identity, project_id, "tasks:write")
+        rate_limit(security_sessions, hub.secret, f"knowledge-write:{identity.user.id}", 60, 60)
+        knowledge.source_for_proposal(db, project_id, body)
+        return mutate(request, db, identity, body,
+                      lambda: knowledge.propose(hub, db, identity, project_id, body, request.state.request_id))
+
+    @app.post("/api/projects/{project_id}/memory/knowledge/{fact_id}/decisions")
+    def knowledge_decision(project_id: uuid.UUID, fact_id: uuid.UUID, body: S.KnowledgeDecision,
+                           request: Request, db: DB):
+        from . import knowledge
+        identity = actor(request, db)
+        hub.project(db, identity, project_id, "tasks:publish")
+        knowledge.get(db, project_id, fact_id, body.repository_id)
+        if body.replaces_id:
+            knowledge.get(db, project_id, body.replaces_id, body.repository_id)
+        return mutate(request, db, identity, body,
+                      lambda: knowledge.decide(hub, db, identity, project_id, fact_id, body, request.state.request_id))
 
     @app.get("/api/projects/{project_id}/memory/status")
     def memory_status(project_id: uuid.UUID, request: Request, db: DB, repository_id: uuid.UUID | None = None):

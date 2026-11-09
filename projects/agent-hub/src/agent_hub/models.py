@@ -533,6 +533,7 @@ class MemoryJob(Identity, Base):
 
 class MemoryCard(Identity, Base):
     __tablename__ = "memory_cards"
+    __table_args__ = (UniqueConstraint("id", "project_id"),)
     project_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("projects.id"))
     worklog_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("worklogs.id"))
     document_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("document_versions.id"))
@@ -555,6 +556,47 @@ class MemoryEvent(Identity, Base):
     device_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("devices.id"))
     state: Mapped[str] = mapped_column(String(16))
     reason: Mapped[str] = mapped_column(Text)
+
+
+class MemoryFact(Identity, Base):
+    __tablename__ = "memory_facts"
+    __table_args__ = (
+        UniqueConstraint("id", "project_id"),
+        ForeignKeyConstraint(["source_card_id", "project_id"], ["memory_cards.id", "memory_cards.project_id"]),
+        Index("ix_memory_facts_project", "project_id", "created_at", "id"),
+    )
+    project_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("projects.id"))
+    source_card_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True))
+    resource_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True))
+    author_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id"))
+    device_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("devices.id"))
+    topic: Mapped[str] = mapped_column(String(120))
+    kind: Mapped[str] = mapped_column(String(20))
+    title: Mapped[str] = mapped_column(String(200))
+    body: Mapped[str] = mapped_column(Text)
+    source_quote: Mapped[str] = mapped_column(Text)
+    source_hash: Mapped[str] = mapped_column(String(64))
+    content_hash: Mapped[str] = mapped_column(String(64))
+    generation: Mapped[dict] = mapped_column(JSONB)
+    status: Mapped[str] = mapped_column(String(20), default="pending")
+    version: Mapped[int] = mapped_column(Integer, default=1)
+
+
+class MemoryFactEvent(Identity, Base):
+    __tablename__ = "memory_fact_events"
+    __table_args__ = (
+        UniqueConstraint("fact_id", "version"),
+        ForeignKeyConstraint(["fact_id", "project_id"], ["memory_facts.id", "memory_facts.project_id"]),
+    )
+    fact_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True))
+    project_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("projects.id"))
+    version: Mapped[int] = mapped_column(Integer)
+    state: Mapped[str] = mapped_column(String(20))
+    reason: Mapped[str] = mapped_column(Text)
+    author_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id"))
+    device_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("devices.id"))
+    override_reason: Mapped[str] = mapped_column(Text, default="")
+    automatic: Mapped[bool] = mapped_column(default=False)
 
 
 Index(

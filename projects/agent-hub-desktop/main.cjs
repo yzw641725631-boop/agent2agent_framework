@@ -165,7 +165,7 @@ async function start(){
       return controller.work.removeExported(data.id);
     },
     taskQuery:data=>{
-      if(!['hub_list_tasks','hub_get_task','hub_list_worklogs','hub_read_worklog','hub_get_memory_status','hub_search_memory','hub_read_memory_source','hub_get_roles','hub_preview_framework'].includes(data.tool))throw new HubError('INVALID_DESKTOP_REQUEST');
+      if(!['hub_list_tasks','hub_get_task','hub_list_worklogs','hub_read_worklog','hub_get_memory_status','hub_search_memory','hub_search_knowledge','hub_read_memory_source','hub_get_roles','hub_preview_framework'].includes(data.tool))throw new HubError('INVALID_DESKTOP_REQUEST');
       return controller.invokeProject(controller.binding(data.bindingId),data.tool,data.args || {});
     },
     frameworkDeploy:data=>controller.invokeProject(controller.binding(data.bindingId),'hub_install_framework',data.args || {}),
