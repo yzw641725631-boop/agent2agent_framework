@@ -290,11 +290,14 @@ async function deployFramework({ workspace, receiptDirectory, name, files, guard
   return applyPlans([{ target: root, skill: null, changes }], guard, {backupDirectory:path.join(receiptDirectory,'backups')});
 }
 
-async function uninstallProject({ workspace, receiptDirectories, name, installed, guard = () => {} }) {
+async function uninstallProject({ workspace, receiptDirectories, hookDirectory, name, installed, guard = () => {} }) {
   if (!path.isAbsolute(workspace) || !/^[a-z][a-z0-9-]{2,79}$/.test(name)) throw conflict();
   await safePath(workspace);
   if (await fs.realpath(workspace) !== workspace) throw conflict();
   const result = { removed_files: 0, removed_entries: 0, conflicts: [], retained_shared_components: true };
+  const removedHooks = await require('./hook-install.cjs').uninstall({workspace,hookDirectory,guard});
+  result.removed_entries += removedHooks.removed_entries;
+  result.conflicts.push(...removedHooks.conflicts);
   const receipts = [], framework = [];
   for (const directory of receiptDirectories) {
     if (!path.isAbsolute(directory)) throw conflict();
@@ -346,7 +349,7 @@ async function uninstallProject({ workspace, receiptDirectories, name, installed
     business_files_deleted: false, local_checkpoints_deleted: false };
 }
 
-async function ownedProjectPaths({workspace,receiptDirectories,name,installed}) {
+async function ownedProjectPaths({workspace,receiptDirectories,hookDirectory,name,installed}) {
   const paths = new Set();
   if(installed?.target === targetFor('claude',{workspace}) && installed.entry)paths.add('.mcp.json');
   for(const directory of receiptDirectories) {
@@ -368,7 +371,8 @@ async function ownedProjectPaths({workspace,receiptDirectories,name,installed}) 
       }
     }
   }
+  for(const file of await require('./hook-install.cjs').ownedPaths({workspace,hookDirectory}))paths.add(file);
   return [...paths];
 }
 
-module.exports = { install, merge, snapshot, replace, hosts, removeEntry, deployFramework, uninstallProject, ownedProjectPaths };
+module.exports = { install, merge, snapshot, replace, hosts, removeEntry, deployFramework, uninstallProject, ownedProjectPaths, applyPlans, safePath };

@@ -34,6 +34,12 @@ def audit(factory):
             payload = {key: getattr(fact, key) for key in
                        ("source_hash", "source_quote", "topic", "kind", "title", "body", "generation")}
             payload.update(source_card_id=str(fact.source_card_id), resource_id=str(fact.resource_id))
+            if fact.additional_sources:
+                payload["additional_sources"] = fact.additional_sources
+                for citation in fact.additional_sources:
+                    cited = db.get(MemoryCard, citation["source_card_id"])
+                    if not cited or cited.source_hash != citation["source_hash"] or citation["source_quote"] not in cited.body:
+                        result["errors"].append({"kind": "knowledge", "id": str(fact.id), "code": "CITATION_MISMATCH"})
             if fact.source_hash != card.source_hash or fact.source_quote not in card.body or digest(payload) != fact.content_hash:
                 result["errors"].append({"kind": "knowledge", "id": str(fact.id), "code": "KNOWLEDGE_PROVENANCE_MISMATCH"})
             if not event or event.state != fact.status:

@@ -1,5 +1,6 @@
 """Reviewed, source-bound durable knowledge produced by an authorized local agent or person."""
 import uuid
+from types import SimpleNamespace
 
 from sqlalchemy import case, func, select
 from sqlalchemy.exc import IntegrityError
@@ -11,7 +12,7 @@ from .work_policy import digest
 
 
 def state_expression():
-    return case((~func.hub.memory_card_current(MemoryFact.source_card_id), "source_stale"),
+    return case((~func.hub.knowledge_sources_current(MemoryFact.source_card_id, MemoryFact.additional_sources), "source_stale"),
                 else_=MemoryFact.status)
 
 
@@ -37,6 +38,12 @@ def view(db, row, *, compact=False):
               "source_card_id": str(fact.source_card_id), "source_hash": fact.source_hash, "source": source["source"],
               "line_start": source["line_start"], "line_end": source["line_end"],
               "content_trust": "untrusted-project-data"}
+    result["additional_sources"] = [{**citation,
+        "source": memory.read_card(db, fact.project_id, uuid.UUID(citation["source_card_id"]))["source"]}
+        for citation in fact.additional_sources]
+    if compact:
+        for citation in result["additional_sources"]:
+            citation.pop("source_quote")
     if not compact:
         latest = db.scalar(select(MemoryFactEvent).where(MemoryFactEvent.fact_id == fact.id)
                            .order_by(MemoryFactEvent.version.desc()).limit(1))
@@ -53,7 +60,8 @@ def search(db, project_id, body, *, compact=False):
     from . import semantic
     statement = base_query(project_id, body.repository_id)
     if not body.include_history:
-        statement = statement.where(MemoryFact.status == "active", func.hub.memory_card_current(MemoryFact.source_card_id))
+        statement = statement.where(MemoryFact.status == "active",
+            func.hub.knowledge_sources_current(MemoryFact.source_card_id, MemoryFact.additional_sources))
     matches = [func.strpos(func.lower(MemoryFact.topic + "\n" + MemoryFact.title + "\n" + MemoryFact.body), word) > 0
                for word in memory.terms(body.query)]
     score = sum((case((condition, 1), else_=0) for condition in matches), 0)
@@ -89,6 +97,8 @@ def source_for_proposal(db, project_id, body):
         raise HubError("KNOWLEDGE_SOURCE_STALE", 409)
     if body.source_quote not in card["body"]:
         raise HubError("KNOWLEDGE_QUOTE_MISMATCH", 422)
+    for citation in getattr(body, "additional_sources", []):
+        source_for_proposal(db, project_id, SimpleNamespace(**citation.model_dump(), repository_id=None))
     return card
 
 
@@ -105,7 +115,10 @@ def propose(hub, db, actor, project_id, body, request_id):
     resource = db.scalar(select(func.hub.memory_card_resource(body.source_card_id, project_id)))
     values = body.model_dump(mode="python", exclude={"repository_id", "reason", "generation"})
     values["generation"] = body.generation.model_dump(mode="json")
+    values["additional_sources"] = [citation.model_dump(mode="json") for citation in body.additional_sources]
     payload = {**body.model_dump(mode="json", exclude={"repository_id", "reason"}), "resource_id": str(resource)}
+    if not body.additional_sources:
+        payload.pop("additional_sources")  # Preserve the original single-source digest contract.
     fact = MemoryFact(project_id=project_id, author_id=actor.user.id, device_id=actor.device.id,
                       resource_id=resource, content_hash=digest(payload), status="pending", version=1, **values)
     db.add(fact)
@@ -127,7 +140,8 @@ def decide(hub, db, actor, project_id, fact_id, body, request_id):
         raise HubError("KNOWLEDGE_STATE_UNCHANGED", 409)
     replacement = None
     if body.state == "active":
-        if not db.scalar(select(func.hub.memory_card_current(fact.source_card_id))):
+        if not db.scalar(select(func.hub.knowledge_sources_current(
+                MemoryFact.source_card_id, MemoryFact.additional_sources)).where(MemoryFact.id == fact.id)):
             raise HubError("KNOWLEDGE_SOURCE_STALE", 409)
         if fact.author_id == actor.user.id:
             if actor.user.platform_role != "superadmin" or len(body.override_reason.strip()) < 10:

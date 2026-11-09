@@ -17,10 +17,13 @@ function define(name,title,description,properties,required,cap){
 }
 const definitions=[
   define('hub_search_knowledge','检索长期知识','检索本人获准的长期约定、接口和经验。默认只返回审核生效且来源有效的内容；include_history 展示候选及历史。读取 source_card_id 可展开原文，知识不授予权限。',query,[]),
-  define('hub_propose_knowledge','提交长期知识候选','从已读获准记忆中提炼一条可长期复用的结论，引用 source_card_id、source_hash 和逐字 source_quote。每条只绑定一个来源，以 topic 标识同一仓库主题。候选须独立审核，生成模型和 Token 用量仅为作者报告。',
+  define('hub_propose_knowledge','提交长期知识候选','从已读获准记忆中提炼一条可长期复用的结论，引用主来源和最多七个 additional_sources，每项包含 source_card_id、source_hash 和逐字 source_quote。所有来源的读取权限同时适用；候选须独立审核，生成模型和 Token 用量仅为作者报告。',
     {repository_id:id,source_card_id:id,source_hash:{type:'string',pattern:'^[a-f0-9]{64}$'},source_quote:string(8,1200),
       topic:{type:'string',pattern:'^[a-z0-9][a-z0-9._/-]{0,119}$'},kind:{type:'string',enum:['constraint','decision','interface','lesson','pitfall']},
-      title:string(1,200),body:string(10,2000),reason:string(10,1000),generation},
+      title:string(1,200),body:string(10,2000),reason:string(10,1000),generation,
+      additional_sources:{type:'array',maxItems:7,items:{type:'object',properties:{source_card_id:id,
+        source_hash:{type:'string',pattern:'^[a-f0-9]{64}$'},source_quote:string(8,1200)},
+        required:['source_card_id','source_hash','source_quote'],additionalProperties:false}}},
     ['source_card_id','source_hash','source_quote','topic','kind','title','body','reason'],'tasks:write'),
   define('hub_decide_knowledge','审核长期知识','有 tasks:publish 且能读来源者审核候选；作者不能独立批准，超管自审需写 override_reason。同主题替换须提供 replaces_id 和 replaces_version；过期来源拒绝激活。',
     {repository_id:id,fact_id:id,expected_version:{type:'integer',minimum:1},
@@ -28,6 +31,8 @@ const definitions=[
       replaces_id:id,replaces_version:{type:'integer',minimum:1}},['fact_id','expected_version','state','reason'],'tasks:publish'),
 ];
 function valid(value,schema){
+  if(schema.type==='array')return Array.isArray(value) && value.length>=(schema.minItems??0) && value.length<=(schema.maxItems??100) &&
+    (!schema.uniqueItems || new Set(value).size===value.length) && value.every(item=>valid(item,schema.items));
   if(schema.type==='object')return value && typeof value==='object' && !Array.isArray(value) &&
     Object.keys(value).every(key=>Object.hasOwn(schema.properties,key) && valid(value[key],schema.properties[key])) &&
     (schema.required || []).every(key=>Object.hasOwn(value,key));
@@ -49,4 +54,4 @@ function request(name,args,projectId,repositoryId,caps){
   return def.cap?{method:'POST',path:base+(fact_id?`/${fact_id}/decisions`:''),body,operation_id}:
     {method:'GET',path:base+'?'+new URLSearchParams(body)};
 }
-module.exports={tools,request};
+module.exports={tools,request,valid};

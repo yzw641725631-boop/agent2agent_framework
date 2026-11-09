@@ -204,7 +204,8 @@ def status(db, project_id, repository_id=None):
     queue = dict(db.execute(jobs.group_by(MemoryJob.status)).all())
     from .models import EmbeddingJob, MemoryFact
     fact_query = knowledge.base_query(project_id, repository_id).where(
-        MemoryFact.status == "active", func.hub.memory_card_current(MemoryFact.source_card_id))
+        MemoryFact.status == "active",
+        func.hub.knowledge_sources_current(MemoryFact.source_card_id, MemoryFact.additional_sources))
     card_coverage = semantic.coverage(db, base_query(project_id, repository_id).where(lifecycle_expression() == "active"),
                                       MemoryCard, "card")
     fact_coverage = semantic.coverage(db, fact_query, MemoryFact, "fact")

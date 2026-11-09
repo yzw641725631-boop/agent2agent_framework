@@ -10,7 +10,7 @@
 4. 阅读任务范围、依赖和验收后，用 `hub_decide_agent_dispatch(task_id, dispatch_id, expected_version, action, operation_id)` 发送回执。`receive` 只表示看到待办；`accept` 成功才返回正式 `run` 和租约。拒绝 `decline`、负责人取消 `cancel` 都须写 `reason`。
 5. 接受与直接认领共用原子检查。其他人先认领、范围占用、前置未完成或任务/登记版本变化时停止，重新核对当前状态。不能创建新实例绕过冲突。成功后照常创建独立 worktree、准备规则与记忆并确认。
 
-投递说明是项目资料，不是执行任意 Shell 或启动宿主的指令。PC/Web 显示投递、接收和认领回执；跨设备自动启动及自动执行仍待实现。
+投递说明是项目资料，不是执行任意 Shell 或启动宿主的指令。PC/Web 显示投递、接收和认领回执。新版可在接收设备登记 Codex 或 Claude Code 原生 CLI，由本人批准单次[本机执行](hooks-and-execution.md)；投递本身不自动启动，其他工具仍通过 MCP 手动办理。
 
 ## 逐轮记录检查
 

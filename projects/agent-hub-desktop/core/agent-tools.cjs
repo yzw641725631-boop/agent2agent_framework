@@ -8,6 +8,7 @@ const definitions=[
     {instance_id:id,repository_id:id,name:{type:'string',minLength:1,maxLength:100},
       harness:{type:'string',enum:['human','claude-code','codex','cursor','qoder','workbuddy','codebuddy','trae']},
       roles:{type:'array',minItems:1,maxItems:4,uniqueItems:true,items:{type:'string',enum:['project-manager','architect','designer','developer']}},
+      role_profiles:{type:'array',maxItems:32,uniqueItems:true,items:{type:'string',pattern:'^[a-z][a-z0-9-]{0,63}$'}},
       expected_version:{type:'integer',minimum:0},enabled:{type:'boolean'}},['instance_id','name','harness','roles','expected_version'],'agents','recipient'],
   ['hub_list_agents','列出可投递执行者','负责人查看当前获准的仓库执行者，其他人只看本设备登记。最近活动不代表模型正在运行。',
     {repository_id:id,...page},[],'agents',null],
@@ -44,6 +45,7 @@ function validate(name,args){
       s.type==='string' && (typeof args[k]!=='string' || s.enum && !s.enum.includes(args[k]) || args[k].length<(s.minLength || 0) || args[k].length>(s.maxLength || 1000)) ||
       s.type==='boolean' && typeof args[k]!=='boolean')) ||
     args.roles!==undefined && (!Array.isArray(args.roles) || !args.roles.length || args.roles.length>4 || new Set(args.roles).size!==args.roles.length || args.roles.some(r=>!definitions[0][3].roles.items.enum.includes(r))) ||
+    args.role_profiles!==undefined && (!Array.isArray(args.role_profiles) || args.role_profiles.length>32 || new Set(args.role_profiles).size!==args.role_profiles.length || args.role_profiles.some(r=>typeof r!=='string' || !/^[a-z][a-z0-9-]{0,63}$/.test(r))) ||
     ['decline','cancel'].includes(args.action) && !args.reason?.trim())throw new HubError('INVALID_REQUEST');
   return d;
 }

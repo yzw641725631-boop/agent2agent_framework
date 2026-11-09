@@ -33,7 +33,7 @@ def credential(hub, job_id):
     return "co1_" + hmac.digest(hub.secret.encode(), b"closeout-upload-v1\0" + str(job_id).encode(), "sha256").hex()
 
 
-def create(hub, db, *, user_id=None, project_id=None, device_id=None, reason, repository_ids=None):
+def create(hub, db, *, user_id=None, project_id=None, device_id=None, reason, repository_ids=None, account_owner=False):
     """Called before removing authorization, under the subject's coordination lock."""
     statements = []
     for model in (Grant, TaskRun):
@@ -44,7 +44,10 @@ def create(hub, db, *, user_id=None, project_id=None, device_id=None, reason, re
         statements.append(statement)
     statement = statements[0].union(statements[1])
     jobs = []
-    for pid, uid, did in db.execute(statement):
+    scopes = db.execute(text("SELECT * FROM hub.account_closeout_scopes(:uid)"), {"uid": user_id}) if account_owner else db.execute(statement)
+    for pid, uid, did in scopes:
+        if account_owner and (project_id is not None and pid != project_id or device_id is not None and did != device_id):
+            continue
         user, device = db.get(User, uid), db.get(Device, did)
         grant_ids = [str(value) for value in db.scalars(select(Grant.id).where(
             Grant.project_id == pid, Grant.user_id == uid, Grant.device_id == did))]

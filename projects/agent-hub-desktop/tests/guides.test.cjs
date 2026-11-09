@@ -1,0 +1,27 @@
+'use strict';
+const test=require('node:test'),assert=require('node:assert/strict');
+const {tools,request}=require('../core/guide-tools.cjs');
+const {dispatch}=require('../core/mcp.cjs');
+const id='610d71dd-bdbc-46fd-85c7-e18a305c01a5',repo='69f8cc84-b7c2-4692-8fd2-74accdd1a1cc';
+test('guide routes pin repository on reads and mutations and keep reviewer and generator permissions distinct',()=>{
+  const b={projectId:id,repositoryId:repo};
+  assert.ok(tools([]).some(t=>t.name==='hub_list_guides'));
+  assert.ok(!tools([]).some(t=>t.name==='hub_claim_guide'));
+  const r=request('hub_read_guide',{job_id:id},b,[]);
+  assert.equal(r.path,`/api/projects/${id}/guides/${id}?repository_id=${repo}`);
+  assert.throws(()=>request('hub_claim_guide',{job_id:id,instance_id:id,expected_version:1,operation_id:id},b,[]),{code:'CAPABILITY_REQUIRED'});
+  assert.throws(()=>request('hub_read_guide',{job_id:'../../secrets'},b,[]),{code:'INVALID_REQUEST'});
+  const body={job_id:id,expected_version:1,draft_version:1,gate:'product',approved:true,reason:'已对照真实版本检查完整操作步骤。',operation_id:id};
+  assert.throws(()=>request('hub_decide_guide',body,b,['tasks:test']),{code:'CAPABILITY_REQUIRED'});
+  assert.equal(request('hub_decide_guide',{...body,gate:'test'},b,['tasks:test']).body.gate,'test');
+  assert.equal(request('hub_decide_guide',body,b,['tasks:publish']).path,`/api/projects/${id}/guides/${id}/decisions?repository_id=${repo}`);
+});
+test('project MCP advertises current guide tools and invokes their actual names',async()=>{
+  const meta={capabilities:['guides:read']};
+  const invoke=async(name)=>name==='metadata'?meta:{name};
+  const listed=await dispatch({jsonrpc:'2.0',id:1,method:'tools/list'},invoke);
+  assert.ok(listed.result.tools.some(t=>t.name==='hub_read_guide'));
+  assert.ok(!listed.result.tools.some(t=>t.name==='hub_complete_guide'));
+  const read=await dispatch({jsonrpc:'2.0',id:2,method:'tools/call',params:{name:'hub_read_guide',arguments:{job_id:id}}},invoke);
+  assert.equal(read.result.structuredContent.name,'hub_read_guide');
+});

@@ -6,7 +6,7 @@ const events=['UserPromptSubmit','Stop','Interrupt'];
 const samePath=(a,b)=>process.platform==='win32'?path.resolve(a).toLowerCase()===path.resolve(b).toLowerCase():path.resolve(a)===path.resolve(b);
 function sanitize(input,event,harness){
   if(!input || typeof input!=='object' || Array.isArray(input) || !events.includes(event) ||
-    !['codex','claude-code'].includes(harness) || harness==='claude-code' && event==='Interrupt' ||
+    !['codex','claude-code','cursor','qoder','codebuddy'].includes(harness) || harness!=='codex' && event==='Interrupt' ||
     input.hook_event_name!==undefined && input.hook_event_name!==event ||
     typeof input.session_id!=='string' || !input.session_id.length || input.session_id.length>200 || /[\x00-\x1f]/.test(input.session_id) ||
     typeof input.cwd!=='string' || input.cwd.length>4096 || !path.isAbsolute(input.cwd) ||

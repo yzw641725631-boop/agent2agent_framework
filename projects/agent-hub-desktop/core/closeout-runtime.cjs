@@ -20,6 +20,7 @@ class CloseoutRuntime{
     return generation && (!version || !binding.repositoryVersion || binding.repositoryVersion<=version) && binding.projectId===job.project_id &&
       (job.scope.repository_ids===null || job.scope.repository_ids.includes(binding.repositoryId));}
   options(binding){return {workspace:binding.workspace,name:Object.keys(this.c.configuration(binding).mcpServers)[0],
+    hookDirectory:path.join(this.c.directory,'hook-installations',binding.id),
     installed:binding.installed,receiptDirectories:['setup-projects','assembled-projects','task-worktrees','framework-deployments'].map(dir=>path.join(this.c.directory,dir,binding.id))};}
   publicJob(job){return {id:job.id,project_id:job.project_id,state:job.local_state || job.state,
     error:job.error || null,reason:job.reason,expires_at:job.expires_at,

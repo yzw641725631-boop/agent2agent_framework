@@ -8,13 +8,22 @@ const taskId=crypto.randomUUID(),projectId=crypto.randomUUID(),operationId=crypt
 const all=['tasks:publish','tasks:claim','tasks:write','tasks:review','tasks:test','logs:read'];
 
 test('task discovery separates read, claim, log and review permissions',async()=>{
-  assert.deepEqual(tasks.tools([]).map(t=>t.name),['hub_preview_turn_hooks','hub_list_tasks','hub_get_task','hub_list_worklogs','hub_read_worklog','hub_get_policy','hub_list_local_work']);
+  assert.deepEqual(tasks.tools([]).map(t=>t.name),['hub_preview_turn_hooks','hub_list_tasks','hub_get_task','hub_list_worklogs','hub_read_worklog','hub_get_collaboration','hub_get_policy','hub_list_local_work']);
   assert.ok(!tasks.tools(['tasks:claim']).some(t=>t.name==='hub_claim_task'));
   assert.ok(!tasks.tools(['tasks:review']).some(t=>t.name==='hub_decide_task'));
   assert.ok(tasks.tools(['tasks:review','logs:read']).some(t=>t.name==='hub_decide_task'));
   const response=await dispatch({jsonrpc:'2.0',id:1,method:'tools/list'},async()=>({capabilities:['tasks:write']}));
   assert.ok(response.result.tools.some(t=>t.name==='hub_write_worklog'));
   assert.ok(!response.result.tools.some(t=>t.name==='hub_claim_task'));
+});
+
+test('collaboration configuration uses its fixed PUT route and respects publisher permission',()=>{
+  const args={expected_version:0,profiles:[],change_reason:'Explicit project workflow configuration',operation_id:operationId};
+  const request=tasks.request('hub_configure_collaboration',args,all,projectId);
+  assert.equal(request.method,'PUT');assert.equal(request.path,`/api/projects/${projectId}/collaboration`);
+  assert.equal(request.body.expected_version,0);
+  assert.throws(()=>tasks.request('hub_configure_collaboration',args,['tasks:write'],projectId),{code:'CAPABILITY_REQUIRED'});
+  assert.ok(!tasks.tools(['tasks:write']).some(t=>t.name==='hub_set_task_workflow'));
 });
 
 test('fixed task routes reject path injection, unknown fields and unapproved gates',()=>{

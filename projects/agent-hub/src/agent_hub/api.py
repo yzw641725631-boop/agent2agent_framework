@@ -11,12 +11,13 @@ from fastapi import Depends, FastAPI, Query, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
-from sqlalchemy import delete, select, text, update
+from sqlalchemy import delete, func, select, text, update
 from sqlalchemy.exc import DBAPIError
 from sqlalchemy.exc import TimeoutError as PoolTimeout
 
 from . import (
     __version__,
+    accounts,
     agent_dispatch,
     closeouts,
     documents,
@@ -259,6 +260,11 @@ def create_app(
 
     closeouts.install(app, hub, actor, token, proof, db_dependency)
     agent_dispatch.install(app, hub, actor, mutate, db_dependency)
+    accounts.install(app, hub, actor, proof, mutate, db_dependency, security_sessions)
+    from . import insights
+    insights.install(app, hub, actor, mutate, semantic_query, db_dependency, security_sessions)
+    from . import guides
+    guides.install(app, hub, actor, mutate, db_dependency)
 
     @app.get("/healthz")
     def health():
@@ -845,7 +851,34 @@ def create_app(
     @app.get("/api/projects/{project_id}/roles")
     def project_roles(project_id: uuid.UUID, request: Request, db: DB, language: str = Query("zh", pattern="^(zh|en)$")):
         hub.project(db, actor(request, db), project_id)
-        return roles.catalog(language)
+        from . import collaboration
+        payload = roles.catalog(language)
+        payload.pop("content_hash")
+        payload["profiles"] = collaboration.current(db, project_id)["profiles"]
+        return {**payload, "content_hash": roles.digest(payload)}
+
+    @app.get("/api/projects/{project_id}/collaboration")
+    def collaboration_settings(project_id: uuid.UUID, request: Request, db: DB):
+        from . import collaboration
+        hub.project(db, actor(request, db), project_id)
+        return collaboration.current(db, project_id)
+
+    @app.put("/api/projects/{project_id}/collaboration")
+    def update_collaboration(project_id: uuid.UUID, body: S.CollaborationInput, request: Request, db: DB):
+        from . import collaboration
+        identity = actor(request, db)
+        hub.project(db, identity, project_id, "tasks:publish")
+        return mutate(request, db, identity, body,
+                      lambda: collaboration.publish(hub, db, identity, project_id, body, request.state.request_id))
+
+    @app.post("/api/projects/{project_id}/tasks/{task_id}/workflow")
+    def task_workflow(project_id: uuid.UUID, task_id: uuid.UUID, body: S.TaskWorkflowChange, request: Request, db: DB):
+        from . import collaboration
+        identity = actor(request, db)
+        hub.project(db, identity, project_id, "tasks:publish")
+        task = tasks.get_task(db, project_id, task_id)
+        return mutate(request, db, identity, body,
+                      lambda: collaboration.change_workflow(hub, db, identity, task, body, request.state.request_id))
 
     @app.get("/api/projects/{project_id}/policy")
     def project_policy(project_id: uuid.UUID, request: Request, db: DB):
@@ -892,6 +925,7 @@ def create_app(
         task, run = tasks.live_run(db, identity, project_id, task_id, S.LeaseInput(run_id=run_id, lease_epoch=lease_epoch))
         row, _ = work_policy.require_context(db, identity, task, run, context_id)
         return {"can_continue": True, "context_id": str(row.id), "content_hash": row.content_hash,
+                "usage_budget_open": bool(db.scalar(select(func.hub.usage_budget_open(project_id)))),
                 "memory": memory.status(db, project_id, task.repository_id)}
 
     @app.get("/api/projects/{project_id}/memory/knowledge")

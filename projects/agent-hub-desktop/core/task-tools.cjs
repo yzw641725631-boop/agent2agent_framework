@@ -8,10 +8,10 @@ const lease={run_id:id,lease_epoch:epoch};
 const scope={type:'object',properties:{repository:{type:'string',minLength:1,maxLength:200},
   platform:{type:'string',minLength:1,maxLength:80},paths:{type:'array',minItems:1,maxItems:40,items:{type:'string',maxLength:800}}},
   required:['repository','platform','paths'],additionalProperties:false};
-function define(name,title,description,properties,required,{route='',write=false,cap=null}={}){
+function define(name,title,description,properties,required,{route='',write=false,cap=null,method=null}={}){
   return {name,title,description,inputSchema:{type:'object',properties:{...properties,...(write?{operation_id:id}:{})},
     required:[...required,...(write?['operation_id']:[])],additionalProperties:false},
-    annotations:{readOnlyHint:!write,...(write?{destructiveHint:false,idempotentHint:true}:{})},route,write,cap};
+    annotations:{readOnlyHint:!write,...(write?{destructiveHint:false,idempotentHint:true}:{})},route,write,cap,method};
 }
 const definitions=[
   define('hub_bind_work_session','绑定本宿主对话','使用 UserPromptSubmit 钩子给出的 session_key，将已准备并确认的运行绑定到本对话。相同目录中的其他对话不会继承本运行。',
@@ -34,7 +34,21 @@ const definitions=[
     {task_id:id,worklog_id:id},['task_id','worklog_id'],{route:'@local',write:true,cap:'recovery'}),
   define('hub_create_task','拆解并创建任务','创建草稿任务，parent_id 表示层级，depends_on 表示须先完成的同项目任务。须完成准入；认领时检查依赖及同仓库代码范围冲突。',
     {parent_id:id,repository_id:id,depends_on:{type:'array',maxItems:40,uniqueItems:true,items:id},title:{type:'string',minLength:1,maxLength:200},description:{type:'string',minLength:1,maxLength:8000},
-      acceptance:{type:'string',minLength:1,maxLength:8000},scope,execution_role:{type:'string',enum:['project-manager','architect','designer','developer'],description:'任务负责职业，默认 developer；角色不授予权限。'},execution_mode:{type:'string',enum:['observed','declaration'],description:'默认 observed 受管代码任务；declaration 仅人工资料记录，不提供代码证据保证。'}},['title','description','acceptance','scope'],{write:true,cap:'tasks:publish'}),
+      acceptance:{type:'string',minLength:1,maxLength:8000},scope,role_profile:{type:'string',pattern:'^[a-z][a-z0-9-]{0,63}$'},
+      workflow:{type:'string',enum:['standard','compact','strict']},workflow_reason:{type:'string',maxLength:1000,description:'选择非标准流程须明确至少 10 字的原因；紧凑流程须项目配置允许。'},
+      documentation:{type:'object',properties:{kind:{type:'string',enum:['none','user','api','operations']},module:{type:'string',maxLength:200},reason:{type:'string',maxLength:1000}},additionalProperties:false},
+      execution_role:{type:'string',enum:['project-manager','architect','designer','developer'],description:'任务负责职业，默认 developer；角色不授予权限。'},execution_mode:{type:'string',enum:['observed','declaration'],description:'默认 observed 受管代码任务；declaration 仅人工资料记录，不提供代码证据保证。'}},['title','description','acceptance','scope'],{write:true,cap:'tasks:publish'}),
+  define('hub_get_collaboration','读取项目岗位与流程','读取自定义岗位及是否允许紧凑准入。职业说明不扩大权限、禁改范围或独立评审资格。',{},[],{route:'@collaboration'}),
+  define('hub_configure_collaboration','配置项目岗位与流程','有权负责人发布不可变修订。提供完整 profiles 列表；变更岗位职责会使相关开工上下文失效，重新准备后继续。',
+    {expected_version:{type:'integer',minimum:0},allow_compact:{type:'boolean'},require_guides:{type:'boolean'},change_reason:{type:'string',minLength:10,maxLength:1000},
+      profiles:{type:'array',maxItems:32,items:{type:'object',properties:{key:{type:'string',pattern:'^[a-z][a-z0-9-]{0,63}$'},name:{type:'string',minLength:1,maxLength:100},
+        base_role:{type:'string',enum:['project-manager','architect','designer','developer']},enabled:{type:'boolean'},
+        responsibilities:{type:'array',minItems:1,maxItems:12,items:{type:'string',minLength:1,maxLength:500}},outputs:{type:'array',minItems:1,maxItems:12,items:{type:'string',minLength:1,maxLength:500}}},
+        required:['key','name','base_role','responsibilities','outputs'],additionalProperties:false}}},
+    ['expected_version','profiles','change_reason'],{route:'@collaboration',method:'PUT',write:true,cap:'tasks:publish'}),
+  define('hub_set_task_workflow','调整任务流程','先释放正在执行的任务。执行过的任务只能升级流程，升级后重新准入并保留旧证据。紧凑流程保留需求、可行性、独立评审、测试与发布。',
+    {task_id:id,expected_version:epoch,workflow:{type:'string',enum:['standard','compact','strict']},reason:{type:'string',minLength:10,maxLength:1000}},
+    ['task_id','expected_version','workflow','reason'],{route:':task/workflow',write:true,cap:'tasks:publish'}),
   define('hub_get_policy','读取项目规则','读取不可覆盖的基础规则和当前项目规则版本。规则确认不等于文件系统隔离。',{},[],{route:'@policy'}),
   define('hub_prepare_work','准备开工规则','认领后先调用：核验干净 Git 工程，准备本执行者的规则、焦点与最近获准交接摘要。返回 context ID、哈希和全部规则。',
     {task_id:id,...lease},['task_id','run_id','lease_epoch'],{route:':task/contexts',write:true,cap:'tasks:write'}),
@@ -78,7 +92,7 @@ function allowed(def,caps,args){
   }
   return caps.includes(def.cap) && (def.name!=='hub_claim_task' || caps.includes('tasks:write'));
 }
-function tools(caps){return definitions.filter(d=>allowed(d,caps)).map(({route,write,cap,...tool})=>tool);}
+function tools(caps){return definitions.filter(d=>allowed(d,caps)).map(({route,write,cap,method,...tool})=>tool);}
 function validate(name,args,{internal=false}={}){
   const def=definitions.find(d=>d.name===name);
   if(!def)return null;
@@ -90,7 +104,7 @@ function validate(name,args,{internal=false}={}){
     name==='hub_preview_turn_hooks' && !['codex','claude-code'].includes(args.harness) ||
     args.depends_on!==undefined && (!Array.isArray(args.depends_on) || args.depends_on.length>40 || args.depends_on.some(v=>!uuid(v)) || new Set(args.depends_on).size!==args.depends_on.length) ||
     ['offset','limit','lease_epoch','expected_version'].some(k=>args[k]!==undefined && (!Number.isSafeInteger(args[k]) ||
-      args[k]<(k==='offset'?0:1) || (k==='offset' && args[k]>100000) || (k==='limit' && args[k]>50))))throw new HubError('INVALID_REQUEST');
+      args[k]<(k==='offset' || k==='expected_version' && name==='hub_configure_collaboration'?0:1) || (k==='offset' && args[k]>100000) || (k==='limit' && args[k]>50))))throw new HubError('INVALID_REQUEST');
   return def;
 }
 function request(name,args,caps,projectId,{internal=false}={}){
@@ -101,8 +115,8 @@ function request(name,args,caps,projectId,{internal=false}={}){
   if(name==='hub_read_worklog')delete body.worklog_id;
   if(name==='hub_validate_work_context')delete body.context_id;
   if(route==='@local')throw new HubError('WORK_RUNTIME_REQUIRED');
-  const base=route==='@policy'?`/api/projects/${projectId}/policy`:`/api/projects/${projectId}/tasks${route?'/'+route:''}`;
+  const base=['@policy','@collaboration'].includes(route)?`/api/projects/${projectId}/${route.slice(1)}`:`/api/projects/${projectId}/tasks${route?'/'+route:''}`;
   const query=!def.write && Object.keys(body).length?'?'+new URLSearchParams(body).toString():'';
-  return {method:def.write?'POST':'GET',path:base+query,body:def.write?body:undefined,operation_id};
+  return {method:def.method || (def.write?'POST':'GET'),path:base+query,body:def.write?body:undefined,operation_id};
 }
 module.exports={tools,request,validate};

@@ -7,7 +7,7 @@ from datetime import timedelta
 
 from sqlalchemy import delete, func, select, text
 
-from . import repositories, roles, work_policy
+from . import collaboration, repositories, roles, work_policy
 from .models import (
     CodeDelivery,
     ProjectProgress,
@@ -29,6 +29,9 @@ def task_view(t):
             "repository_id": str(t.repository_id) if t.repository_id else None,
             "title": t.title, "description": t.description, "acceptance": t.acceptance, "scope": t.scope,
             "execution_mode": t.execution_mode, "execution_role": t.execution_role,
+            "role_profile": t.role_profile, "workflow": t.workflow,
+            "workflow_reason": t.workflow_reason, "workflow_policy": t.workflow_policy,
+            "documentation": t.documentation,
             "status": t.status, "admission_step": t.admission_step, "version": t.version,
             "lease_epoch": t.lease_epoch, "active_run_id": str(t.active_run_id) if t.active_run_id else None,
             "lease_until": t.lease_until.isoformat() if t.lease_until else None,
@@ -184,7 +187,7 @@ def emit(hub, db, actor, task, kind, request_id, *, run_id=None, worklog_id=None
     label = {"task.created": "任务已创建", "task.claimed": "任务已认领", "task.released": "认领已释放",
              "task.submitted": "任务待评审", "worklog.recorded": "工作日志已保存", "task.gate_decided": "流程已推进",
              "work.snapshot_saved": "代码检查点已备份", "code.delivery_verified": "代码交付已核验",
-             "task.dependencies_changed": "任务前置依赖已更新"}[kind]
+             "task.dependencies_changed": "任务前置依赖已更新", "task.workflow_changed": "任务流程已调整"}[kind]
     event = ProjectProgress(project_id=task.project_id, author_id=actor.user.id, device_id=actor.device.id,
                             repository_id=task.repository_id,
                             status="completed" if task.status == "completed" else "checkpoint",
@@ -211,6 +214,7 @@ def create(hub, db, actor, project_id, body, request_id):
             raise HubError("TASK_PARENT_COMPLETED", 409)
     task = Task(project_id=project_id, created_by=actor.user.id,
                 **body.model_dump(mode="python", exclude={"depends_on"}))
+    collaboration.validate_new_task(db, task)
     db.add(task)
     db.flush()
     set_dependencies(db, task, body.depends_on)
@@ -219,13 +223,16 @@ def create(hub, db, actor, project_id, body, request_id):
 
 
 def claim(hub, db, actor, project_id, task_id, body, request_id):
+    from .insights import require_budget
     hub.project(db, actor, project_id, "tasks:claim")
     hub.project(db, actor, project_id, "tasks:write")
     task = get_task(db, project_id, task_id)
+    require_budget(db, project_id)
     if task.repository_id:
         repositories.require(db, project_id, task.repository_id, "code:write")
     if task.status not in {"ready", "in_progress"}:
         raise HubError("TASK_NOT_CLAIMABLE", 409, task_status=task.status)
+    collaboration.task_role(db, task)
     if not dependencies_satisfied(db, task):
         raise HubError("TASK_DEPENDENCIES_INCOMPLETE", 409)
     conflicts = scope_conflicts(db, task)
@@ -363,7 +370,20 @@ def submit(hub, db, actor, project_id, task_id, body, request_id):
     task.active_run_id, task.lease_until = None, None
     run.state, run.ended_at = "submitted", now()
     emit(hub, db, actor, task, "task.submitted", request_id, run_id=run.id, worklog_id=latest.id)
-    return task_view(task)
+    result = task_view(task)
+    if task.documentation.get("kind", "none") != "none":
+        from .guides import GuideJob
+        from .guides import view as guide_view
+        db.flush()  # Queue trigger freezes jobs before returning instructions to this same conversation.
+        jobs = db.scalars(select(GuideJob).where(GuideJob.task_id == task.id,
+            GuideJob.target_user_id == actor.user.id, GuideJob.target_device_id == actor.device.id,
+            GuideJob.instance_id == run.instance_id, GuideJob.state.in_(["queued", "running"])))
+        result["guide_generation"] = {"items": [guide_view(db, job) for job in jobs],
+            "instructions": "Development lease ended. Continue in this same instance: claim each queued guide, "
+            "read its frozen input and submit an accurate guide through MCP. Do not edit code or claim successful "
+            "verification without evidence. If blocked, leave a durable reason for reassignment. "
+            "Other contributors have independent guide jobs; never claim theirs."}
+    return result
 
 
 def decide(hub, db, actor, project_id, task_id, body, request_id):
@@ -373,13 +393,14 @@ def decide(hub, db, actor, project_id, task_id, body, request_id):
     check_version(task, body.expected_version)
     run_id = None
     if body.gate in ADMISSION:
-        if task.status != "draft" or task.admission_step >= 3 or body.gate != ADMISSION[task.admission_step]:
+        admission = collaboration.admission(task)
+        if task.status != "draft" or task.admission_step >= len(admission) or body.gate != admission[task.admission_step]:
             raise HubError("TASK_GATE_ORDER_INVALID", 409)
         if body.worklog_id or body.override_reason:
             raise HubError("TASK_GATE_INPUT_INVALID", 422)
         if body.approved:
             task.admission_step += 1
-            if task.admission_step == 3:
+            if task.admission_step == len(admission):
                 task.status = "ready"
     else:
         hub.project(db, actor, project_id, "logs:read")
@@ -393,10 +414,15 @@ def decide(hub, db, actor, project_id, task_id, body, request_id):
         elif body.override_reason:
             raise HubError("TASK_OVERRIDE_NOT_APPLICABLE", 422)
         if body.approved and body.gate == "release":
+            collaboration.check_release(db, task)
+            from . import guides
+            guides.check_release(db, task)
             if not db.scalar(select(func.hub.task_children_completed(project_id, task_id))):
                 raise HubError("TASK_CHILDREN_INCOMPLETE", 409)
         task.status = ({"review": "testing", "test": "release_ready", "release": "completed"}[body.gate]
                        if body.approved else "ready")
+        if body.approved and body.gate == "release":
+            guides.publish_for_release(hub, db, actor, task, request_id)
     run_id = uuid.uuid4()
     db.add(TaskRun(id=run_id, project_id=project_id, task_id=task_id, user_id=actor.user.id,
                    device_id=actor.device.id, instance_id=body.instance_id, harness=body.harness,

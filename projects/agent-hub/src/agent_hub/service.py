@@ -27,7 +27,7 @@ from .security import HubError, digest, hash_password, now, payload_hash, verify
 from .site import SiteSettings
 
 MEMBER_CAPS = {"project:read", "documents:read", "documents:propose", "tasks:claim", "tasks:write",
-               "tasks:review", "tasks:test", "logs:read"}
+               "tasks:review", "tasks:test", "logs:read", "guides:read"}
 ADMIN_CAPS = MEMBER_CAPS | {
     "tasks:publish",
     "members:manage",
@@ -779,13 +779,15 @@ class Hub:
         self.audit(db, actor.user.id, "project.member_restored", user_id, request_id, project_id)
         return {"status": "active", "grant_required": True}
 
-    def revoke_device(self, db, actor, device_id, request_id):
-        require_root(actor)
+    def revoke_device(self, db, actor, device_id, request_id, *, own_only=False):
+        if not own_only:
+            require_root(actor)
         device = db.get(Device, device_id)
-        if not device or device.id == actor.device.id:
+        if not device or device.id == actor.device.id or own_only and device.user_id != actor.user.id:
             raise HubError("DEVICE_REVOCATION_NOT_ALLOWED", 409)
         from . import closeouts
-        jobs = closeouts.create(self, db, device_id=device.id, reason="device_revoked")
+        jobs = closeouts.create(self, db, user_id=device.user_id if own_only else None,
+            device_id=device.id, reason="device_revoked", account_owner=own_only)
         device.status, device.epoch = "revoked", device.epoch + 1
         self.revoke_grants(db, device_id=device.id)
         db.add(Outbox(kind="device.revoked", payload={"device_id": str(device.id), "epoch": device.epoch}))

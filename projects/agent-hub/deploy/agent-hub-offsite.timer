@@ -1,0 +1,10 @@
+[Unit]
+Description=Agent Hub daily offsite copy
+
+[Timer]
+OnCalendar=*-*-* 04:30:00
+RandomizedDelaySec=600
+Persistent=true
+
+[Install]
+WantedBy=timers.target

@@ -1,0 +1,14 @@
+[Unit]
+Description=Agent Hub encrypted offsite snapshot copy
+After=docker.service network-online.target
+Requires=docker.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/python3 /opt/agent-hub/application/current/deploy/offsite-backup.py
+ExecStopPost=-/usr/bin/python3 /opt/agent-hub/application/current/deploy/offsite-backup.py --cleanup
+UMask=0077
+TimeoutStartSec=3900
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectHome=true

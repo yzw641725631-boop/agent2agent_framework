@@ -84,7 +84,7 @@ async function start(){
       await startSupervisor(process.execPath,directory,{...release,hidden:app.commandLine.hasSwitch('hidden')});
       app.quit();
     }catch(error){
-      restarting=false;controller.draining=false;throw error;
+      restarting=false;controller.draining=false;controller.executions.watch();throw error;
     }
   }
   const sendState=state=>{if(window && !window.isDestroyed())window.webContents.send('hub:state',state);};
@@ -139,6 +139,33 @@ async function start(){
   }
   const actions={
     state:()=>controller.state(),login:data=>controller.login(data),sendEmail:()=>controller.sendEmail(),
+    configureExecution:async data=>{
+      if(!['codex','claude-code'].includes(data.harness))throw new HubError('INVALID_DESKTOP_REQUEST');
+      const selected=await dialog.showOpenDialog(window,{title:'选择本人已安装的原生 CLI 程序',properties:['openFile'],
+        ...(process.platform==='win32'?{filters:[{name:'原生程序',extensions:['exe']}]}:{})});
+      if(selected.canceled)return {cancelled:true};
+      const file=await require('./core/execution-runtime.cjs').fingerprint(selected.filePaths[0]);
+      const approval=await dialog.showMessageBox(window,{type:'question',title:'登记本机执行程序',message:'请确认这是你本人信任的开发工具。',
+        detail:file.file+'\nSHA-256: '+file.sha256+'\n这只登记程序，每次任务启动仍须本人确认。',buttons:['取消','登记程序'],defaultId:0,cancelId:0});
+      if(approval.response!==1)return {cancelled:true};
+      return controller.executions.configure(data.harness,file.file,file.sha256);
+    },
+    previewExecution:data=>controller.invokeProject(controller.binding(data.bindingId),'hub_preview_execution',data.args),
+    approveExecution:async data=>{
+      const entry=controller.executions.entry(data.id),value=controller.executions.publicPreview(entry.value);
+      const result=await dialog.showMessageBox(window,{type:'question',title:'批准本次本机任务',message:'启动你本人设备上的开发工具执行此任务。',
+        detail:`任务：${value.task_id}\n目录：${value.workspace}\n程序：${value.executable.file}\n程序摘要：${value.executable.sha256}\n时限：${value.timeout_seconds} 秒\n只批准本次启动。宿主的正常权限与信任确认继续适用，框架不提供系统级隔离。`,
+        buttons:['取消','批准并启动'],defaultId:0,cancelId:0});
+      if(result.response!==1)return {cancelled:true};
+      await controller.executions.approve(data.id,data.previewHash);
+      return controller.invokeProject(controller.binding(value.binding_id),'hub_start_execution',{approval_id:data.id});
+    },
+    stopExecution:data=>controller.executions.stop(data.id),
+    confirmExecutionStopped:async data=>{
+      const result=await dialog.showMessageBox(window,{type:'question',title:'确认旧执行已停止',message:'请先在本机检查旧的开发工具及其子进程已经结束。',
+        detail:'此按钮记录你本人的确认，不代表程序自动核验了旧进程。确认后才允许再次启动同一项目。',buttons:['取消','我已检查旧执行停止'],defaultId:0,cancelId:0});
+      if(result.response!==1)return {cancelled:true};return controller.executions.confirmStopped(data.id);
+    },
     verifyEmail:data=>controller.verifyEmail(data.code),checkApproval:()=>controller.checkApproval(),
     refresh:()=>controller.refresh(),logout:()=>controller.logout(),
     localWork:()=>{
@@ -165,7 +192,7 @@ async function start(){
       return controller.work.removeExported(data.id);
     },
     taskQuery:data=>{
-      if(!['hub_list_tasks','hub_get_task','hub_list_worklogs','hub_read_worklog','hub_get_memory_status','hub_search_memory','hub_search_knowledge','hub_read_memory_source','hub_get_roles','hub_preview_framework','hub_list_agents','hub_list_agent_dispatches','hub_preview_turn_hooks','hub_get_work_record_status'].includes(data.tool))throw new HubError('INVALID_DESKTOP_REQUEST');
+      if(!['hub_list_guides','hub_read_guide','hub_get_usage','hub_get_collaboration','hub_list_tasks','hub_get_task','hub_list_worklogs','hub_read_worklog','hub_get_memory_status','hub_search_memory','hub_search_knowledge','hub_read_memory_source','hub_get_roles','hub_preview_framework','hub_list_agents','hub_list_agent_dispatches','hub_preview_turn_hooks','hub_get_work_record_status'].includes(data.tool))throw new HubError('INVALID_DESKTOP_REQUEST');
       return controller.invokeProject(controller.binding(data.bindingId),data.tool,data.args || {});
     },
     agentAction:data=>{
@@ -178,6 +205,10 @@ async function start(){
       return {copied:true,installed:false};
     },
     frameworkDeploy:data=>controller.invokeProject(controller.binding(data.bindingId),'hub_install_framework',data.args || {}),
+    hookAction:data=>{
+      if(!require('./core/hook-tools.cjs').validate(data.action,data.args))throw new HubError('INVALID_DESKTOP_REQUEST');
+      return controller.invokeProject(controller.binding(data.bindingId),data.action,data.args);
+    },
     chooseWorkspace:async()=>{
       const result=await dialog.showOpenDialog(window,{title:'选择这个项目的工作目录',properties:['openDirectory']});
       selectedWorkspace=result.canceled?null:result.filePaths[0];return selectedWorkspace;

@@ -16,6 +16,8 @@ const {CloseoutRuntime}=require('./closeout-runtime.cjs');
 const {FrameworkRuntime}=require('./framework-runtime.cjs');
 const {AgentRuntime}=require('./agent-runtime.cjs');
 const {TurnRuntime}=require('./turn-runtime.cjs');
+const {HookRuntime}=require('./hook-runtime.cjs');
+const {ExecutionRuntime}=require('./execution-runtime.cjs');
 const {version}=require('../package.json');
 
 const stopped=new Set(['PROJECT_ACCESS_REVOKED','ACCOUNT_INACTIVE','DEVICE_NOT_ALLOWED','SESSION_REVOKED',
@@ -40,6 +42,8 @@ class Controller extends EventEmitter {
     this.framework=new FrameworkRuntime(this);
     this.agents=new AgentRuntime(this);
     this.turns=new TurnRuntime(this);
+    this.hooks=new HookRuntime(this);
+    this.executions=new ExecutionRuntime(this);
   }
   get profile(){return this.vault.data.profiles[this.vault.data.current] || null;}
   persist(){return this.vault.save();}
@@ -79,7 +83,7 @@ class Controller extends EventEmitter {
       this.scheduleRecovery();
     }
     await this.persist();this.emitState();
-    if(terminal)this.closeouts.schedule();
+    if(terminal){await this.executions.haltProject(projectId,error.code);this.closeouts.schedule();}
   }
   state(){
     const p=this.profile;
@@ -99,8 +103,10 @@ class Controller extends EventEmitter {
         installed:b.installed || null})),
       events:(visible?p?.events || []:[]).slice(-100).reverse(),
       agents:visible?Object.values(p?.agentEndpoints || {}).filter(s=>p.bindings.some(b=>b.id===s.binding_id && b.status==='active')).map(s=>({
-        binding_id:s.binding_id,...s.endpoint,pending_count:s.pending_count || 0,error:s.error || null})):[],
+        binding_id:s.binding_id,...s.endpoint,pending_count:s.pending_count || 0,pending_guides:s.pending_guides || 0,error:s.error || null})):[],
+      executions:visible?this.executions.list():{adapters:[],items:[]},
       workRuns:visible?Object.values(p?.workRuns || {}).map(r=>({task_id:r.task_id,run_id:r.run_id,binding_id:r.binding_id,
+        lease_epoch:r.lease_epoch,harness:r.harness,
         acknowledged:r.acknowledged,policy_version:r.policy.version,stopped:r.stopped || null,
         observation_error:r.observation_error || null,record_status:r.record_status || null,last_activity:r.last_activity})):[],version};
   }
@@ -108,6 +114,7 @@ class Controller extends EventEmitter {
     await this.broker.start();
     await this.setup.restore();
     this.work.start();
+    this.executions.watch();
     this.agents.start();
     this.turns.start();
     this.closeouts.start();
@@ -194,7 +201,7 @@ class Controller extends EventEmitter {
         this.cancelWatch(slot);delete profile.sessions[slot];
       }
     }
-    this.connection='active';this.message='';await this.persist();
+    this.connection='active';this.message='';this.executions.watch();await this.persist();
     await this.setup.claim();
   }
   async refresh(){
@@ -347,9 +354,9 @@ class Controller extends EventEmitter {
     if(this.management.owns(request.binding))return this.management.dispatch(request);
     const b=this.binding(request.binding);
     if(!equalSecret(request.secret,b.secret))throw new HubError('BRIDGE_AUTHENTICATION_FAILED','本机连接认证失败。');
-    if(request.action==='turn_hook'){
+    if(request.action==='turn_hook' || request.action==='lifecycle_hook'){
       if(this.closed || this.draining)throw new HubError('CLIENT_UPDATE_REQUIRED');
-      const operation=this.turns.hook(b,request.args);this.projectOperations.add(operation);
+      const operation=request.action==='lifecycle_hook'?this.hooks.event(b,request.args):this.turns.hook(b,request.args);this.projectOperations.add(operation);
       try{return await operation;}finally{this.projectOperations.delete(operation);}
     }
     const checkVersion=this.updater ? ()=>this.updater.check({fresh:true}) : undefined;
@@ -371,6 +378,10 @@ class Controller extends EventEmitter {
       if(action!=='hub_list_local_work')throw new HubError('PROJECT_CLOSEOUT_REQUIRED',undefined,
         {normal_operations_allowed:false,required_action:'upload_work_then_uninstall',closeout:this.closeouts.status(b)});
     }
+    if(require('./hook-tools.cjs').validate(action,args)){
+      const operation=this.hooks.invoke(b,action,args);this.projectOperations.add(operation);
+      try{return await operation;}finally{this.projectOperations.delete(operation);}
+    }
     if(['hub_preview_framework','hub_install_framework'].includes(action)){
       const operation=this.framework.invoke(b,action,args);this.projectOperations.add(operation);
       try{return await operation;}finally{this.projectOperations.delete(operation);}
@@ -383,6 +394,19 @@ class Controller extends EventEmitter {
     }
     if(b.taskId && (args?.task_id && args.task_id!==b.taskId || args?.run_id && args.run_id!==b.worktreeRunId))
       throw new HubError('TASK_WORKTREE_MISMATCH');
+    if(require('./execution-tools.cjs').validate(action,args)){
+      const operation=(async()=>{
+        const context=await this.invokeProjectRemote(b,'hub_get_project',{});
+        if(action==='hub_execution_status')return {...this.executions.list(),items:this.executions.list().items.filter(r=>r.binding_id===b.id)};
+        if(!context.capabilities.includes('tasks:write'))throw new HubError('CAPABILITY_REQUIRED');
+        if(action==='hub_preview_execution')return this.executions.preview(b,args);
+        if(action==='hub_start_execution')return this.executions.start(b,args.approval_id);
+        const record=this.executions.list().items.find(r=>r.id===args.execution_id && r.binding_id===b.id);
+        if(!record)throw new HubError('EXECUTION_NOT_ACCESSIBLE');
+        return this.executions.stop(record.id);
+      })();
+      this.projectOperations.add(operation);try{return await operation;}finally{this.projectOperations.delete(operation);}
+    }
     if(['hub_register_agent','hub_agent_inbox'].includes(action)){
       const operation=this.agents.invoke(b,action,args);this.projectOperations.add(operation);
       try{return await operation;}finally{this.projectOperations.delete(operation);}
@@ -436,6 +460,7 @@ class Controller extends EventEmitter {
   }
   async drainProjectOperations(){
     this.draining=true;
+    await this.executions.haltAll('CLIENT_UPDATE');
     await this.agents.drain();
     await this.turns.drain();
     await this.closeouts.drain();
@@ -478,6 +503,12 @@ class Controller extends EventEmitter {
       }
       const memoryRequest=require('./memory-tools.cjs').request(action,args,b.projectId,b.repositoryId);
       if(memoryRequest)return await remote.request('GET',memoryRequest.path,undefined,{slot});
+      const insightRequest=require('./insight-tools.cjs').request(action,args,b,context.capabilities);
+      if(insightRequest)return await remote.request(insightRequest.method,insightRequest.path,insightRequest.body,
+        {slot,idempotency:insightRequest.operation_id});
+      const guideRequest=require('./guide-tools.cjs').request(action,args,b,context.capabilities);
+      if(guideRequest)return await remote.request(guideRequest.method,guideRequest.path,guideRequest.body,
+        {slot,idempotency:guideRequest.operation_id});
       const knowledgeRequest=require('./knowledge-tools.cjs').request(action,args,b.projectId,b.repositoryId,context.capabilities);
       if(knowledgeRequest)return await remote.request(knowledgeRequest.method,knowledgeRequest.path,knowledgeRequest.body,
         {slot,idempotency:knowledgeRequest.operation_id});
@@ -634,6 +665,7 @@ class Controller extends EventEmitter {
     // Freeze local access and persist before any network wait; old refreshes cannot repopulate sessions.
     await this.persist();this.emitState();
     if(p){
+      await this.executions.haltAll('SIGNED_OUT');
       for(const binding of p.bindings)await fs.unlink(this.descriptorPath(binding)).catch(error=>{if(error.code!=='ENOENT')complete=false;});
       if(p.management)await fs.unlink(this.descriptorPath(p.management)).catch(error=>{if(error.code!=='ENOENT')complete=false;});
       const revoker=new Remote({...p,sessions},async()=>{},this.transport);
@@ -648,7 +680,7 @@ class Controller extends EventEmitter {
     this.message=complete?'':'本机已退出，部分服务器会话撤销或连接清理未确认。';this.emitState();
     return {serverLogoutComplete:complete};
   }
-  async close(){this.closed=true;this.work.stop();this.cancelRecovery();this.stopWatches();this.remote?.close();await this.closeouts.drain();
+  async close(){this.closed=true;await this.executions.haltAll('DESKTOP_CLOSED');this.work.stop();this.cancelRecovery();this.stopWatches();this.remote?.close();await this.closeouts.drain();
     await this.agents.drain();await this.turns.drain();await Promise.allSettled(this.projectOperations);await this.work.drain();await this.broker.close();await this.vault.pending;}
 }
 module.exports={Controller};

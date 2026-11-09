@@ -152,7 +152,16 @@ def collect(base=BASE, time=None):
               maintenance(name, file, maximum, success))
 
     # Do not turn a one-time operator download into a claim of ongoing redundancy.
-    checks.append({'id': 'offsite:continuous-copy', 'state': 'warning', 'configured': False})
+    if (base / 'offsite.json').exists():
+        def offsite():
+            result = maintenance('agent-hub-offsite', 'last-offsite.json', 36, 'offsite_confirmed')
+            receipt = record(base / 'last-offsite.json')
+            if receipt.get('full_repository_check') is not True:
+                raise ValueError()
+            return {**result, 'configured': True, 'source_snapshot_id': receipt['source_snapshot_id']}
+        check('offsite:continuous-copy', offsite)
+    else:
+        checks.append({'id': 'offsite:continuous-copy', 'state': 'warning', 'configured': False})
     checks.append({'id': 'alerts:external-delivery', 'state': 'warning', 'configured': False})
     return {'schema': 1, 'created_at': time.isoformat(), 'checks': checks,
             'healthy': not any(row['state'] == 'error' for row in checks),

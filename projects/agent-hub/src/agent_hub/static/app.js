@@ -8,7 +8,7 @@ const names = {active:'正常', approved:'已批准', pending:'待审批', pendi
 const caps = {'project:read':'项目资料', 'documents:read':'读取文档', 'documents:propose':'文档提案',
   'tasks:claim':'认领任务', 'tasks:write':'提交进展', 'tasks:publish':'发布任务', 'documents:manage':'管理文档源',
   'tasks:review':'代码评审', 'tasks:test':'测试确认', 'logs:read':'读取共享日志',
-  'repositories:manage':'管理仓库接入',
+  'repositories:manage':'管理仓库接入', 'guides:read':'查阅已发布功能说明',
   'members:manage':'成员管理', 'grants:request':'授权申请', 'audit:read':'项目审计'};
 const osDefault = /Mac/i.test(navigator.platform) ? 'macos' : 'windows';
 const messagesForDocument = code => messages[code] || code;
@@ -196,8 +196,62 @@ class Console {
         await this.enter();
       } else this.pendingDevice();
     })));
-    content.append(h('section',{class:'card'},form),h('p',{class:'footer-note'},'浏览器保存本设备的签名密钥。访问凭证仅保留在当前页面内存中。'));
+    content.append(h('section',{class:'card'},form),h('div',{class:'actions'},
+      button('忘记密码',() => this.recoverAccount('reset')),button('领取邮箱邀请',() => this.recoverAccount('invitation'))),
+      h('p',{class:'footer-note'},'浏览器保存本设备的签名密钥。访问凭证仅保留在当前页面内存中。'));
     this.authLayout(content);
+  }
+  recoverAccount(purpose) {
+    this.client.clear();
+    let challenge;
+    const content = h('div',{class:'auth-form narrow'},h('h1',{},purpose === 'reset' ? '找回账号密码' : '领取邮箱邀请'),
+      h('p',{},purpose === 'reset' ? '通过已验证的绑定邮箱重置。完成后旧会话和项目授权失效，需要重新登录与签发授权；旧设备上的工作按交接流程保留。' :
+        '填写管理员为你创建的登录名和邮箱。设置自己的密码后，再登录并完成设备审批。'));
+    const status = h('p',{class:'hint',role:'status'});
+    const start = h('form',{},field('login','登录名',{...loginOptions}),field('email','绑定邮箱',{type:'email',required:true}));
+    const finish = h('form',{hidden:true},field('code','邮箱验证码',{required:true,pattern:'[0-9]{8}',inputmode:'numeric',autocomplete:'one-time-code'}),
+      field('new_password','新密码',{type:'password',required:true,minlength:12,maxlength:256,autocomplete:'new-password'}));
+    start.append(submit(start,'发送验证码',async data => {
+      challenge = await this.api('POST','/api/auth/account-challenges',{...data,purpose});
+      finish.hidden = false; finish.elements.code.value = '';
+      status.textContent = '如果账号、邮箱及状态符合条件，验证码将发送到绑定邮箱，请等待约 30 秒。有效期至 '+date(challenge.expires_at)+'。';
+    }));
+    finish.append(submit(finish,'验证并设置密码',async data => {
+      if (!challenge) throw new Error('请先发送验证码。');
+      await this.api('POST','/api/auth/account-recovery',{...data,challenge_id:challenge.challenge_id});
+      finish.reset(); this.login('密码已设置，请登录并按提示完成设备验证和授权。');
+    }));
+    content.append(h('section',{class:'card'},start,status,finish),button('返回登录',() => this.login()));
+    this.authLayout(content);
+  }
+  changePassword() {
+    const form = h('form',{},field('current_password','当前密码',{type:'password',required:true,maxlength:256,autocomplete:'current-password'}),
+      field('new_password','新密码',{type:'password',required:true,minlength:12,maxlength:256,autocomplete:'new-password'}));
+    dialog('修改密码','保留当前页面的会话，其他旧会话将退出。',form,'修改密码',async data => {
+      await this.api('POST','/api/me/password',data); form.reset();
+    });
+  }
+  inviteByEmail(administrator = false) {
+    const projectId = this.project?.id;
+    const form = h('form',{},field('login','登录名',{...loginOptions}),field('email','领取邮箱',{type:'email',required:true}));
+    dialog(administrator ? '邮箱邀请管理员' : '邮箱邀请成员',
+      '创建后请告知对方登录名和后台地址，让其点击“领取邮箱邀请”自行设置密码。邀请保留 3 天；设备与项目权限仍需审批。',form,'创建邀请',
+      data => this.api('POST',administrator ? '/api/admin/account-invitations' : `/api/projects/${projectId}/account-invitations`,data));
+  }
+  async invitations(administrator = false) {
+    const base = administrator ? '/api/admin/account-invitations' : `/api/projects/${this.project.id}/account-invitations`;
+    const items = (await this.api('GET',base)).items;
+    const states = {pending:'等待领取',expired:'已过期',closed:'已关闭或领取'};
+    const act = (entry,action) => {
+      const form = h('form',{},field('reason','处理原因',{required:true,minlength:10,maxlength:1000,multiline:true}));
+      dialog(action === 'renew' ? '续发邀请' : '取消邀请','旧验证码将立即失效。续发后仍需本人验证邮箱并完成设备和权限审批。',form,'确认',async data => {
+        await this.api('POST',`${base}/${entry.invitation_id}/actions`,{...data,action}); toast('邀请已更新。');
+      });
+    };
+    const content = table('最近 100 条邀请',['账号','状态','有效期','操作'],items.map(entry => [textPair(entry.login,entry.email),states[entry.state] || entry.state,date(entry.expires_at),
+      entry.can_manage ? h('div',{class:'row-actions'},button('续发',() => act(entry,'renew'),'small'),
+        entry.state !== 'closed' ? button('取消',() => act(entry,'cancel'),'danger small') : null) : '账号已领取或状态不可处理']));
+    dialog('邮箱邀请管理','仅管理当前权限范围内的邀请。',h('form',{},content),'关闭',async () => {});
   }
   pendingDevice() {
     const enrolled = this.client.enrollment;
@@ -243,7 +297,7 @@ class Console {
   }
   shell() {
     modal.close();
-    const navigation = [['overview','工作台'],['projects','项目组与成员'],['repositories','仓库与资料'],['tasks','任务与日志'],['documents','项目文档'],['memory','共享记忆'],
+    const navigation = [['overview','工作台'],['projects','项目组与成员'],['repositories','仓库与资料'],['tasks','任务与日志'],['guides','功能操作说明'],['documents','项目文档'],['memory','共享记忆'],['usage','用量与预算'],
       ...(this.can('members:manage')?[['closeouts','撤权交接']]:[]),...(this.isRoot ? [['users','人员管理'],['devices','设备管理'],['approvals','授权审批'],['settings','系统设置']] : [['devices','我的设备']]),['audit','操作记录']];
     const nav = h('nav',{class:'nav','aria-label':'主要导航'},navigation.map(([key,label]) => button(label,async () => {
       this.currentView = key; this.offset = 0; await this.renderView();
@@ -269,7 +323,7 @@ class Console {
       h('div',{},h('div',{class:'nav-label'},'工作空间'),nav),
       h('div',{class:'sidebar-bottom'},h('strong',{},this.isRoot ? '超级管理员' : this.user.admin_eligible ? '项目管理员' : '项目成员'),h('br'),this.user.login,h('br'),'每次操作都会校验当前授权。')),
       h('section',{class:'workspace'},h('header',{class:'topbar'},h('span',{class:'muted'},'项目协作 / 管理控制台'),h('div',{class:'topbar-right'},picker,
-        h('span',{class:'badge'},this.user.login.slice(0,2).toUpperCase()),button('退出',async () => {
+        h('span',{class:'badge'},this.user.login.slice(0,2).toUpperCase()),button('修改密码',() => this.changePassword(),'quiet small'),button('退出',async () => {
           await this.api('POST','/api/auth/logout',{}); clearTimeout(this.viewTimer); this.renderVersion++; modal.close();
           this.client.clear(); this.user = null; this.project = null; this.login();
         },'quiet small'))),this.body)));
@@ -329,7 +383,7 @@ class Console {
     const projectId = this.project?.id, revision = this.renderVersion;
     const title = this.heading('任务与工作日志','任务状态、认领和流程决定由服务器保存。当前页面每 5 秒刷新。',
       [button('刷新',() => this.renderView()),...(projectId ? [button('项目规则',() => this.openPolicy(projectId)),button('职业职责',() => this.openRoles(projectId))] : []),
-        ...(projectId && this.can('tasks:publish') ? [button('创建任务',() => this.createTask(),'primary')] : [])]);
+        ...(projectId && this.can('tasks:publish') ? [button('岗位与流程',() => this.openCollaboration(projectId)),button('创建任务',() => this.createTask(),'primary')] : [])]);
     if (!projectId) return [title,h('section',{class:'card empty'},'请先选择一个项目。')];
     const base = `/api/projects/${projectId}`, list = h('div',{}), feed = h('div',{}), dispatches = h('div',{}), status = h('p',{class:'hint'});
     let offset = 0, before = '0', busy = false;
@@ -382,7 +436,8 @@ class Console {
     const revision=this.renderVersion;
     const agents=await this.api('GET',`/api/projects/${projectId}/agents?limit=100${task.repository_id?'&repository_id='+task.repository_id:''}`);
     if(this.project?.id!==projectId || this.currentView!=='tasks' || this.renderVersion!==revision)return;
-    const eligible=agents.items.filter(a=>a.enabled && a.repository_id===task.repository_id && a.roles.includes(task.execution_role));
+    const eligible=agents.items.filter(a=>a.enabled && a.repository_id===task.repository_id && a.roles.includes(task.execution_role) &&
+      (!task.role_profile || a.role_profiles?.includes(task.role_profile)));
     if(!eligible.length){toast('没有同仓库、同职业的可投递执行者。请成员在开发工具中登记实例。');return;}
     const form=h('form',{},field('endpoint_id','执行者',{required:true,items:eligible.map(a=>[a.id,`${a.name} · ${a.harness} · ${short(a.device_id)}`])}),
       field('note','投递说明',{required:true,maxlength:1000}));
@@ -394,7 +449,7 @@ class Console {
   }
   async createTask(parentId = null) {
     const projectId = this.project.id;
-    const registry = await this.api('GET',`/api/projects/${projectId}/repositories`);
+    const [registry,collaboration] = await Promise.all([this.api('GET',`/api/projects/${projectId}/repositories`),this.api('GET',`/api/projects/${projectId}/collaboration`)]);
     const repositories = registry.items.filter(repo => repo.status === 'active' && repo.capabilities.includes('code:read'));
     const scoped = registry.repository_mode === 'scoped';
     if (scoped && !repositories.length) throw new Error('请先由超级管理员批准要开发的仓库权限。');
@@ -407,18 +462,73 @@ class Console {
       !scoped && field('platform','目标端',{required:true,maxlength:80,placeholder:'例如 web'}),
       field('execution_mode','记录类型',{items:[['observed','代码任务：须确认规则并采集真实改动'],['declaration','人工资料记录：不提供代码证据保证']]}),
       field('execution_role','任务负责角色',{items:[['developer','开发工程师'],['project-manager','项目经理'],['architect','架构师'],['designer','产品与交互设计']]}),
+      field('role_profile','自定义岗位（须与负责角色对应）',{items:[['','使用基础职业职责'],...collaboration.profiles.filter(p=>p.enabled).map(p=>[p.key,p.name+' · '+p.base_role])]}),
+      field('workflow','任务流程',{items:[['standard','标准：需求 → 设计 → 可行性 → 评审 → 测试 → 发布'],
+        ...(collaboration.allow_compact?[['compact','紧凑：需求 → 可行性 → 评审 → 测试 → 发布']]:[]),['strict','严格：标准流程，另须核验 Git 交付']]}),
+      field('workflow_reason','非标准流程的选择原因（至少 10 字）',{maxlength:1000}),
+      field('guide_kind','是否需要使用说明',{items:[['none','无操作变化，不生成'],['user','界面操作说明'],['api','接口使用说明'],['operations','配置与运维说明']]}),
+      field('guide_module','说明负责的功能或模块（需要说明时必填）',{maxlength:200}),
+      field('guide_reason','不生成说明的原因（项目要求时至少 10 字）',{maxlength:1000}),
       h('label',{},'须先完成的任务 ID（可选，每行一项）',h('textarea',{name:'depends_on',rows:3})),
       h('label',{},'允许修改的相对目录或文件（每行一项）',h('textarea',{name:'paths',required:true,rows:3,placeholder:'src\ntests'}))));
     dialog(parentId ? '拆解子任务' : '创建任务','任务绑定具体仓库；成员还须具有该仓库的开发权限才能认领。创建后依次完成需求、设计和可行性确认。',form,'创建草稿',data => {
       const repo = repositories.find(repo => repo.id === data.repository_id);
       return this.api('POST',`/api/projects/${projectId}/tasks`,{title:data.title,description:data.description,acceptance:data.acceptance,
         repository_id:repo?.id || null,parent_id:parentId,execution_mode:data.execution_mode,execution_role:data.execution_role,
+        role_profile:data.role_profile || null,workflow:data.workflow,workflow_reason:data.workflow_reason,
+        documentation:{kind:data.guide_kind,module:data.guide_module,reason:data.guide_reason},
         depends_on:data.depends_on.split(/\r?\n/).map(p => p.trim()).filter(Boolean),
         scope:{repository:repo?.slug || data.repository,platform:repo?.platform || data.platform,
           paths:data.paths.split(/\r?\n/).map(p => p.trim()).filter(Boolean)}});
     });
   }
 
+  async guides() {
+    const heading = this.heading('功能操作说明','开发提交后为每位参与者生成独立待办；产品和测试核对通过后随功能发布。说明阅读权与代码权分别管理。');
+    if (!this.project) return [heading,h('section',{class:'card empty'},'请先选择项目。')];
+    const projectId=this.project.id,base=`/api/projects/${projectId}/guides`,version=this.renderVersion;
+    const query=this.guideQuery || '';
+    const data=await this.api('GET',`${base}?offset=${this.offset}&limit=100&query=${encodeURIComponent(query)}`);
+    if(this.project?.id!==projectId || this.renderVersion!==version)return [heading];
+    const names={queued:'待生成 / 待重试',running:'正在生成',review:'待核对',approved:'已核对，待功能发布',published:'已发布'};
+    const form=h('form',{},field('query','查找功能或正文',{value:query,maxlength:200}));
+    form.append(submit(form,'查找',async values=>{this.guideQuery=values.query;this.offset=0;await this.renderView();}));
+    const listing=table('说明目录与生成进度',['功能','适用版本','状态','负责实例','操作'],data.items.map(item=>[
+      item.title,item.product_version || '待生成',names[item.state] || item.state,item.instance_id ? short(item.instance_id) : '—',
+      button('查看',() => this.openGuide(projectId,item.id),'small')]));
+    if(data.has_more || this.offset)listing.append(this.pagination(data.has_more?100:0));
+    return [heading,form,listing];
+  }
+  async openGuide(projectId,id) {
+    const base=`/api/projects/${projectId}/guides/${id}`,item=await this.api('GET',base);
+    if(this.project?.id!==projectId)return;
+    const content=h('div',{},item.content?.user_roles?h('p',{},'适用角色：'+item.content.user_roles.join('、')):null,
+      item.reason?h('p',{class:'danger-note'},item.reason):null);
+    const names={purpose:'用途',prerequisites:'使用前提',entry:'功能入口',steps:'操作步骤',inputs:'输入与校验',results:'操作结果',
+      recovery:'异常与恢复',cautions:'操作提示',examples:'完整示例',changes:'版本变化',limitations:'限制与反馈',verification:'核验依据'};
+    if(item.content)for(const [key,label] of Object.entries(names))content.append(h('h3',{},label),Array.isArray(item.content[key])?
+      h('ol',{},item.content[key].map(step=>h('li',{},step))):h('p',{class:'prewrap'},item.content[key]));
+    else content.append(h('p',{},'生成待办已保存在服务器。请由负责实例通过 MCP 领取，离线恢复后可继续；原开发租约已经结束也能独立办理。'));
+    if(item.source_worklog_id)content.append(h('details',{},h('summary',{},'来源与处理记录'),h('pre',{},JSON.stringify({source_worklog_id:item.source_worklog_id,
+      source_hash:item.source_hash,git_commit:item.git_commit,instance_id:item.instance_id,events:item.events},null,2))));
+    const controls=h('div',{class:'row-actions'},button('关闭',()=>modal.close()));
+    const decide=(gate)=>{
+      const form=h('form',{},field('approved','核对结果',{items:[['yes','通过'],['no','退回修改']]}),
+        field('reason','核对依据 / 修改意见',{required:true,minlength:10,maxlength:2000,multiline:true}),
+        gate==='product'?field('audience','正式阅读范围',{items:[['repository','仅拥有来源仓库代码读取权的成员'],['project','本项目有功能说明阅读权的成员（批准前移除内部敏感资料）']]}):null,
+        field('override_reason','超管自审例外原因（独立审核留空）',{maxlength:2000}));
+      dialog('功能说明核对','必须针对当前草稿和对应代码版本核验；退回会保留历史草稿和意见。',form,'提交',async data=>{
+        await this.api('POST',base+'/decisions',{...data,approved:data.approved==='yes',gate,expected_version:item.version,draft_version:item.draft_version});
+      });
+    };
+    if(item.state==='review'){
+      if(this.can('tasks:publish'))controls.append(button('产品核对',()=>decide('product')));
+      if(this.can('tasks:test'))controls.append(button('测试核对',()=>decide('test')));
+    }
+    if(!modal.querySelector('#modal-body'))modal.replaceChildren(h('div',{id:'modal-body'}));
+    modal.querySelector('#modal-body').replaceChildren(h('h2',{},item.title),h('p',{},item.product_version || '待生成'),content,controls);
+    if(!modal.open)modal.showModal();
+  }
   async repositories() {
     const title = this.heading('仓库与资料','一个项目组可以接入 Web、PC、API 和共享资料等独立仓库。成员只获得明确批准的资源。');
     if (!this.project) return [title,h('section',{class:'card empty'},'请先选择项目组。')];
@@ -479,9 +589,46 @@ class Console {
       h('p',{class:'hint'},'任务指定负责角色；开工包只加载当前职责。人员权限、仓库授权和独立评审仍由服务器校验。'),
       ...catalog.roles.map(role => h('details',{},h('summary',{},role.name),
         ...role.responsibilities.map(item => h('p',{},item)),h('p',{},'交接产物：'+role.outputs.join('、')))),
+      ...(catalog.profiles || []).filter(p=>p.enabled).map(p=>h('details',{},h('summary',{},p.name+' · '+p.base_role),
+        ...p.responsibilities.map(item=>h('p',{},item)),h('p',{},'交接产物：'+p.outputs.join('、')))),
       h('p',{class:'hint'},'在 PC“项目与 MCP”选择“部署职责”，可将角色文档、流程和自检脚本安装到本地工程。'),
       h('div',{class:'row-actions'},button('关闭',() => modal.close())));
     modal.replaceChildren(content); if (!modal.open) modal.showModal();
+  }
+  async openCollaboration(projectId) {
+    const config=await this.api('GET',`/api/projects/${projectId}/collaboration`);
+    if(this.project?.id!==projectId)return;
+    const save=(profiles,allow_compact,change_reason,require_guides=config.require_guides)=>this.api('PUT',`/api/projects/${projectId}/collaboration`,
+      {expected_version:config.version,profiles,allow_compact,require_guides,change_reason});
+    const edit=profile=>{
+      const form=h('form',{},field('key','岗位标识',{value:profile?.key || '',required:true,pattern:'[a-z][a-z0-9-]{0,63}',readonly:!!profile}),
+        field('name','岗位名称',{value:profile?.name || '',required:true,maxlength:100}),
+        field('base_role','基础职业',{value:profile?.base_role || 'developer',items:[['developer','开发工程师'],['architect','架构师'],['designer','设计师'],['project-manager','项目经理']]}),
+        h('label',{},'职责（每行一项，最多 12 项）',h('textarea',{name:'responsibilities',required:true,rows:4},profile?.responsibilities.join('\n') || '')),
+        h('label',{},'交接产物（每行一项，最多 12 项）',h('textarea',{name:'outputs',required:true,rows:3},profile?.outputs.join('\n') || '')),
+        field('enabled','状态',{value:profile?.enabled===false?'no':'yes',items:[['yes','启用'],['no','停用']]}),
+        field('change_reason','变更原因',{required:true,minlength:10,maxlength:1000}));
+      dialog(profile?'编辑岗位':'创建岗位','岗位只补充职责。调整后相关执行实例须重新准备上下文；原修订保留。',form,'保存岗位',data=>{
+        const lines=value=>value.split(/\r?\n/).map(v=>v.trim()).filter(Boolean);
+        const entry={key:data.key,name:data.name,base_role:data.base_role,enabled:data.enabled==='yes',responsibilities:lines(data.responsibilities),outputs:lines(data.outputs)};
+        return save([...config.profiles.filter(p=>p.key!==entry.key),entry],config.allow_compact,data.change_reason);
+      });
+    };
+    const content=h('div',{id:'modal-body'},h('h2',{},`岗位与流程 · 版本 ${config.version}`),
+      h('p',{},'岗位不授予仓库或审批权限。紧凑流程省略单独的设计确认，仍保留需求、可行性、独立评审、测试和发布。'),
+      ...config.profiles.map(p=>h('p',{},p.name+' · '+p.base_role+' · '+(p.enabled?'启用':'停用')+' ',button('编辑',()=>edit(p),'small'))),
+      h('p',{},'紧凑流程：'+(config.allow_compact?'允许负责人明确选择':'未开放')),
+      h('p',{},'操作说明：'+(config.require_guides?'代码任务须安排说明或明确说明豁免原因':'由任务负责人选择')),
+      button(config.require_guides?'关闭说明计划要求':'要求代码任务安排说明',()=>{
+        const form=h('form',{},field('change_reason','调整原因',{required:true,minlength:10,maxlength:1000}));
+        dialog('操作说明要求','之后创建的代码任务必须安排说明；确实没有操作变化时，由有权负责人填写明确豁免原因。',form,'保存设置',
+          data=>save(config.profiles,config.allow_compact,data.change_reason,!config.require_guides));
+      }),
+      h('div',{class:'row-actions'},button('新增岗位',()=>edit(null)),button(config.allow_compact?'关闭紧凑流程':'允许紧凑流程',()=>{
+        const form=h('form',{},field('change_reason','调整原因',{required:true,minlength:10,maxlength:1000}));
+        dialog('调整流程选项','只影响之后的明确选择；已有任务保留创建时的流程与原因。',form,'保存设置',data=>save(config.profiles,!config.allow_compact,data.change_reason));
+      }),button('关闭',()=>modal.close())));
+    modal.replaceChildren(content);if(!modal.open)modal.showModal();
   }
   async openPolicy(projectId) {
     const policy = await this.api('GET',`/api/projects/${projectId}/policy`);
@@ -529,6 +676,12 @@ class Console {
             depends_on:values.depends_on.split(/\r?\n/).map(v=>v.trim()).filter(Boolean)}));
       }));
     if (this.can('tasks:publish') && task.status !== 'completed') actions.push(button('拆解子任务',() => this.createTask(taskId)));
+    if (this.can('tasks:publish') && ['draft','ready'].includes(task.status)) actions.push(button('调整流程',()=>{
+      const form=h('form',{},field('workflow','新流程',{items:[['standard','标准'],['compact','紧凑（须项目开放）'],['strict','严格（须代码仓库与核验交付）']]}),
+        field('reason','调整原因',{required:true,minlength:10,maxlength:1000}));
+      dialog('调整任务流程','执行过的任务只允许升级。保存后重新准入，旧决定保留。',form,'保存并重新准入',data=>this.api('POST',base+'/workflow',
+        {expected_version:task.version,workflow:data.workflow,reason:data.reason}));
+    }));
     const expired = !task.lease_until || new Date(task.lease_until).getTime() <= Date.now();
     if (task.execution_mode !== 'observed' && ['ready','in_progress'].includes(task.status) && expired && coordination?.claimable !== false && this.can('tasks:claim') && this.can('tasks:write'))
       actions.push(button('本人认领',() => act('/claim',{instance_id:crypto.randomUUID(),harness:'human'}),'primary'));
@@ -543,7 +696,7 @@ class Console {
       if (task.execution_mode !== 'observed' && !offset && latest?.outcome === 'checkpoint') actions.push(button('提交最新日志待评审',() => act('/submit',{
         ...lease,worklog_id:latest.id,expected_version:task.version}),'primary'));
     }
-    const nextGate = task.status === 'draft' ? ['requirements','design','feasibility'][task.admission_step] :
+    const nextGate = task.status === 'draft' ? (task.workflow_policy?.admission || ['requirements','design','feasibility'])[task.admission_step] :
       {review:'review',testing:'test',release_ready:'release'}[task.status];
     const gateCap = {review:'tasks:review',test:'tasks:test'}[nextGate] || 'tasks:publish';
     if (nextGate && this.can(gateCap) && (!task.submission_id || this.can('logs:read'))) actions.push(button(gateNames[nextGate],() => {
@@ -557,6 +710,7 @@ class Console {
     const content = h('div',{id:'modal-body'},h('h2',{},task.title),h('p',{},`${taskStates[task.status]} · 版本 ${task.version} · ${task.id}`),
       task.execution_mode === 'observed' && h('p',{class:'help-block'},'代码任务：在工程 MCP 调用 hub_claim_task 认领，再调用 hub_prepare_work、hub_acknowledge_work。保存日志时采集本机实际改动。网页用于查看与流程决定。'),
       h('p',{},`${roleNames[task.execution_role] || task.execution_role} · ${task.scope.repository} / ${task.scope.platform} · ${task.scope.paths.join('、')}`),
+      h('p',{},`岗位：${task.role_profile || '基础职责'} · 流程：${{standard:'标准',compact:'紧凑',strict:'严格'}[task.workflow] || '标准'}${task.workflow_reason?' · '+task.workflow_reason:''}`),
       h('h3',{},'需求与验收'),h('pre',{class:'document-content'},task.description+'\n\n验收：'+task.acceptance),
       coordination && h('section',{},h('h3',{},'前置任务与范围占用'),
         h('p',{},coordination.dependencies_satisfied ? '前置任务已满足。' : '前置任务未完成，当前不能认领。'),
@@ -671,12 +825,52 @@ class Console {
         card.state_reason?h('p',{},card.state_reason):null,h('div',{class:'row-actions'},actions),original);
     });
     return [title,h('section',{class:'card'},h('h2',{},'增量处理状态'),counts,
+      this.can('tasks:publish')?button('检索验证记录',()=>this.openMemoryEvaluations(projectId,filter.repository_id),'small'):null,
       this.can('tasks:publish') && (status.visible_jobs.failed || status.embeddings?.visible_jobs.failed)?button('重试失败处理',async()=>{await this.api('POST',base+'/retry',{});await this.renderView();},'small'):null,
       h('p',{class:'hint'},'日志和文档增量摘录；长期知识经审核后进入开工记忆。语义检索在授权范围内与关键词融合，来源变化即时重查。开工记忆共用 12,000 UTF-8 字节预算。')),
       h('section',{class:'card'},form,h('p',{class:'hint'},data.semantic_search==='ready'?'本次结合语义和关键词排序；请核对来源。':data.semantic_search==='unavailable-keyword-fallback'?'语义服务暂不可用，本次已退回关键词。':data.semantic_search==='keyword-requested'?'本次仅按关键词匹配。':'当前列出获准资料或按关键词匹配。'),
         data.candidate_limit_reached?h('p',{class:'hint'},'达到检索候选上限，请缩小问题或仓库范围。'):null),...cards,
       !cards.length?h('p',{class:'hint'},'当前检索范围没有匹配卡片。请查看文档同步、队列状态或调整关键词；这不代表没有其他历史记录。'):null,
       data.has_more?h('p',{class:'hint'},'这里只显示前 12 条，缩小检索范围或通过 MCP 翻页。'):null].filter(Boolean);
+  }
+  async usage() {
+    const title=this.heading('用量与预算','程序测量与工具上报分别统计；目前按月统计本人可见的项目资料范围。');
+    if(!this.project)return [title,h('section',{class:'card empty'},'请先选择项目。')];
+    const projectId=this.project.id,base=`/api/projects/${projectId}/usage`,data=await this.api('GET',base);
+    const content=h('section',{class:'card'},h('h2',{},'本月记录'),
+      h('p',{},`输入 Token（上报）：${data.reported_input_tokens} · 输出 Token（上报）：${data.reported_output_tokens}`),
+      h('p',{},`缓存输入（已包含在输入中）：${data.reported_cached_input_tokens} · 开工包大小（程序测得）：${data.measured_context_bytes.toLocaleString()} 字节`),
+      h('p',{},'上报费用：'+(data.reported_cost_micro_usd===null?'未提供':(data.reported_cost_micro_usd/1000000).toFixed(6)+' USD')),
+      h('p',{class:'hint'},'上报尚未核对供应商账单。工具未提供的 Token 消耗无法计入；未收到报告不表示没有消耗。开工包字节数不是 Token 计费量。'),
+      h('h3',{},'项目额度'),h('p',{},`${data.budget.mode==='observe'?'只观察':'达到额度暂停受管开发'} · 月度上报 Token 额度：${data.budget.monthly_reported_token_limit || '未设上限'}`),
+      h('p',{},data.budget.managed_work_available?'当前允许开始受管工作':'已暂停新的受管修改；可以继续保存日志、上传检查点和交接。'),
+      h('p',{class:'hint'},'额度基于已收到的全项目报告判断，不能拦截独立外部程序或未上报的调用。上方用量只展示你有权查看的记录。'));
+    if(this.can('tasks:publish'))content.append(button('调整额度',()=>{
+      const form=h('form',{},field('mode','达到额度时',{value:data.budget.mode,items:[['observe','只观察'],['pause-managed-work','暂停受管开发']]}),
+        field('limit','月度上报 Token 额度（0 表示不设上限）',{type:'number',min:0,max:1000000000000,value:data.budget.monthly_reported_token_limit,required:true}),
+        field('change_reason','调整原因',{required:true,minlength:10,maxlength:1000}));
+      dialog('调整项目额度','额度只对平台收到的宿主用量报告生效，日志和交接继续可用。',form,'保存额度',values=>this.api('PUT',base+'/budget',{
+        expected_version:data.budget.version,mode:values.mode,monthly_reported_token_limit:Number(values.limit),change_reason:values.change_reason}));
+    }));
+    return [title,content];
+  }
+  async openMemoryEvaluations(projectId,repositoryId) {
+    const base=`/api/projects/${projectId}/memory/evaluations`;
+    const data=await this.api('GET',base+(repositoryId?'?repository_id='+repositoryId:''));
+    if(this.project?.id!==projectId)return;
+    const content=h('div',{id:'modal-body'},h('h2',{},'检索验证记录'),
+      h('p',{},'用你已确认应找到的原文摘录进行实际检索，比较命中与排名。记录保留当时结果，不能代表完整项目理解。'),
+      ...data.items.map(item=>h('p',{},`${date(item.created_at)} · ${item.payload.case_count} 题 · 命中率 ${(item.payload.mean_recall_at_k*100).toFixed(1)}% · 平均倒数排名 ${item.payload.mean_reciprocal_rank.toFixed(3)} · 前 ${item.payload.k} 条`)),
+      h('div',{class:'row-actions'},button('新增验证',()=>{
+        const form=h('form',{},field('query','验证问题',{required:true,maxlength:200}),
+          h('label',{},'预期应找到的摘录 ID（每行一项）',h('textarea',{name:'expected',required:true,rows:3})),
+          field('search_mode','检索方式',{items:[['hybrid','语义与关键词'],['keyword','只用关键词']]}),
+          field('k','检查前几条',{type:'number',min:1,max:20,value:5,required:true}));
+        dialog('新增检索验证','只使用当前可读且有效的原文摘录 ID；长期知识候选 ID 不适用。结果会记录真实使用的检索方式与降级情况。',form,'执行并保存',values=>this.api('POST',base,{
+          repository_id:repositoryId || null,k:Number(values.k),search_mode:values.search_mode,
+          cases:[{query:values.query,expected_card_ids:values.expected.split(/\r?\n/).map(v=>v.trim()).filter(Boolean)}]}));
+      }),button('关闭',()=>modal.close())));
+    modal.replaceChildren(content);if(!modal.open)modal.showModal();
   }
   async documents() {
     const title = this.heading('项目文档','从指定 GitHub 分支建立 Markdown 索引；读取结果带文件路径和提交号。',[button('刷新状态',() => this.renderView())]);
@@ -765,7 +959,7 @@ class Console {
     const canManage = this.isRoot || this.grants.some(g => g.project_id === this.project.id && g.capabilities.includes('members:manage'));
     if (!canManage) return [...parts,h('p',{class:'help-block'},`当前项目：${this.project.name}。当前账号没有成员管理权限。`)];
     const members = (await this.api('GET',`/api/projects/${this.project.id}/members?offset=${this.offset}`)).items;
-    const actions2 = [button('添加成员',() => this.inviteMember(),'primary small'),button('申请项目授权',() => this.requestGrant(),'small')];
+    const actions2 = [button('添加成员',() => this.inviteMember(),'primary small'),button('邮箱邀请',() => this.inviteByEmail(),'small'),button('管理邀请',() => this.invitations(),'small'),button('申请项目授权',() => this.requestGrant(),'small')];
     if (this.isRoot) actions2.push(button('分配管理员',() => this.assignAdmin(),'small'));
     const memberTable = table(`${this.project.name} · 成员`,['人员','项目角色','成员状态','账号状态','操作'],members.map(u => [
       textPair(u.login,u.email || u.id),u.membership_role === 'administrator' ? '项目管理员' : '普通成员',pill(u.membership_status),pill(u.status),
@@ -802,15 +996,16 @@ class Console {
         await this.api('POST',`/api/admin/users/${u.id}/status`,{status}); toast('账号状态已更新'); await this.renderView();
       },status === 'active' ? 'small' : 'danger small')))]));
     if (users.length === 100 || this.offset) view.append(this.pagination(users.length));
-    return [this.heading('人员管理','管理全局人员状态；管理员账号必须绑定并验证邮箱。',[button('创建管理员',() => this.createAdmin(),'primary')]),view];
+    return [this.heading('人员管理','管理全局人员状态；管理员账号必须绑定并验证邮箱。',[
+      button('创建管理员',() => this.createAdmin(),'primary'),button('邮箱邀请管理员',() => this.inviteByEmail(true)),button('管理邀请',() => this.invitations(true))]),view];
   }
   async devices() {
     const devices = (await this.api('GET',this.isRoot ? `/api/admin/devices?offset=${this.offset}` : '/api/me/devices')).items;
     const view = table(this.isRoot ? '设备列表' : '我的设备',['设备','账号 / 指纹','邮箱验证','状态','操作'],devices.map(d => [textPair(d.name,d.os),
       textPair(d.login,short(d.thumbprint)),pill(d.email_verified ? 'approved' : 'pending_email'),pill(d.status),
-      this.isRoot && d.id !== this.device && d.status !== 'revoked' ? button('撤销设备',async () => {
+      d.id !== this.device && d.status !== 'revoked' ? button('撤销设备',async () => {
         if (!confirm(`撤销 ${d.name}？该设备现有会话与项目授权将失效。`)) return;
-        await this.api('POST',`/api/admin/devices/${d.id}/revoke`,{}); toast('设备已撤销'); await this.renderView();
+        await this.api('POST',`/api/${this.isRoot ? 'admin' : 'me'}/devices/${d.id}/revoke`,{}); toast('设备已撤销'); await this.renderView();
       },'danger small') : d.id === this.device ? '当前设备' : '—']));
     if (this.isRoot && (devices.length === 100 || this.offset)) view.append(this.pagination(devices.length));
     return [this.heading(this.isRoot ? '设备管理' : '我的设备','新设备需要独立审批；绑定邮箱的账号还需完成邮箱验证码验证。',

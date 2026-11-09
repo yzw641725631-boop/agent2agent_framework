@@ -135,7 +135,8 @@ class WorkRuntime{
     const r=this.run(binding,args),p=this.c.profile,remote=this.c.remote;
     if(!r.acknowledged)throw new HubError('WORK_CONTEXT_ACK_REQUIRED');
     if(this.c.connection!=='active')throw new HubError('NETWORK_UNAVAILABLE','离线时只保全工作，恢复连接并核验后再开始受管修改。');
-    await this.validateMemory(binding,r);
+    const checkedContext=await this.validateMemory(binding,r);
+    if(checkedContext?.usage_budget_open===false)throw new HubError('USAGE_BUDGET_EXCEEDED','项目已达到所设的上报用量额度，请先保全工作并联系负责人。日志与交接仍可上传。');
     const policy=await this.c.invokeProjectRemote(binding,'hub_get_policy',{});
     this.c.ensureCurrent(p,remote);
     if(policy.content_hash!==r.policy.content_hash)throw new HubError('WORK_CONTEXT_STALE','规则已更新，请重新准备并确认。');

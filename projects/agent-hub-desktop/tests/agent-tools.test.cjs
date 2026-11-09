@@ -40,9 +40,24 @@ test('passive inbox monitoring never refreshes agent presence or accepts tasks a
   const saved={binding_id:binding.id,endpoint:{id,name:'Web',enabled:true,last_seen_at:'old'}};
   const profile={bindings:[binding],agentEndpoints:{[id]:saved}},calls=[],notifications=[];
   const c={profile,remote:{},connection:'active',persist:async()=>{},emitState(){},emit:(type,data)=>notifications.push([type,data]),
-    ensureCurrent(p,r){assert.equal(p,this.profile);assert.equal(r,this.remote);},async invokeProjectRemote(b,action,args){calls.push(action);return {items:[offer]};}};
+    ensureCurrent(p,r){assert.equal(p,this.profile);assert.equal(r,this.remote);},async invokeProjectRemote(b,action,args){calls.push(action);return {items:action==='hub_list_agent_dispatches'?[offer]:[]};}};
   const runtime=new AgentRuntime(c);await runtime.tick();await runtime.tick();
   assert.equal(saved.endpoint.last_seen_at,'old');assert.equal(saved.pending_count,1);assert.equal(notifications.length,1);
-  assert.deepEqual(calls,['hub_list_agent_dispatches','hub_list_agent_dispatches']);
-  c.connection='signed_out';await runtime.tick();assert.equal(calls.length,2);
+  assert.deepEqual(calls,['hub_list_agent_dispatches','hub_list_guides','hub_list_guides','hub_list_agent_dispatches','hub_list_guides','hub_list_guides']);
+  c.connection='signed_out';await runtime.tick();assert.equal(calls.length,6);
+});
+
+test('guide reminders follow the original instance and deduplicate the same pending version without claiming',async()=>{
+  const instance=crypto.randomUUID(),binding={id:crypto.randomUUID(),projectId,status:'active'},notifications=[],calls=[];
+  const saved={binding_id:binding.id,endpoint:{id:crypto.randomUUID(),instance_id:instance,name:'Web',enabled:true}};
+  const profile={bindings:[binding],agentEndpoints:{[saved.endpoint.id]:saved}};
+  const guide={id:crypto.randomUUID(),state:'queued',version:1};
+  const c={profile,remote:{},connection:'active',persist:async()=>{},emitState(){},emit:(type,value)=>notifications.push(value),
+    ensureCurrent(p,r){assert.equal(p,this.profile);assert.equal(r,this.remote);},async invokeProjectRemote(b,action,args){
+      calls.push(action);if(action==='hub_list_agent_dispatches')return {items:[]};
+      assert.equal(args.instance_id,instance);return {items:args.state===guide.state?[guide]:[]};
+    }};
+  const runtime=new AgentRuntime(c);await runtime.tick();await runtime.tick();assert.equal(notifications.length,1);
+  guide.version++;await runtime.tick();assert.equal(notifications.length,2);assert.equal(saved.pending_guides,1);
+  assert.ok(calls.every(a=>['hub_list_agent_dispatches','hub_list_guides'].includes(a)));
 });

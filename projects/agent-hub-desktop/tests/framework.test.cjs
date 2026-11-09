@@ -53,6 +53,17 @@ test('framework tools reject arbitrary directories, stale previews and malformed
   const wrong=catalog();wrong.roles[1].number='00';assert.throws(()=>build(f.binding,f.name,wrong),{code:'INVALID_RESPONSE'});
   assert.deepEqual(await fs.readdir(f.workspace),['business.txt']);
 });
+
+test('custom project occupations generate bounded source-owned Markdown and cannot escape their directory',async t=>{
+  const f=await fixture(t),value=catalog();
+  value.profiles=[{key:'web-specialist',name:'Web 前端工程师',base_role:'developer',enabled:true,
+    responsibilities:['只修改已授权的 Web 任务范围。'],outputs:['真实验证与交接说明']}];
+  const generated=build(f.binding,f.name,value);
+  const entry=generated.files.find(file=>file.path==='profiles/web-specialist.md');
+  assert.ok(entry.bytes.toString().includes('base_role: developer'));
+  assert.ok(generated.files.find(file=>file.path==='main.md').bytes.toString().includes('profiles/web-specialist.md'));
+  value.profiles[0].key='../outside';assert.throws(()=>build(f.binding,f.name,value),{code:'INVALID_RESPONSE'});
+});
 test('framework updates keep backups outside the workspace and uninstall both language sets',async t=>{
   const f=await fixture(t),first=await f.runtime.invoke(f.binding,'hub_preview_framework',{});
   await f.runtime.invoke(f.binding,'hub_install_framework',{preview_hash:first.preview_hash});

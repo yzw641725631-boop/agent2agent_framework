@@ -11,7 +11,7 @@ from cryptography.hazmat.primitives.kdf.hkdf import HKDF
 from sqlalchemy import delete, or_, select
 
 from .db import coordinate
-from .models import BootstrapAttempt, Device, EmailChallenge, Outbox
+from .models import AccountChallenge, BootstrapAttempt, Device, EmailChallenge, Outbox
 from .security import HubError, now
 from .site import SiteSettings
 
@@ -49,7 +49,7 @@ class MailOutbox:
 
     @staticmethod
     def reference(db, payload):
-        model = {"bootstrap": BootstrapAttempt, "challenge": EmailChallenge}.get(
+        model = {"bootstrap": BootstrapAttempt, "challenge": EmailChallenge, "account": AccountChallenge}.get(
             payload.get("reference_kind")
         )
         return db.get(model, uuid.UUID(payload["reference"])) if model else None

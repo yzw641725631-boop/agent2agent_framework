@@ -1,0 +1,16 @@
+[Unit]
+Description=Independent Agent Hub HTTPS monitor and notification
+After=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/python3 /opt/agent-hub-external-watch/external-watch.py
+UMask=0077
+TimeoutStartSec=40
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectHome=true
+ProtectSystem=strict
+ReadWritePaths=/opt/agent-hub-external-watch
+PrivateDevices=true
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX

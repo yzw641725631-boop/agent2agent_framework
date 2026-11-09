@@ -84,6 +84,27 @@ async function turnHook(file,options,argv){
   }
 }
 
+async function lifecycleHook(file,options,argv){
+  const event=argv[argv.indexOf('--lifecycle-hook')+1],hostIndex=argv.indexOf('--harness'),idIndex=argv.indexOf('--hook-installation');
+  const harness=argv[hostIndex+1],pre=['pretooluse','beforemcpexecution'].includes(String(event).toLowerCase());
+  const codec=require('./host-hooks.cjs');
+  try{
+    if(hostIndex<0 || idIndex<0)throw new HubError('INVALID_HOOK_INPUT');
+    let input='',bytes=0;process.stdin.setEncoding('utf8');
+    for await(const chunk of process.stdin){bytes+=Buffer.byteLength(chunk);if(bytes>1024*1024)throw new HubError('INVALID_HOOK_INPUT');input+=chunk;}
+    const args=codec.normalize(JSON.parse(input),event,harness,argv[idIndex+1]);
+    if(Buffer.byteLength(JSON.stringify(args))>96*1024)throw new HubError('INVALID_HOOK_INPUT');
+    const descriptor=await binding(file,options.expectedId);
+    if(descriptor.scope==='setup')throw new HubError('WORK_SESSION_NOT_ACCESSIBLE');
+    const response=await call(descriptor,{action:'lifecycle_hook',args},{timeout:['Interrupt','SessionEnd'].includes(args.event)?1500:8000});
+    process.stdout.write(JSON.stringify(codec.output(response,harness,event))+'\n');
+  }catch(failure){
+    const message='Agent Hub 检查未完成：'+(failure.code || 'HOOK_UNAVAILABLE')+'。请核对桌面端、连接与钩子配置。';
+    if(pre){process.stderr.write(message+'\n');process.exitCode=2;}
+    else process.stdout.write(JSON.stringify(harness==='cursor'?{}:{systemMessage:message})+'\n');
+  }
+}
+
 async function run(argv = process.argv.slice(2)) {
   const index = argv.indexOf('--binding');
   if (index < 0 || !argv[index + 1]) throw new Error('Missing --binding');
@@ -94,6 +115,7 @@ async function run(argv = process.argv.slice(2)) {
   if (options.scope === 'setup' && !/^[a-f0-9]{8}(-[a-f0-9]{4}){3}-[a-f0-9]{12}$/i.test(options.expectedId || '')) throw new Error('Missing setup connection identity');
   if (argv.includes('--session-check')) return sessionCheck(file);
   if (argv.includes('--turn-hook')) return turnHook(file,options,argv);
+  if (argv.includes('--lifecycle-hook')) return lifecycleHook(file,options,argv);
   let buffer = '', queue = Promise.resolve();
   process.stdin.setEncoding('utf8');
   const emit = response => { if (response) process.stdout.write(JSON.stringify(response) + '\n'); };

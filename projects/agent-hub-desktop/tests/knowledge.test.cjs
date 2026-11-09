@@ -11,6 +11,10 @@ test('knowledge proposals are scoped, bounded and use a stable idempotency heade
   assert.equal(request.method,'POST');assert.equal(request.operation_id,args.operation_id);
   assert.equal(request.body.repository_id,repo);assert.equal(request.body.operation_id,undefined);
   assert.equal(request.path,`/api/projects/${project}/memory/knowledge`);
+  const citation={source_card_id:crypto.randomUUID(),source_hash:'b'.repeat(64),source_quote:'additional exact quotation'};
+  assert.deepEqual(knowledge.request('hub_propose_knowledge',{...args,additional_sources:[citation]},project,repo,['tasks:write']).body.additional_sources,[citation]);
+  for(const invalid of [[{...citation,source_card_id:'../private'}],Array(8).fill(citation),[{...citation,extra:'rejected'}]])
+    assert.throws(()=>knowledge.request('hub_propose_knowledge',{...args,additional_sources:invalid},project,repo,['tasks:write']),{code:'INVALID_REQUEST'});
   assert.throws(()=>knowledge.request('hub_propose_knowledge',{...args,repository_id:crypto.randomUUID()},project,repo,['tasks:write']),{code:'DOCUMENT_SOURCE_NOT_ACCESSIBLE'});
   assert.throws(()=>knowledge.request('hub_propose_knowledge',args,project,repo,[]),{code:'CAPABILITY_REQUIRED'});
   for(const invalid of [{generation:{token:'never-forward-secrets'}},{source_card_id:'../private'},

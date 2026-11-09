@@ -6,7 +6,8 @@ from typing import Annotated
 from fastapi import Depends, Query, Request
 from sqlalchemy import func, select
 
-from . import repositories, schemas as S, tasks
+from . import collaboration, repositories, tasks
+from . import schemas as S
 from .models import AgentDispatch, AgentEndpoint, ProjectProgress
 from .security import HubError, now
 
@@ -20,6 +21,7 @@ def endpoint_view(row):
             "repository_id": str(row.repository_id) if row.repository_id else None,
             "user_id": str(row.user_id), "device_id": str(row.device_id), "instance_id": str(row.instance_id),
             "name": row.name, "harness": row.harness, "roles": row.roles, "enabled": row.enabled,
+            "role_profiles": row.role_profiles,
             "version": row.version, "last_seen_at": row.last_seen_at.isoformat(),
             "recent_agent_activity": row.last_seen_at > now() - timedelta(seconds=180),
             "automatic_execution": False, "presence_basis": "authenticated-agent-poll-or-registration"}
@@ -46,7 +48,8 @@ def register(hub, db, actor, project_id, body, request_id):
         raise HubError("AGENT_REPOSITORY_REQUIRED", 422)
     row = db.scalar(select(AgentEndpoint).where(AgentEndpoint.project_id == project_id,
                     AgentEndpoint.device_id == actor.device.id, AgentEndpoint.instance_id == body.instance_id))
-    values = {"name": body.name, "roles": body.roles, "enabled": body.enabled,
+    collaboration.endpoint_profiles(db, project_id, body.role_profiles, body.roles)
+    values = {"name": body.name, "roles": body.roles, "role_profiles": body.role_profiles, "enabled": body.enabled,
               "grant_id": actor.grant.id if actor.grant else None,
               "user_epoch": actor.user.auth_epoch, "device_epoch": actor.device.epoch}
     if row:
@@ -118,7 +121,7 @@ def send(hub, db, actor, project_id, body, request_id):
         raise HubError("AGENT_VERSION_CONFLICT", 409)
     if task.repository_id != endpoint.repository_id:
         raise HubError("AGENT_REPOSITORY_MISMATCH", 422)
-    if task.execution_role not in endpoint.roles:
+    if not collaboration.endpoint_matches(task, endpoint):
         raise HubError("AGENT_ROLE_MISMATCH", 422)
     if task.status != "ready":
         raise HubError("TASK_NOT_CLAIMABLE", 409)
@@ -165,7 +168,7 @@ def decide(hub, db, actor, project_id, row, body, request_id):
             raise HubError("AGENT_DISPATCH_STALE", 409)
         task = tasks.get_task(db, project_id, row.task_id)
         tasks.check_version(task, row.task_version)
-        if task.repository_id != endpoint.repository_id or task.execution_role not in endpoint.roles:
+        if task.repository_id != endpoint.repository_id or not collaboration.endpoint_matches(task, endpoint):
             raise HubError("AGENT_DISPATCH_STALE", 409)
     result = {}
     if body.action == "receive":

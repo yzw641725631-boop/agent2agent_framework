@@ -5,6 +5,7 @@ const modal=document.getElementById('dialog');
 let state,info={},releaseState,view='overview',selectedFolder=null;
 let taskBinding=null,taskVersion=0,taskTimer,openTaskBinding=null,taskDialogVersion=0;
 let memoryBinding=null,memoryQuery='',memoryOffset=0,memoryLayer='extracts',memoryHistory=false;
+let guideQuery='',guideOffset=0;
 let frameworkDialogVersion=0;
 modal.addEventListener('close',()=>{taskDialogVersion++;frameworkDialogVersion++;openTaskBinding=null;});
 const taskLabels={draft:'待准入',ready:'待认领',in_progress:'开发中',review:'待评审',testing:'待测试',release_ready:'待发布确认',completed:'已完成'};
@@ -12,7 +13,7 @@ const dispatchLabels={queued:'等待接收',received:'已接收，待决定',acc
 const roleLabels={'project-manager':'项目经理',architect:'架构师',designer:'产品与交互设计',developer:'开发工程师',reviewer:'代码审查',tester:'测试工程师',publisher:'发布负责人'};
 const labels={active:'已连接',pending:'等待验证 / 审批',offline:'连接中断',blocked:'已拦截',signed_out:'未登录',
   reauth_required:'需要重新登录',running:'执行中',checkpoint:'检查点',completed:'已完成',approved:'已批准'};
-const titles={overview:'协作概览',workspaces:'项目与 MCP',tasks:'任务与日志',memory:'共享记忆',checkpoints:'本机检查点',closeouts:'撤权交接',activity:'项目动态',connection:'账号与设备',desktop:'桌面设置'};
+const titles={overview:'协作概览',workspaces:'项目与 MCP',tasks:'任务与日志',execution:'本机执行',guides:'功能操作说明',memory:'共享记忆',usage:'用量与预算',checkpoints:'本机检查点',closeouts:'撤权交接',activity:'项目动态',connection:'账号与设备',desktop:'桌面设置'};
 function el(tag,props={},...children){
   const element=document.createElement(tag);
   for(const [key,value] of Object.entries(props)){
@@ -75,7 +76,8 @@ function loginScreen(){
     catch(error){toast(error.message);}finally{submit.disabled=false;}
   });
   return el('section',{class:'auth'},heading('YOUR WORK, CONNECTED','连接你的协作空间','登录后，为每个项目建立独立的 MCP 连接。邮箱验证和设备审批沿用服务器规则。'),
-    el('div',{class:'card'},form),text('p','超级管理员通过密码和本设备邮箱验证码登录；其他账号按设备审批流程登录。','note'));
+    el('div',{class:'card'},form,el('div',{class:'actions'},button('找回密码 / 领取邮箱邀请',()=>invoke('openAdmin')))),
+    text('p','超级管理员通过密码和本设备邮箱验证码登录；其他账号按设备审批流程登录。找回及邀请领取在当前服务器的登录页办理。','note'));
 }
 function pendingScreen(){
   const selfConfirm=state.deviceApprovalMode==='root_email';
@@ -120,7 +122,28 @@ function configDialog(binding){
       button('复制 Claude Code 逐轮检查钩子',async()=>{await invoke('copyTurnHooks',{id:binding.id,harness:'claude-code'});toast('已复制。合并到 .claude/settings.local.json 并启用，随后绑定工作运行。',true);}),
     ):null,
     dialogActions(button('复制通用配置',async()=>{await invoke('copyConfiguration',{id:binding.id});toast('MCP 配置已复制。',true);}),
+      button('安装与检查逐轮保护',()=>hooksDialog(binding)),
       button('预览 .mcp.json',()=>previewDialog(binding),'primary')));
+}
+async function hooksDialog(binding){
+  let preview=null;
+  const host=el('select',{},...['codex','claude-code','cursor','qoder','codebuddy'].map(name=>el('option',{value:name},name)));
+  const summary=el('div',{}),details=el('pre',{});
+  const call=(action,args={})=>invoke('hookAction',{bindingId:binding.id,action,args:{harness:host.value,...args}});
+  async function refresh(){
+    const value=await call('hub_get_hook_status');
+    const names={not_installed:'尚未安装',awaiting_host:'已安装，等待开发工具实际触发',observed:'已观察到宿主事件',configuration_changed:'配置已被修改，需要处理冲突'};
+    summary.replaceChildren(text('p',names[value.state] || value.state),
+      text('p',value.activity?'已触发：'+Object.keys(value.activity.events).join('、'):'尚无实际触发记录。','note'));
+  }
+  host.addEventListener('change',()=>{preview=null;details.textContent='';refresh().catch(error=>toast(error.message));});
+  openDialog(text('h2','逐轮检查与修改前保护'),text('p',binding.projectName+' · '+binding.workspace),field('开发工具',host),summary,
+    text('p','安装后请按开发工具的正常流程审查、信任并重新加载，再在任务中绑定本对话。未识别的命令默认停止，避免命令绕过禁改路径。','note'),
+    text('p','此保护覆盖宿主实际调用的钩子。它不能限制用户直接编辑文件，也不等于系统级隔离。WorkBuddy、TRAE 的原生钩子接口仍待核验。','note'),details,
+    dialogActions(button('刷新触发状态',refresh),button('预览安装',async()=>{preview=await call('hub_preview_hooks');details.textContent=JSON.stringify(preview.configuration,null,2);}),
+      button('安装或更新',async()=>{if(!preview)throw new Error('请先预览本次安装。');await call('hub_install_hooks',{preview_hash:preview.preview_hash});preview=null;await refresh();toast('配置已安装。请在开发工具中信任并重新加载，再检查实际触发状态。',true);},'primary'),
+      button('卸载本工具检查',async()=>{const value=await call('hub_get_hook_status');const result=await call('hub_uninstall_hooks',{preview_hash:value.uninstall_hash});preview=null;await refresh();toast(result.conflicts.length?'部分条目有冲突，已保留，请检查配置。':'已移除本连接登记的钩子，其他配置保留。',!result.conflicts.length);})));
+  await refresh();
 }
 async function managementDialog(){
   const configuration=await invoke('managementConfiguration');
@@ -239,6 +262,69 @@ function closeoutsScreen(){
         job.cleanup?text('p',`已移除 ${job.cleanup.removed_files} 个受管文件、${job.cleanup.removed_entries} 个连接项；${job.cleanup.conflicts} 个冲突。`):null,
         text('small','收尾授权有效期：'+new Date(job.expires_at).toLocaleString('zh-CN')))),
       !(state.closeouts || []).length?empty('没有撤权收尾任务','正常退出登录、会话自然过期或网络中断不会自行卸载项目。'):null));
+}
+function executionScreen(){
+  const runs=(state.workRuns || []).filter(r=>r.acknowledged && !r.stopped && ['codex','claude-code'].includes(r.harness));
+  const selected=el('select',{},runs.map(r=>el('option',{value:r.run_id},r.harness+' · '+r.task_id)));
+  const timeout=el('input',{type:'number',value:600,min:30,max:1800});
+  const config=state.executions || {adapters:[],items:[]};
+  return el('div',{},heading('LOCAL EXECUTION','本机执行','由本人批准具体任务、目录和时限。执行时沿用本人 CLI 登录和宿主权限；断网、撤权或超时会请求停止，原工作继续按框架流程保全。'),
+    el('section',{class:'card'},text('h2','本人开发工具'),text('p','已登记：'+(config.adapters.join('、') || '尚未登记')),
+      el('div',{class:'actions'},...['codex','claude-code'].map(harness=>button('登记 '+harness,async()=>{await invoke('configureExecution',{harness});await update();}))),
+      text('p','当前支持两种原生 CLI。其他工具可通过 MCP 接收和处理待办。程序更新后须重新登记摘要；框架不提供系统级隔离。','note')),
+    el('section',{class:'card'},text('h2','批准单次任务'),runs.length?el('div',{},field('已准备并确认的本人运行',selected),field('最长运行秒数',timeout),button('预览本次启动',async()=>{
+      const run=runs.find(r=>r.run_id===selected.value);if(!run)throw new Error('请先准备并确认任务。');
+      const preview=await invoke('previewExecution',{bindingId:run.binding_id,args:{task_id:run.task_id,run_id:run.run_id,lease_epoch:run.lease_epoch,harness:run.harness,timeout_seconds:Number(timeout.value)}});
+      openDialog(text('h2','确认本机执行范围'),text('p','开发工具：'+preview.harness),text('p','任务：'+preview.task_id,'mono'),
+        text('p','工作目录：'+preview.workspace,'mono'),text('p','最长运行：'+preview.timeout_seconds+' 秒'),
+        text('p','程序：'+preview.executable.file,'mono'),text('p','启动后仍须遵守宿主本身的登录、信任和权限要求。'),
+        el('details',{},text('summary','查看核验信息'),text('pre',JSON.stringify(preview,null,2))),dialogActions(button('核对后启动',async()=>{
+        const result=await invoke('approveExecution',{id:preview.id,previewHash:preview.preview_hash});if(!result.cancelled)closeDialog();await update();},'primary')));
+    },'primary')):empty('没有可启动的运行','在开发工具中认领代码任务，准备并确认规则及记忆，再回到这里。')),
+    el('section',{class:'card'},text('h2','真实运行记录'),...config.items.slice().reverse().map(item=>el('article',{class:'binding'},text('h3',item.harness+' · '+({starting:'启动中',running:'执行中',stopping:'停止中',stopped:'已停止',exited:'已退出',failed:'执行失败',cancelled:'已取消',interrupted:'异常中断'}[item.state] || item.state)),
+      text('p',item.task_id,'mono'),text('p',item.reason || (item.state==='exited'?'程序已退出。业务任务仍以服务器评审流程为准。':'本人设备运行中。')),
+      ['starting','running','stopping'].includes(item.state)?button('停止运行',async()=>{await invoke('stopExecution',{id:item.id});await update();}):
+        item.requires_process_check?button('检查并确认旧执行已停止',async()=>{await invoke('confirmExecutionStopped',{id:item.id});await update();}):
+        text('small','退出码 '+item.exit_code+' · '+(item.receipt_shared?'回执已共享':'回执仅在本机，尚未共享'))))));
+}
+function informationScreen(kind){
+  const available=state.bindings.filter(b=>b.status==='active'),generation=taskVersion;
+  const panel=el('section',{class:'card'});
+  if(!available.length)return el('div',{},heading('PROJECT INFORMATION',titles[kind],'先接入获准项目，再读取服务器记录。'),empty('没有可用项目连接','请在“项目与 MCP”建立连接。'));
+  memoryBinding=available.some(b=>b.id===memoryBinding)?memoryBinding:available[0].id;
+  const bindingId=memoryBinding,picker=el('select',{},available.map(b=>el('option',{value:b.id,...(b.id===bindingId?{selected:true}:{})},b.projectName+' · '+(b.repositoryName || b.workspace))));
+  picker.addEventListener('change',()=>{memoryBinding=picker.value;guideOffset=0;render();});
+  const query=el('input',{value:guideQuery,maxlength:200,placeholder:'按功能名称或正文查找'});
+  const controls=el('div',{class:'actions'},field('项目连接',picker),kind==='guides'?field('说明搜索',query):null,
+    kind==='guides'?button('搜索',()=>{guideQuery=query.value;guideOffset=0;render();}):null,button('刷新',()=>render()));
+  const current=()=>view===kind && generation===taskVersion && memoryBinding===bindingId && state.bindings.some(b=>b.id===bindingId && b.status==='active');
+  const call=(tool,args={})=>invoke('taskQuery',{bindingId,tool,args});
+  call(kind==='guides'?'hub_list_guides':'hub_get_usage',kind==='guides'?{query:guideQuery,offset:guideOffset,limit:20}:{}).then(data=>{
+    if(!current())return;
+    if(kind==='usage'){
+      const number=value=>Number(value || 0).toLocaleString('zh-CN');
+      panel.append(text('h2','本月用量报告'),
+        text('p','上报输入：'+number(data.reported_input_tokens)+' Token · 上报输出：'+number(data.reported_output_tokens)+' Token'),
+        text('p','其中缓存输入：'+number(data.reported_cached_input_tokens)+' Token'),
+        text('p','已测开工包：'+number(data.measured_context_bytes)+' 字节'),
+        text('p','上报费用：'+(data.reported_cost_micro_usd==null?'未提供':(data.reported_cost_micro_usd/1000000).toFixed(6)+' USD')),
+        text('h3','项目额度'),text('p',(data.budget.mode==='observe'?'只观察':'达到额度暂停受管开发')+' · 月度上报额度：'+(data.budget.monthly_reported_token_limit?number(data.budget.monthly_reported_token_limit)+' Token':'未设上限')),
+        text('p',data.budget.managed_work_available?'当前允许受管工作。':'新受管修改已暂停，仍可保存日志与交接。',data.budget.managed_work_available?'note':'warning'),
+        text('p','仅显示当前权限下已收到的报告；未上报的消耗未知，费用尚未核对账单。开工包字节数不等于计费 Token。','note'),
+        button('在后台调整额度',()=>invoke('openAdmin')));return;
+    }
+    const names={queued:'待生成 / 待重试',running:'生成中',review:'待核对',approved:'已核对，待功能发布',published:'已发布'};
+    if(!data.items.length)panel.append(empty('没有可见说明','需要说明的开发任务提交后会自动建立独立生成待办。已发布指南按阅读范围开放。'));
+    for(const item of data.items)panel.append(el('article',{class:'binding'},text('h3',item.title),text('p',(item.product_version || '待生成')+' · '+(names[item.state] || item.state)),
+      button('查看说明',async()=>{const detail=await call('hub_read_guide',{job_id:item.id});if(!current())return;
+        openDialog(text('h2',detail.title),detail.content?el('div',{},Object.entries(detail.content).map(([key,value])=>el('section',{},text('h3',({purpose:'用途',prerequisites:'前提',entry:'入口',steps:'操作步骤',inputs:'输入校验',results:'结果',recovery:'异常恢复',cautions:'提示',examples:'示例',changes:'版本变化',limitations:'限制',verification:'核验依据',user_roles:'使用角色',product_version:'适用版本',title:'功能名称'})[key] || key),
+          Array.isArray(value)?el('ol',{},value.map(v=>text('li',v))):text('p',value)))):text('p','说明待办已在服务器保留，由负责实例通过 MCP 生成。'),
+          detail.reason?text('p',detail.reason,'warning'):null,dialogActions(button('打开后台审核',()=>invoke('openAdmin'))));
+      })));
+    panel.append(el('div',{class:'actions'},guideOffset?button('上一页',()=>{guideOffset=Math.max(0,guideOffset-20);render();}):null,
+      data.has_more?button('下一页',()=>{guideOffset=data.next_offset;render();}):null));
+  }).catch(error=>{if(current())panel.append(text('p',error.message,'warning'));});
+  return el('div',{},heading('PROJECT INFORMATION',titles[kind],kind==='guides'?'查看适用版本的操作说明及真实生成进度。草稿须经产品和测试核对，发布后按授权供产品人员与 Skill 使用者查阅。':'查看已上报消耗及项目额度。达到额度时暂停受管开发，日志保存和交接继续可用。'),controls,panel);
 }
 function memoryScreen(){
   const generation=taskVersion,available=state.bindings.filter(b=>b.status==='active');
@@ -516,7 +602,7 @@ function render(){
   if(view==='desktop')content=desktopScreen();
   else if(view==='closeouts')content=closeoutsScreen();
   else if(!authenticated)content=state.connection==='pending'?pendingScreen():loginScreen();
-  else content=view==='overview'?overview():view==='workspaces'?workspaces():view==='tasks'?tasksScreen():view==='memory'?memoryScreen():view==='checkpoints'?checkpointsScreen():view==='activity'?
+  else content=view==='overview'?overview():view==='workspaces'?workspaces():view==='tasks'?tasksScreen():view==='execution'?executionScreen():['guides','usage'].includes(view)?informationScreen(view):view==='memory'?memoryScreen():view==='checkpoints'?checkpointsScreen():view==='activity'?
     el('div',{},heading('PROJECT ACTIVITY','项目动态','记录来自服务器。断线恢复后按游标补齐，重复记录会自动合并。'),el('section',{class:'card'},events())):connection();
   root.replaceChildren(el('div',{class:'layout'},sidebar,el('main',{class:'content'},
     el('header',{class:'topbar'},text('div',authenticated || view==='desktop'?titles[view]:'欢迎使用 Agent Hub'),

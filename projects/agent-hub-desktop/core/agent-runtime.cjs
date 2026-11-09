@@ -43,6 +43,17 @@ class AgentRuntime{
         saved.pending_count=pending.length;saved.inbox_checked_at=new Date().toISOString();saved.error=null;
         if(unseen.length)c.emit('notification',{title:'收到新的协作待办',body:`${saved.endpoint.name} 有 ${unseen.length} 项待办，请在开发工具中核对并接受。`});
         saved.notified=[...new Set([...(saved.notified || []),...pending.map(x=>x.id)])].slice(-200);
+        // A guide has its own lease after development ends; desktop polling never claims it.
+        const guides=[];
+        for(const state of ['queued','running']){
+          const page=await c.invokeProjectRemote(binding,'hub_list_guides',{instance_id:saved.endpoint.instance_id,state,limit:100});
+          c.ensureCurrent(p,remote);
+          guides.push(...page.items.filter(x=>x.state==='queued' || Date.parse(x.lease_until)<=Date.now()));
+        }
+        const newGuides=guides.filter(x=>!(saved.guide_notified || []).includes(x.id+':'+x.version));
+        saved.pending_guides=guides.length;
+        if(newGuides.length)c.emit('notification',{title:'功能说明需要补齐',body:`${saved.endpoint.name} 有 ${newGuides.length} 份操作说明待办，请在功能操作说明页面核对。`});
+        saved.guide_notified=[...new Set([...(saved.guide_notified || []),...guides.map(x=>x.id+':'+x.version)])].slice(-200);
       }catch(error){
         if(c.profile!==p || c.remote!==remote)return;
         saved.error=error.code || 'AGENT_INBOX_UNAVAILABLE';

@@ -72,6 +72,30 @@ class EmailChallenge(Identity, Base):
     user_epoch: Mapped[int | None] = mapped_column(Integer)
 
 
+class AccountInvitation(Identity, Base):
+    __tablename__ = "account_invitations"
+    user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id"), index=True)
+    project_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("projects.id"))
+    created_by: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id"))
+    email: Mapped[str] = mapped_column(String(254))
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    consumed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class AccountChallenge(Identity, Base):
+    __tablename__ = "account_challenges"
+    user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id"), index=True)
+    invitation_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("account_invitations.id"))
+    email: Mapped[str] = mapped_column(String(254))
+    purpose: Mapped[str] = mapped_column(String(16))
+    thumbprint: Mapped[str] = mapped_column(String(64))
+    user_epoch: Mapped[int] = mapped_column(Integer)
+    digest: Mapped[str] = mapped_column(String(64))
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    attempts: Mapped[int] = mapped_column(Integer, default=0)
+    consumed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
 class Approval(Identity, Base):
     __tablename__ = "approval_requests"
     kind: Mapped[str] = mapped_column(String(24))
@@ -271,6 +295,11 @@ class Task(Identity, Base):
     scope: Mapped[dict] = mapped_column(JSONB)
     execution_mode: Mapped[str] = mapped_column(String(24), default="observed", server_default="declaration")
     execution_role: Mapped[str] = mapped_column(String(24), default="developer", server_default="developer")
+    role_profile: Mapped[str | None] = mapped_column(String(64))
+    workflow: Mapped[str] = mapped_column(String(16), default="standard", server_default="standard")
+    workflow_reason: Mapped[str] = mapped_column(String(1000), default="", server_default="")
+    workflow_policy: Mapped[dict] = mapped_column(JSONB, default=dict, server_default="{}")
+    documentation: Mapped[dict] = mapped_column(JSONB, default=dict, server_default='{"kind":"none"}')
     status: Mapped[str] = mapped_column(String(24), default="draft")
     admission_step: Mapped[int] = mapped_column(Integer, default=0)
     version: Mapped[int] = mapped_column(Integer, default=1)
@@ -278,6 +307,53 @@ class Task(Identity, Base):
     active_run_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))
     lease_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     submission_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))
+
+
+class UsagePolicy(Base):
+    __tablename__ = "usage_policies"
+    project_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("projects.id"), primary_key=True)
+    version: Mapped[int] = mapped_column(Integer, primary_key=True)
+    author_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id"))
+    device_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("devices.id"))
+    content: Mapped[dict] = mapped_column(JSONB)
+    content_hash: Mapped[str] = mapped_column(String(64))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class UsageEvent(Identity, Base):
+    __tablename__ = "usage_events"
+    __table_args__ = (
+        UniqueConstraint("project_id", "run_id", "source", "reference_hash"),
+        ForeignKeyConstraint(["run_id", "task_id", "project_id"], ["task_runs.id", "task_runs.task_id", "task_runs.project_id"]),
+        ForeignKeyConstraint(["repository_id", "project_id"], ["project_repositories.id", "project_repositories.project_id"]),
+    )
+    project_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("projects.id"))
+    repository_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))
+    task_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True))
+    run_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True))
+    author_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id"))
+    device_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("devices.id"))
+    reference_hash: Mapped[str] = mapped_column(String(64))
+    source: Mapped[str] = mapped_column(String(24))
+    provider: Mapped[str] = mapped_column(String(100))
+    model: Mapped[str] = mapped_column(String(200))
+    input_tokens: Mapped[int | None] = mapped_column(BigInteger)
+    output_tokens: Mapped[int | None] = mapped_column(BigInteger)
+    cached_input_tokens: Mapped[int | None] = mapped_column(BigInteger)
+    reported_cost_micro_usd: Mapped[int | None] = mapped_column(BigInteger)
+    context_bytes: Mapped[int | None] = mapped_column(BigInteger)
+
+
+class MemoryEvaluation(Identity, Base):
+    __tablename__ = "memory_evaluations"
+    __table_args__ = (ForeignKeyConstraint(["repository_id", "project_id"],
+                                          ["project_repositories.id", "project_repositories.project_id"]),)
+    project_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("projects.id"))
+    repository_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))
+    author_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id"))
+    device_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("devices.id"))
+    payload: Mapped[dict] = mapped_column(JSONB)
+    content_hash: Mapped[str] = mapped_column(String(64))
 
 
 class TaskDependency(Base):
@@ -357,6 +433,7 @@ class AgentEndpoint(Identity, Base):
     name: Mapped[str] = mapped_column(String(100))
     harness: Mapped[str] = mapped_column(String(24))
     roles: Mapped[list] = mapped_column(JSONB)
+    role_profiles: Mapped[list] = mapped_column(JSONB, default=list, server_default="[]")
     enabled: Mapped[bool] = mapped_column(default=True)
     version: Mapped[int] = mapped_column(Integer, default=1)
     last_seen_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=func.now())
@@ -452,6 +529,17 @@ class CloseoutSeal(Identity, Base):
 
 class ProjectPolicy(Base):
     __tablename__ = "project_policies"
+    project_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("projects.id"), primary_key=True)
+    version: Mapped[int] = mapped_column(Integer, primary_key=True)
+    author_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id"))
+    device_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("devices.id"))
+    content: Mapped[dict] = mapped_column(JSONB)
+    content_hash: Mapped[str] = mapped_column(String(64))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class ProjectCollaboration(Base):
+    __tablename__ = "project_collaboration"
     project_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("projects.id"), primary_key=True)
     version: Mapped[int] = mapped_column(Integer, primary_key=True)
     author_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id"))
@@ -624,6 +712,7 @@ class MemoryFact(Identity, Base):
     body: Mapped[str] = mapped_column(Text)
     source_quote: Mapped[str] = mapped_column(Text)
     source_hash: Mapped[str] = mapped_column(String(64))
+    additional_sources: Mapped[list] = mapped_column(JSONB, default=list, server_default="[]")
     content_hash: Mapped[str] = mapped_column(String(64))
     generation: Mapped[dict] = mapped_column(JSONB)
     status: Mapped[str] = mapped_column(String(20), default="pending")

@@ -139,6 +139,18 @@ class TaskScope(Input):
         return sorted({document_path(value) for value in values})
 
 
+class GuidePlan(Input):
+    kind: Literal["none", "user", "api", "operations"] = "none"
+    module: str = Field(default="", max_length=200)
+    reason: str = Field(default="", max_length=1000)
+
+    @model_validator(mode="after")
+    def explicit_scope(self):
+        if self.kind != "none" and not self.module.strip():
+            raise ValueError("Specify the feature or module for the operation guide")
+        return self
+
+
 class NewTask(Input):
     repository_id: UUID | None = None
     parent_id: UUID | None = None
@@ -149,6 +161,10 @@ class NewTask(Input):
     scope: TaskScope
     execution_mode: Literal["observed", "declaration"] = "observed"
     execution_role: Literal["project-manager", "architect", "designer", "developer"] = "developer"
+    role_profile: str | None = Field(default=None, pattern=r"^[a-z][a-z0-9-]{0,63}$")
+    workflow: Literal["standard", "compact", "strict"] = "standard"
+    workflow_reason: str = Field(default="", max_length=1000)
+    documentation: GuidePlan = Field(default_factory=GuidePlan)
 
     @model_validator(mode="after")
     def bounded_record(self):
@@ -159,6 +175,8 @@ class NewTask(Input):
             raise ValueError("Code task scope must use stable, relative NFC paths")
         if len(json.dumps(self.model_dump(mode="json"), ensure_ascii=False).encode("utf-8")) > 65536:
             raise ValueError("Task record exceeds 64 KiB")
+        if self.workflow != "standard" and len(self.workflow_reason.strip()) < 10:
+            raise ValueError("An explicit workflow selection reason of at least 10 characters is required")
         return self
 
     @field_validator("title", "description", "acceptance")
@@ -167,6 +185,89 @@ class NewTask(Input):
         if not value.strip():
             raise ValueError("A nonblank value is required")
         return value.strip()
+
+
+class UsagePolicyInput(Input):
+    expected_version: int = Field(ge=0)
+    mode: Literal["observe", "pause-managed-work"] = "observe"
+    monthly_reported_token_limit: int = Field(default=0, ge=0, le=1000000000000)
+    change_reason: str = Field(min_length=10, max_length=1000)
+
+
+class UsageReport(Input):
+    repository_id: UUID | None = None
+    task_id: UUID
+    run_id: UUID
+    reference_hash: str = Field(pattern=r"^[a-f0-9]{64}$")
+    provider: str = Field(min_length=1, max_length=100)
+    model: str = Field(min_length=1, max_length=200)
+    input_tokens: int = Field(ge=0, le=10000000)
+    output_tokens: int = Field(ge=0, le=10000000)
+    cached_input_tokens: int = Field(default=0, ge=0, le=10000000)
+    reported_cost_micro_usd: int | None = Field(default=None, ge=0, le=1000000000)
+
+    @model_validator(mode="after")
+    def cached_is_input(self):
+        if self.cached_input_tokens > self.input_tokens:
+            raise ValueError("Cached input must be included in input tokens")
+        return self
+
+
+class RetrievalCase(Input):
+    query: str = Field(min_length=1, max_length=200)
+    expected_card_ids: list[UUID] = Field(min_length=1, max_length=20)
+
+    @field_validator("expected_card_ids")
+    @classmethod
+    def distinct_cards(cls, values):
+        if len(set(values)) != len(values):
+            raise ValueError("Duplicate expected memory cards")
+        return values
+
+
+class RetrievalEvaluationInput(Input):
+    repository_id: UUID | None = None
+    cases: list[RetrievalCase] = Field(min_length=1, max_length=10)
+    k: int = Field(default=5, ge=1, le=20)
+    search_mode: Literal["hybrid", "keyword"] = "hybrid"
+
+
+class RoleProfile(Input):
+    key: str = Field(pattern=r"^[a-z][a-z0-9-]{0,63}$")
+    name: str = Field(min_length=1, max_length=100)
+    base_role: Literal["project-manager", "architect", "designer", "developer"]
+    responsibilities: list[str] = Field(min_length=1, max_length=12)
+    outputs: list[str] = Field(min_length=1, max_length=12)
+    enabled: bool = True
+
+    @field_validator("responsibilities", "outputs")
+    @classmethod
+    def bounded_items(cls, values):
+        if any(not value.strip() or len(value) > 500 for value in values):
+            raise ValueError("Use nonblank guidance of at most 500 characters per item")
+        return [value.strip() for value in values]
+
+
+class CollaborationInput(Input):
+    expected_version: int = Field(ge=0)
+    profiles: list[RoleProfile] = Field(default_factory=list, max_length=32)
+    allow_compact: bool = False
+    require_guides: bool | None = None
+    change_reason: str = Field(min_length=10, max_length=1000)
+
+    @model_validator(mode="after")
+    def bounded_profiles(self):
+        if len({p.key for p in self.profiles}) != len(self.profiles):
+            raise ValueError("Duplicate role profile keys")
+        if len(json.dumps(self.model_dump(mode="json"), ensure_ascii=False).encode()) > 65536:
+            raise ValueError("Collaboration settings exceed 64 KiB")
+        return self
+
+
+class TaskWorkflowChange(Input):
+    expected_version: int = Field(ge=1)
+    workflow: Literal["standard", "compact", "strict"]
+    reason: str = Field(min_length=10, max_length=1000)
 
 
 class TaskDependencies(Input):
@@ -184,6 +285,7 @@ class AgentRegistration(TaskClaim):
     repository_id: UUID | None = None
     name: str = Field(min_length=1, max_length=100)
     roles: list[Literal["project-manager", "architect", "designer", "developer"]] = Field(min_length=1, max_length=4)
+    role_profiles: list[str] = Field(default_factory=list, max_length=32)
     expected_version: int = Field(ge=0)
     enabled: bool = True
 
@@ -199,6 +301,13 @@ class AgentRegistration(TaskClaim):
     def distinct(cls, values):
         if len(set(values)) != len(values):
             raise ValueError("Duplicate roles")
+        return sorted(values)
+
+    @field_validator("role_profiles")
+    @classmethod
+    def distinct_profiles(cls, values):
+        if len(set(values)) != len(values) or any(not re.fullmatch(r"[a-z][a-z0-9-]{0,63}", value) for value in values):
+            raise ValueError("Use distinct valid role profile keys")
         return sorted(values)
 
 
@@ -628,6 +737,12 @@ class KnowledgeGeneration(Input):
     output_tokens_reported: int | None = Field(default=None, ge=0, le=10000000)
 
 
+class KnowledgeCitation(Input):
+    source_card_id: UUID
+    source_hash: str = Field(pattern=r"^[a-f0-9]{64}$")
+    source_quote: str = Field(min_length=8, max_length=1200)
+
+
 class KnowledgeInput(Input):
     source_card_id: UUID
     repository_id: UUID | None = None
@@ -639,9 +754,16 @@ class KnowledgeInput(Input):
     body: str = Field(min_length=10, max_length=2000)
     reason: str = Field(min_length=10, max_length=1000)
     generation: KnowledgeGeneration = Field(default_factory=KnowledgeGeneration)
+    additional_sources: list[KnowledgeCitation] = Field(default_factory=list, max_length=7)
 
     @model_validator(mode="after")
     def bounded_knowledge(self):
+        ids = [self.source_card_id, *(source.source_card_id for source in self.additional_sources)]
+        if len(set(ids)) != len(ids):
+            raise ValueError("Citations must use distinct sources")
+        if any(not source.source_quote.strip() or len(source.source_quote.encode()) > 4000
+               for source in self.additional_sources):
+            raise ValueError("A bounded exact quote is required for each citation")
         if any(not value.strip() for value in (self.title, self.body, self.source_quote, self.reason)):
             raise ValueError("Knowledge content must not be blank")
         if len(self.body.encode()) > 6000 or len(self.source_quote.encode()) > 4000:

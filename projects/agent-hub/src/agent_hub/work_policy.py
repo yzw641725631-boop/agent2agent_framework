@@ -57,6 +57,8 @@ def task_hash(task):
                "execution_mode": task.execution_mode, "execution_role": task.execution_role}
     if task.repository_id:
         payload["repository_id"] = str(task.repository_id)
+    if task.role_profile or task.workflow_policy:
+        payload.update(role_profile=task.role_profile, workflow=task.workflow_policy)
     return digest(payload)
 
 
@@ -67,20 +69,23 @@ def context_view(row):
 
 
 def prepare(hub, db, actor, project_id, task_id, body, request_id):
+    from . import insights
     from .tasks import live_run
     hub.project(db, actor, project_id, "tasks:write")
     task, run = live_run(db, actor, project_id, task_id, body)
+    insights.require_budget(db, project_id)
     policy = current(db, project_id)
     from .memory import prepare_bundle
     bundle = prepare_bundle(db, project_id, task)
-    from .roles import role
+    from .collaboration import task_role
     payload = {"schema_version": 3, "project_id": str(project_id), "task_id": str(task_id),
                "execution": {"instance_id": str(run.instance_id), "harness": run.harness},
                "run_id": str(run.id), "lease_epoch": task.lease_epoch, "policy": policy,
                "task": {"title": task.title, "repository_id": str(task.repository_id) if task.repository_id else None,
                         "description": task.description, "acceptance": task.acceptance,
                         "scope": task.scope, "execution_mode": task.execution_mode, "execution_role": task.execution_role},
-               "role": role(run.role),
+               "role": task_role(db, task),
+               "workflow": task.workflow_policy,
                "memory": bundle,
                "memory_mode": "source-bound-extractive-memory; semantic distillation not configured"}
     row = WorkContext(project_id=project_id, task_id=task_id, run_id=run.id,
@@ -91,7 +96,7 @@ def prepare(hub, db, actor, project_id, task_id, body, request_id):
     db.flush()
     hub.audit(db, actor.user.id, "context.prepared", row.id, request_id, project_id,
               policy_version=policy["version"], content_hash=row.content_hash)
-    return context_view(row)
+    return {**context_view(row), "context_measurement": insights.record_context(db, actor, task, run, row)}
 
 
 def require_context(db, actor, task, run, context_id, *, acknowledged=True):
@@ -104,9 +109,9 @@ def require_context(db, actor, task, run, context_id, *, acknowledged=True):
     if (row.policy_version != policy["version"] or row.task_hash != task_hash(task)
             or row.payload.get("policy", {}).get("content_hash") != policy["content_hash"]):
         raise HubError("WORK_CONTEXT_STALE", 409, current_version=policy["version"])
+    from .collaboration import task_role
     from .memory import validate_bundle
-    from .roles import role
-    if run.role != task.execution_role or row.payload.get("role", {}).get("content_hash") != role(run.role)["content_hash"]:
+    if run.role != task.execution_role or row.payload.get("role", {}).get("content_hash") != task_role(db, task)["content_hash"]:
         raise HubError("WORK_ROLE_STALE", 409)
     validate_bundle(db, task.project_id, row.payload)
     if acknowledged and not row.acknowledged_at:
