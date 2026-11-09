@@ -26,6 +26,7 @@ description: 安装和使用 Agent Hub 桌面协作框架，通过 MCP 接入授
 - 成员只能处理本人获准的工程与资料。安装了通用 Skill、看到了某个工具名或持有平台项目权限，都不代表获得其他仓库代码、业务日志或管理员权限。
 - 开发前阅读 [任务协作](references/task-workflow.md)，从 `hub_list_tasks` / `hub_get_task` 核对准入状态、验收标准与任务专注范围。需要了解历史决定时先查最近 `hub_list_worklogs`，按需展开原文；只有本人日志可见时，不能声称已读取同事交接。
 - 为当前执行者建立独立 `instance_id`。通过工程 MCP 的 `hub_claim_task` 认领并保存 `run.id`、`lease_epoch` 与到期时间；已被认领时协调或选择其他任务。
+- 需要跨设备派工时读[执行者与逐轮检查](references/agents-and-turns.md)：本人登记实例，负责人投递，执行者明确接受后才取得运行租约。接收、桌面在线和最近活动都不代表代码已经开始执行。
 - 有前置或并行任务时读[任务依赖与独立目录](references/parallel-work.md)：`parent_id` 是层级，`depends_on` 是完成依赖；先认领，再在准备前创建独立任务 worktree。同仓库重叠代码范围占用期间停止新认领，不能用新实例绕过。
 - 代码任务默认 `observed`：`hub_prepare_work` 返回当前职责、规则、任务范围及有预算的获准记忆。阅读职责、规则、卡片和 `gaps` 后，用 `hub_acknowledge_work` 确认全部规则 ID 和内容哈希。职责、规则、来源权限或已用事实失效后重新准备；回执不证明模型理解。
 - 修改前用 `hub_check_changes` 核验拟改路径及实际 Git 改动，租约、规则过期或路径被拒绝时停止并处理原因。首次准备需要干净 Git 工程，可先保留原修改并使用独立 worktree；不要自动丢弃或提交用户工作。
@@ -35,6 +36,7 @@ description: 安装和使用 Agent Hub 桌面协作框架，通过 MCP 接入授
 只要本轮修改代码，结束前完成一条可交接的工作记录，规则与模板见 [开发记录与交接](references/work-records.md)。
 
 - 用 `hub_write_worklog` 记录目标、验证、阻塞和下一步。代码任务由桌面采集实际文件清单，优先省略 `changed_paths` 与 `git_commit`，避免漏报；不要粘贴代码全文。重试同一请求保持相同内容和 `operation_id`。
+- 已启用宿主逐轮钩子时，用开始事件给出的 `session_key` 绑定已准备确认的运行；结束前检查 `hub_get_work_record_status`，`missing` 补记，`pending` 保留待传。未启用或未绑定时说明逐轮覆盖缺口，不把后台检查点当作工作说明。
 - 检查 `server_confirmed` 和 `state`：只有 `shared` 才算日志已共享。`pending` 是加密待发，`blocked` 保留工作但不自动越过失效权限；可用 `hub_list_local_work` 检查。
 - 桌面已准备、确认的运行约每 2 分钟自动续租；连续 10 分钟没有观察到代码或工具活动就停止续租。其他未托管运行仍须显式心跳。租约失效时重新核验；停工前保存日志并释放或提交，不能把后台观察代替逐轮工作说明。
 - 开发完成用 `hub_submit_task` 提交最新检查点。评审、测试、发布确认分别记录在 `hub_decide_task`，不能用进度文字替代；不把切换角色名称说成独立评审。正常由其他人评审；超管评审本人工作必须显式记录自审原因。

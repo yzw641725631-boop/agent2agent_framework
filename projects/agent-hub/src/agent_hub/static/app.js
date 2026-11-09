@@ -13,6 +13,7 @@ const caps = {'project:read':'项目资料', 'documents:read':'读取文档', 'd
 const osDefault = /Mac/i.test(navigator.platform) ? 'macos' : 'windows';
 const messagesForDocument = code => messages[code] || code;
 const taskStates = {draft:'待准入',ready:'待认领',in_progress:'开发中',review:'待评审',testing:'待测试',release_ready:'待发布确认',completed:'已完成'};
+const dispatchStates = {queued:'等待接收',received:'已接收，待决定',accepted:'已接受并认领',declined:'已拒绝',cancelled:'已取消',expired:'已过期'};
 const gateNames = {requirements:'需求确认',design:'设计审查',feasibility:'可行性确认',review:'代码评审',test:'测试确认',release:'发布确认'};
 const roleNames = {'project-manager':'项目经理',architect:'架构师',designer:'产品与交互设计',developer:'开发工程师',reviewer:'代码审查',tester:'测试工程师',publisher:'发布负责人'};
 const loginOptions = {required:true,pattern:'[a-z0-9][a-z0-9_.\\-]{2,79}',minlength:3,maxlength:80,
@@ -330,7 +331,7 @@ class Console {
       [button('刷新',() => this.renderView()),...(projectId ? [button('项目规则',() => this.openPolicy(projectId)),button('职业职责',() => this.openRoles(projectId))] : []),
         ...(projectId && this.can('tasks:publish') ? [button('创建任务',() => this.createTask(),'primary')] : [])]);
     if (!projectId) return [title,h('section',{class:'card empty'},'请先选择一个项目。')];
-    const base = `/api/projects/${projectId}`, list = h('div',{}), feed = h('div',{}), status = h('p',{class:'hint'});
+    const base = `/api/projects/${projectId}`, list = h('div',{}), feed = h('div',{}), dispatches = h('div',{}), status = h('p',{class:'hint'});
     let offset = 0, before = '0', busy = false;
     const current = () => this.project?.id === projectId && this.currentView === 'tasks' && this.renderVersion === revision;
     const refresh = async () => {
@@ -339,6 +340,8 @@ class Console {
       try {
         const tasks = await this.api('GET',`${base}/tasks?offset=${offset}&limit=50`);
         const activity = await this.api('GET',`${base}/activity?before=${before}&limit=20`);
+        const offers = await this.api('GET',`${base}/agent-dispatches?limit=20`);
+        const agents = await this.api('GET',`${base}/agents?limit=100`);
         if (!current()) return;
         list.replaceChildren(table('协作任务',['任务 / 父任务','当前阶段','专注范围','开发租约','操作'],tasks.items.map(task => [
           textPair(task.title,`${short(task.id)}${task.parent_id ? ` · 父 ${short(task.parent_id)}` : ''}`),
@@ -353,6 +356,17 @@ class Console {
           event.git_commit || '—'])));
         feed.append(h('div',{class:'row-actions'},before !== '0' && button('返回最新',async () => { before = '0'; await refresh(); }),
           activity.has_more && button('更早动态',async () => { before = activity.before; await refresh(); })));
+        dispatches.replaceChildren(table('执行者登记',['名称','工具与职业','最近活动','版本'],agents.items.map(a=>[
+          a.name,textPair(a.harness,a.roles.map(r=>roleNames[r] || r).join('、')),
+          textPair(date(a.last_seen_at),a.recent_agent_activity?'最近有 Agent 活动':'暂无近期活动'),String(a.version)])),
+          h('p',{class:'hint'},'登记与桌面在线不代表模型正在执行。投递不启动外部程序，接收不占租约，接受才认领。'),
+          table('最近任务投递',['任务','回执状态','说明','时间','操作'],offers.items.map(o=>[
+            o.task_title,textPair(dispatchStates[o.state],o.run_id?`运行 ${short(o.run_id)}`:o.expired?'已超时':'未取得运行租约'),
+            textPair(o.note,o.reason),date(o.created_at),this.can('tasks:publish') && ['queued','received'].includes(o.state)?button('取消投递',()=>{
+              const form=h('form',{},field('reason','取消原因',{required:true,maxlength:1000}));
+              dialog('取消投递','取消不终止已接受的开发运行。',form,'取消待办',v=>this.api('POST',`${base}/agent-dispatches/${o.id}/decision`,
+                {action:'cancel',expected_version:o.version,reason:v.reason}));
+            },'small'):'—'])),offers.has_more?h('p',{class:'hint'},'这里展示最近 20 条；完整历史可由项目 MCP 按任务翻页。'):h('span',{}));
         status.textContent = `最近同步 ${date(new Date().toISOString())} · 完整日志需要单独授权，动态不包含日志原文。`;
       } catch (error) {
         if (current()) { status.textContent = error.message; this.report(error); }
@@ -362,7 +376,21 @@ class Console {
       }
     };
     await refresh();
-    return [title,status,list,feed,h('p',{class:'help-block'},'前置任务完成后才能认领；同仓库重叠代码范围在开发及评审测试期间保留占用。日志、代码备份、Git 交付分别核验回执。')];
+    return [title,status,list,dispatches,feed,h('p',{class:'help-block'},'前置任务完成后才能认领；同仓库重叠代码范围在开发及评审测试期间保留占用。日志、代码备份、Git 交付分别核验回执。')];
+  }
+  async dispatchTask(projectId,task){
+    const revision=this.renderVersion;
+    const agents=await this.api('GET',`/api/projects/${projectId}/agents?limit=100${task.repository_id?'&repository_id='+task.repository_id:''}`);
+    if(this.project?.id!==projectId || this.currentView!=='tasks' || this.renderVersion!==revision)return;
+    const eligible=agents.items.filter(a=>a.enabled && a.repository_id===task.repository_id && a.roles.includes(task.execution_role));
+    if(!eligible.length){toast('没有同仓库、同职业的可投递执行者。请成员在开发工具中登记实例。');return;}
+    const form=h('form',{},field('endpoint_id','执行者',{required:true,items:eligible.map(a=>[a.id,`${a.name} · ${a.harness} · ${short(a.device_id)}`])}),
+      field('note','投递说明',{required:true,maxlength:1000}));
+    dialog('投递任务','待办保留 24 小时。接收不认领；执行者接受时重新检查权限、版本、依赖和占用。',form,'投递待办',values=>{
+      const endpoint=eligible.find(a=>a.id===values.endpoint_id);
+      return this.api('POST',`/api/projects/${projectId}/agent-dispatches`,{task_id:task.id,endpoint_id:endpoint.id,
+        expected_task_version:task.version,expected_endpoint_version:endpoint.version,note:values.note});
+    });
   }
   async createTask(parentId = null) {
     const projectId = this.project.id;
@@ -490,6 +518,7 @@ class Console {
     const reload = () => this.openTask(projectId,taskId,offset);
     const act = async (path,body) => { await this.api('POST',base+path,body); toast('服务器已保存'); await reload(); };
     const actions = [button('关闭',() => modal.close()),button('刷新',reload)];
+    if(this.can('tasks:publish') && task.status==='ready')actions.push(button('投递给执行者',()=>this.dispatchTask(projectId,task)));
     const coordination = data.coordination;
     if(this.can('tasks:publish') && !task.lease_epoch && ['draft','ready'].includes(task.status) && !coordination?.has_restricted_dependencies)
       actions.push(button('设置前置任务',() => {

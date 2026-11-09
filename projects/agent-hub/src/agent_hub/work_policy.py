@@ -75,6 +75,7 @@ def prepare(hub, db, actor, project_id, task_id, body, request_id):
     bundle = prepare_bundle(db, project_id, task)
     from .roles import role
     payload = {"schema_version": 3, "project_id": str(project_id), "task_id": str(task_id),
+               "execution": {"instance_id": str(run.instance_id), "harness": run.harness},
                "run_id": str(run.id), "lease_epoch": task.lease_epoch, "policy": policy,
                "task": {"title": task.title, "repository_id": str(task.repository_id) if task.repository_id else None,
                         "description": task.description, "acceptance": task.acceptance,

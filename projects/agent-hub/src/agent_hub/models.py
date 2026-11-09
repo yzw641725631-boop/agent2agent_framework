@@ -336,6 +336,54 @@ class Worklog(Identity, Base):
     change_evidence: Mapped[dict | None] = mapped_column(JSONB)
     evidence_hash: Mapped[str | None] = mapped_column(String(64))
     closeout_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("closeout_jobs.id"))
+    turn_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))
+
+
+class AgentEndpoint(Identity, Base):
+    __tablename__ = "agent_endpoints"
+    __table_args__ = (
+        UniqueConstraint("id", "project_id"),
+        UniqueConstraint("project_id", "device_id", "instance_id"),
+        ForeignKeyConstraint(["repository_id", "project_id"], ["project_repositories.id", "project_repositories.project_id"]),
+    )
+    project_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("projects.id"))
+    repository_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))
+    user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id"))
+    device_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("devices.id"))
+    grant_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("access_grants.id"))
+    user_epoch: Mapped[int] = mapped_column(Integer)
+    device_epoch: Mapped[int] = mapped_column(Integer)
+    instance_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True))
+    name: Mapped[str] = mapped_column(String(100))
+    harness: Mapped[str] = mapped_column(String(24))
+    roles: Mapped[list] = mapped_column(JSONB)
+    enabled: Mapped[bool] = mapped_column(default=True)
+    version: Mapped[int] = mapped_column(Integer, default=1)
+    last_seen_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=func.now())
+
+
+class AgentDispatch(Identity, Base):
+    __tablename__ = "agent_dispatches"
+    __table_args__ = (
+        ForeignKeyConstraint(["endpoint_id", "project_id"], ["agent_endpoints.id", "agent_endpoints.project_id"]),
+        ForeignKeyConstraint(["task_id", "project_id"], ["tasks.id", "tasks.project_id"]),
+        ForeignKeyConstraint(["run_id", "task_id", "project_id"], ["task_runs.id", "task_runs.task_id", "task_runs.project_id"]),
+    )
+    project_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("projects.id"))
+    task_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True))
+    endpoint_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True))
+    sender_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id"))
+    sender_device_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("devices.id"))
+    task_version: Mapped[int] = mapped_column(Integer)
+    endpoint_version: Mapped[int] = mapped_column(Integer)
+    note: Mapped[str] = mapped_column(String(1000))
+    state: Mapped[str] = mapped_column(String(16), default="queued")
+    version: Mapped[int] = mapped_column(Integer, default=1)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    received_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    decided_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    reason: Mapped[str] = mapped_column(String(1000), default="")
+    run_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))
 
 
 class WorkSnapshot(Identity, Base):

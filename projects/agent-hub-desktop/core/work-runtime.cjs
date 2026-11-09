@@ -88,6 +88,8 @@ class WorkRuntime{
       scope:context.payload.task.scope,policy:context.payload.policy,acknowledged:false,last_activity:Date.now(),next_heartbeat:0,
       memory:context.payload.memory || null,memory_required:context.payload.schema_version>=2,
       role:context.payload.role || null,role_required:context.payload.schema_version>=3,
+      instance_id:context.payload.execution?.instance_id || null,harness:context.payload.execution?.harness || null,
+      ...Object.fromEntries(Object.entries(previous || {}).filter(([key])=>key.startsWith('last_record_') || ['last_evidence_hash','last_worklog_id'].includes(key))),
       execution_mode:context.payload.task.execution_mode};
     await c.persist();this.start();return {...context,baseline_commit:baseline.base_commit,local_write_isolation:false,
       local_memory:{storage:'os-encrypted-vault',scope:'account-device-repository-run',context_id:context.id,
@@ -149,6 +151,7 @@ class WorkRuntime{
       if(rejected.length)throw new HubError(rejected[0].code,'拟修改路径被任务范围或保护规则拒绝。',{violations:rejected});
     }
     const snapshot=await this.capture(binding,r);
+    this.c.turns?.update(r,snapshot.evidence_hash,snapshot.evidence.files.length);
     this.c.ensureCurrent(p,remote);
     r.last_activity=Date.now();await this.c.persist();
     return {can_continue:true,evidence:snapshot.evidence,evidence_hash:snapshot.evidence_hash,
@@ -159,6 +162,7 @@ class WorkRuntime{
     r.automatic_checkpoint_id??=crypto.randomUUID();
     return this.serialize(r.automatic_checkpoint_id,async()=>{
     const snapshot=await this.capture(binding,r);
+    this.c.turns?.update(r,snapshot.evidence_hash,snapshot.evidence.files.length);
     if(snapshot.evidence_hash===r.observed_hash || !snapshot.evidence.files.length && !r.observed_hash)return;
     const record={schema:1,operation_id:r.automatic_checkpoint_id,owner:r.owner,binding_id:binding.id,
       project_id:binding.projectId,repository_id:binding.repositoryId || null,task_id:r.task_id,run_id:r.run_id,lease_epoch:r.lease_epoch,workspace:binding.workspace,
@@ -192,10 +196,13 @@ class WorkRuntime{
          typeof args.tests!=='string' || !args.tests.trim() || typeof args.next_steps!=='string' || !args.next_steps.trim())
         throw new HubError('INVALID_REQUEST');
       const snapshot=await this.capture(binding,r);
+      const turn=this.c.turns?.forRun(r);
+      if(args.turn_id && turn && args.turn_id!==turn.turn_id)throw new HubError('WORK_TURN_MISMATCH');
       const paths=snapshot.evidence.files.map(f=>f.path);
       if(args.changed_paths && observer.canonical([...args.changed_paths].sort())!==observer.canonical([...paths].sort()))
         throw new HubError('WORK_CHANGE_PATHS_MISMATCH','申报路径与实际 Git 改动不一致，未上传。');
       const {task_id,operation_id,...body}=args;
+      if(turn)body.turn_id=turn.turn_id;
       delete body.evidence_hash;
       Object.assign(body,{changed_paths:paths,context_id:r.context_id,change_evidence:snapshot.evidence,git_commit:snapshot.evidence.head_commit});
       if(Buffer.byteLength(JSON.stringify(body))>65536)throw new HubError('WORK_RECORD_LIMIT','日志和文件清单超过 64 KiB，请缩短日志。');
@@ -208,6 +215,8 @@ class WorkRuntime{
       }
       await this.store.write(record,{create:true});
       if(this.c.profile!==profile || this.c.connection==='signed_out')return this.receipt(record);
+      r.last_record_id=record.operation_id;r.last_record_hash=snapshot.evidence_hash;
+      r.last_record_turn_id=body.turn_id || null;r.last_record_state='pending';
       r.last_activity=Date.now();await this.c.persist();
       return this.deliver(binding,record);
     });
@@ -228,7 +237,11 @@ class WorkRuntime{
         record.backup_state=retryable.has(error.code) || ['SERVICE_BUSY','WORK_ARCHIVE_UPLOAD_TIMEOUT','INVALID_RESPONSE'].includes(error.code)?'pending':'blocked';
         record.next_backup=Date.now()+30000;}
     }
-    await this.store.write(record);this.c.emitState();return this.receipt(record);
+    await this.store.write(record);
+    const run=this.c.profile===profile && profile?.workRuns?.[record.run_id];
+    if(run && run.last_record_id===record.operation_id){run.last_record_state=record.state;
+      this.c.turns?.update(run,record.snapshot.evidence_hash,record.snapshot.evidence.files.length);await this.c.persist();}
+    this.c.emitState();return this.receipt(record);
   }
   receipt(record){
     const log=record.server_receipt;

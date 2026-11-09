@@ -14,6 +14,8 @@ const {RepositoryRuntime}=require('./repository-runtime.cjs');
 const {BackupRuntime}=require('./backup-runtime.cjs');
 const {CloseoutRuntime}=require('./closeout-runtime.cjs');
 const {FrameworkRuntime}=require('./framework-runtime.cjs');
+const {AgentRuntime}=require('./agent-runtime.cjs');
+const {TurnRuntime}=require('./turn-runtime.cjs');
 const {version}=require('../package.json');
 
 const stopped=new Set(['PROJECT_ACCESS_REVOKED','ACCOUNT_INACTIVE','DEVICE_NOT_ALLOWED','SESSION_REVOKED',
@@ -36,6 +38,8 @@ class Controller extends EventEmitter {
     this.backups=new BackupRuntime(this);
     this.closeouts=new CloseoutRuntime(this);
     this.framework=new FrameworkRuntime(this);
+    this.agents=new AgentRuntime(this);
+    this.turns=new TurnRuntime(this);
   }
   get profile(){return this.vault.data.profiles[this.vault.data.current] || null;}
   persist(){return this.vault.save();}
@@ -94,14 +98,18 @@ class Controller extends EventEmitter {
         task_id:b.taskId || null,worktree_run_id:b.worktreeRunId || null,
         installed:b.installed || null})),
       events:(visible?p?.events || []:[]).slice(-100).reverse(),
+      agents:visible?Object.values(p?.agentEndpoints || {}).filter(s=>p.bindings.some(b=>b.id===s.binding_id && b.status==='active')).map(s=>({
+        binding_id:s.binding_id,...s.endpoint,pending_count:s.pending_count || 0,error:s.error || null})):[],
       workRuns:visible?Object.values(p?.workRuns || {}).map(r=>({task_id:r.task_id,run_id:r.run_id,binding_id:r.binding_id,
         acknowledged:r.acknowledged,policy_version:r.policy.version,stopped:r.stopped || null,
-        observation_error:r.observation_error || null,last_activity:r.last_activity})):[],version};
+        observation_error:r.observation_error || null,record_status:r.record_status || null,last_activity:r.last_activity})):[],version};
   }
   async start(){
     await this.broker.start();
     await this.setup.restore();
     this.work.start();
+    this.agents.start();
+    this.turns.start();
     this.closeouts.start();
     const p=this.profile;
     if(!p)return this.state();
@@ -339,6 +347,11 @@ class Controller extends EventEmitter {
     if(this.management.owns(request.binding))return this.management.dispatch(request);
     const b=this.binding(request.binding);
     if(!equalSecret(request.secret,b.secret))throw new HubError('BRIDGE_AUTHENTICATION_FAILED','本机连接认证失败。');
+    if(request.action==='turn_hook'){
+      if(this.closed || this.draining)throw new HubError('CLIENT_UPDATE_REQUIRED');
+      const operation=this.turns.hook(b,request.args);this.projectOperations.add(operation);
+      try{return await operation;}finally{this.projectOperations.delete(operation);}
+    }
     const checkVersion=this.updater ? ()=>this.updater.check({fresh:true}) : undefined;
     if(request.action==='mcp')return dispatchMcp(
       request.args.request,(action,args)=>this.invokeProject(b,action,args),checkVersion,{omitToolText:true}
@@ -370,6 +383,10 @@ class Controller extends EventEmitter {
     }
     if(b.taskId && (args?.task_id && args.task_id!==b.taskId || args?.run_id && args.run_id!==b.worktreeRunId))
       throw new HubError('TASK_WORKTREE_MISMATCH');
+    if(['hub_register_agent','hub_agent_inbox'].includes(action)){
+      const operation=this.agents.invoke(b,action,args);this.projectOperations.add(operation);
+      try{return await operation;}finally{this.projectOperations.delete(operation);}
+    }
     if(['hub_assemble_project','hub_fetch_repository','hub_push_task','hub_create_task_worktree'].includes(action)){
       const operation=this.repositories.invoke(b,action,args);
       this.projectOperations.add(operation);
@@ -377,6 +394,17 @@ class Controller extends EventEmitter {
     }
     const localActions={hub_prepare_work:'prepare',hub_acknowledge_work:'acknowledge',hub_check_changes:'check',
       hub_list_local_work:'list',hub_load_memory:'loadMemory'};
+    if(['hub_bind_work_session','hub_get_work_record_status','hub_preview_turn_hooks'].includes(action)){
+      require('./task-tools.cjs').validate(action,args);
+      if(this.closed || this.draining || this.binding(b.id)!==b || !this.profile?.sessions.platform || this.connection==='signed_out')throw new HubError('LOGIN_REQUIRED');
+      if(action==='hub_preview_turn_hooks'){
+        await this.invokeProjectRemote(b,'hub_get_project',{});
+        return {configuration:require('./session-hook.cjs').turnHooks(Object.values(this.configuration(b).mcpServers)[0],args.harness),
+          installed:false,requires_host_trust:true,coverage:'codex-and-claude-code-explicitly-bound-sessions'};
+      }
+      const operation=this.turns[action==='hub_bind_work_session'?'bind':'status'](b,args);this.projectOperations.add(operation);
+      try{return await operation;}finally{this.projectOperations.delete(operation);}
+    }
     const prepared=args?.run_id && this.profile?.workRuns?.[args.run_id];
     const method=localActions[action] || (prepared && action==='hub_write_worklog'?'save':
       prepared && action==='hub_submit_task'?'submit':null);
@@ -408,6 +436,8 @@ class Controller extends EventEmitter {
   }
   async drainProjectOperations(){
     this.draining=true;
+    await this.agents.drain();
+    await this.turns.drain();
     await this.closeouts.drain();
     await Promise.allSettled(this.projectOperations);
     await this.work.drain();
@@ -451,6 +481,20 @@ class Controller extends EventEmitter {
       const knowledgeRequest=require('./knowledge-tools.cjs').request(action,args,b.projectId,b.repositoryId,context.capabilities);
       if(knowledgeRequest)return await remote.request(knowledgeRequest.method,knowledgeRequest.path,knowledgeRequest.body,
         {slot,idempotency:knowledgeRequest.operation_id});
+      const agentRequest=require('./agent-tools.cjs').request(action,args,context.capabilities,b);
+      if(agentRequest){
+        if(args.task_id){
+          const {task}=await remote.request('GET',`/api/projects/${b.projectId}/tasks/${args.task_id}`,undefined,{slot});
+          if(b.repositoryId && task.repository_id!==b.repositoryId)throw new HubError('TASK_REPOSITORY_MISMATCH');
+        }
+        if(action==='hub_decide_agent_dispatch'){
+          const offer=await remote.request('GET',`/api/projects/${b.projectId}/agent-dispatches/${args.dispatch_id}`,undefined,{slot});
+          if(offer.task_id!==args.task_id || b.repositoryId && offer.repository_id!==b.repositoryId)
+            throw new HubError('AGENT_DISPATCH_NOT_ACCESSIBLE');
+        }
+        const result=await remote.request(agentRequest.method,agentRequest.path,agentRequest.body,{slot,idempotency:agentRequest.operation_id});
+        this.ensureCurrent(profile,remote);return result;
+      }
       const taskRequest=require('./task-tools.cjs').request(action,args,context.capabilities,b.projectId,{internal});
       if(taskRequest){
         if(b.repositoryId){
@@ -605,6 +649,6 @@ class Controller extends EventEmitter {
     return {serverLogoutComplete:complete};
   }
   async close(){this.closed=true;this.work.stop();this.cancelRecovery();this.stopWatches();this.remote?.close();await this.closeouts.drain();
-    await Promise.allSettled(this.projectOperations);await this.work.drain();await this.broker.close();await this.vault.pending;}
+    await this.agents.drain();await this.turns.drain();await Promise.allSettled(this.projectOperations);await this.work.drain();await this.broker.close();await this.vault.pending;}
 }
 module.exports={Controller};

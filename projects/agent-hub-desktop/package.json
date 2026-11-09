@@ -1,7 +1,7 @@
 {
   "name": "agent-hub-desktop",
   "productName": "Agent Hub",
-  "version": "0.15.0",
+  "version": "0.16.0",
   "private": true,
   "description": "Agent Hub desktop login, project MCP bridge and progress notifications",
   "main": "main.cjs",

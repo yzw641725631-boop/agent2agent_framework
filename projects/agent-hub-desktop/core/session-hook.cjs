@@ -22,4 +22,14 @@ function sessionHook({ command, args }, host) {
   return { hooks: { SessionStart: [{ hooks: [handler] }] } };
 }
 
-module.exports = { sessionRule, sessionHook };
+function turnHooks({command,args},host){
+  if(!['codex','claude-code'].includes(host))throw new Error('Unsupported hook host');
+  const events=host==='codex'?['UserPromptSubmit','Stop','Interrupt']:['UserPromptSubmit','Stop'];
+  return {hooks:Object.fromEntries(events.map(event=>{
+    const script="[Console]::OutputEncoding = [Text.UTF8Encoding]::new($false)\n"+
+      "$env:ELECTRON_RUN_AS_NODE = '1'\n& "+[command,...args,'--turn-hook',event,'--harness',host].map(quoted).join(' ');
+    return [event,[{hooks:[{type:'command',command:'powershell.exe -NoProfile -NonInteractive -EncodedCommand '+encodedCommand(script),
+      timeout:event==='Interrupt'?3:12}]}]];
+  }))};
+}
+module.exports = { sessionRule, sessionHook, turnHooks };

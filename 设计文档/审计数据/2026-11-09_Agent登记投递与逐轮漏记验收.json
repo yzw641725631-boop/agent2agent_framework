@@ -1,0 +1,279 @@
+{
+  "date": "2026-11-09",
+  "scope": "agent-registration-dispatch-and-turn-record-detection",
+  "backend": "0.14.0",
+  "desktop": "0.16.0",
+  "database_schema": "0017",
+  "backend_tests_passed": 225,
+  "desktop_tests_passed": 134,
+  "test_log_sha256": {
+    "backend": "51ff5bb2daa3585edba76038f99231a75a612d0ecb0fc032edcade560062ea12",
+    "desktop": "1a1d93ac16d8079f428458c04f527d6dafb2f4e4f81df90be4a3625a4dd8e2db"
+  },
+  "database_and_docker_only_on_server": true,
+  "real_mcp_http_postgresql_integration": {
+    "passed": true,
+    "realWindowsController": true,
+    "realMcpBroker": true,
+    "realHTTP": true,
+    "realDPoP": true,
+    "realPostgreSQL": true,
+    "explicitRecipient": true,
+    "passivePollingDoesNotImpersonateAgent": true,
+    "receivedDoesNotClaim": true,
+    "acceptAtomicallyClaims": true,
+    "acceptRetryIdempotent": true,
+    "unrelatedRecipientCannotReadDispatch": true,
+    "fixedRepositoryEnforced": true,
+    "turnBoundToActualInstance": true,
+    "stopDetectsMissingRecord": true,
+    "worklogTurnIdPersisted": true,
+    "logAndCodeBackupConfirmed": true,
+    "revocationBlocksInbox": true
+  },
+  "physical_windows_hosts_tested": 1,
+  "different_physical_devices_tested": false,
+  "web_ui": {
+    "passed": true,
+    "realElectronWebUI": true,
+    "backend": "fixture",
+    "agentsVisible": true,
+    "dispatchFormVersioned": true,
+    "queuedReceiptVisible": true,
+    "cancelHasReason": true,
+    "horizontalOverflow": false
+  },
+  "desktop_ui": {
+    "passed": true,
+    "realElectronUI": true,
+    "backend": "fixture",
+    "agentsVisible": true,
+    "receivedIsNotClaimed": true,
+    "missingRecordVisible": true,
+    "hookCoverageGapVisible": true,
+    "horizontalOverflow": false
+  },
+  "packaged_runtime": {
+    "passed": true,
+    "version": "0.16.0",
+    "packagedRuntime": true,
+    "sharedMemoryNavigationListed": true,
+    "signedOutProjectAccessBlocked": true,
+    "closeToTrayDefault": true,
+    "trayLifetimeVerifiedInSourceSmoke": true,
+    "profileIsolated": true
+  },
+  "hooks": {
+    "provided_hosts": [
+      "codex",
+      "claude-code"
+    ],
+    "delivery": "preview-copy-and-explicit-session-binding",
+    "windows_powershell_to_real_bridge_verified": true,
+    "private_host_payload_fields_stripped": true,
+    "real_git_missing_pending_recorded_and_multi_session_tests": true,
+    "stop_maximum_continuation_prompts_per_session_per_10_minutes": 1,
+    "interrupt_persisted_request_is_not_backup_receipt": true,
+    "automatic_hook_installation": false,
+    "host_activation_receipt": false,
+    "actual_host_stop_events_verified": false,
+    "all_seven_hosts_verified": false
+  },
+  "nonempty_restore": {
+    "schema": "0017",
+    "agents": 1,
+    "accepted_dispatches": 1,
+    "turn_worklogs": 1,
+    "agent_tables_forced_rls": true,
+    "transition_trigger": true
+  },
+  "production": {
+    "health": {
+      "status": "ok",
+      "phase": "P8-reviewed-knowledge",
+      "version": "0.14.0"
+    },
+    "database": {
+      "schema": "0017",
+      "vector_version": "0.8.7",
+      "users": 1,
+      "devices": 4,
+      "projects": 0,
+      "settings": 1,
+      "repositories": 0,
+      "tasks": 0,
+      "memory_embeddings": 0,
+      "agent_endpoints": 0,
+      "agent_dispatches": 0,
+      "agent_tables_forced_rls": true,
+      "unique_primary_lease": true,
+      "task_tables_forced_rls": true
+    },
+    "database_backup_verified": true,
+    "restore_drill_passed": true,
+    "restored_role_bindings_verified": true,
+    "snapshot_id": "368800b7d709fc3e362bd469545c55fe6a346811a85362b4fe7330c7b87909e2",
+    "ops": {
+      "schema": 1,
+      "created_at": "2026-11-09T12:43:43.166509+00:00",
+      "checks": [
+        {
+          "id": "container:agent-hub-postgres",
+          "state": "ok"
+        },
+        {
+          "id": "container:agent-hub-app-api-1",
+          "state": "ok"
+        },
+        {
+          "id": "container:agent-hub-app-document-worker-1",
+          "state": "ok"
+        },
+        {
+          "id": "container:agent-hub-app-memory-worker-1",
+          "state": "ok"
+        },
+        {
+          "id": "container:agent-hub-app-embedding-1",
+          "state": "ok"
+        },
+        {
+          "id": "container:agent-hub-app-embedding-worker-1",
+          "state": "ok"
+        },
+        {
+          "id": "container:agent-hub-edge",
+          "state": "ok"
+        },
+        {
+          "id": "database:query",
+          "state": "ok"
+        },
+        {
+          "id": "memory:queue",
+          "state": "ok"
+        },
+        {
+          "id": "semantic:queue",
+          "state": "ok"
+        },
+        {
+          "id": "public:https",
+          "state": "ok",
+          "version": "0.14.0"
+        },
+        {
+          "id": "desktop:signed-feed",
+          "state": "ok",
+          "version": "0.16.0",
+          "remaining_hours": 719
+        },
+        {
+          "id": "disk:capacity",
+          "state": "ok",
+          "free_bytes": 16752861184
+        },
+        {
+          "id": "agent-hub-backup",
+          "state": "ok",
+          "age_hours": 0.15,
+          "maximum_hours": 36
+        },
+        {
+          "id": "agent-hub-archive-audit",
+          "state": "ok",
+          "age_hours": 0.15,
+          "maximum_hours": 36
+        },
+        {
+          "id": "agent-hub-restore-drill",
+          "state": "ok",
+          "age_hours": 0.15,
+          "maximum_hours": 1080
+        },
+        {
+          "id": "offsite:continuous-copy",
+          "state": "warning",
+          "configured": false
+        },
+        {
+          "id": "alerts:external-delivery",
+          "state": "warning",
+          "configured": false
+        }
+      ],
+      "healthy": true,
+      "has_warnings": true,
+      "scope": "local-operator-checks-only"
+    },
+    "business_pilot_performed": false,
+    "actual_business_memory_data": false
+  },
+  "test_cleanup": {
+    "passed": true,
+    "removed_labeled_test_containers": 5,
+    "removed_labeled_test_networks": 2,
+    "removed_verified_anonymous_test_volume": true,
+    "production_volume_preserved": true,
+    "shared_model_files_preserved": true
+  },
+  "release": {
+    "version": "0.16.0",
+    "metadata_version": 17,
+    "issued_at": "2026-11-09T12:35:25.162Z",
+    "expires_at": "2026-12-09T12:35:25.162Z",
+    "zip_bytes": 159998198,
+    "zip_sha256": "a86fb7164279ec1bf2cf2c02a27c761b0ac23fc245e17f7630d54e8de21eb4b6",
+    "files_sha256": "285d314d2499d083159d08deaacce7051715c1565eb06db3f56daf1828e4502a",
+    "installer_bytes": 123165880,
+    "installer_sha256": "998c29c327e1b186b998311af48ef68d485aeed404e01f75bd737103e1a73fe9",
+    "feed_signature": "Ed25519",
+    "authenticode_signed": false
+  },
+  "public_online_upgrade": {
+    "passed": true,
+    "old_version": "0.15.0",
+    "new_version": "0.16.0",
+    "clicked_from_signed_out_client": true,
+    "signed_release_activated": true,
+    "native_restart_completed": true,
+    "publicDownload": true,
+    "profileIsolated": true
+  },
+  "actual_local_installation": {
+    "passed": true,
+    "version": "0.16.0",
+    "publicInstallerDownloadVerified": true,
+    "installerSha256": "998c29c327e1b186b998311af48ef68d485aeed404e01f75bd737103e1a73fe9",
+    "installedManifestMatchesSignedRelease": true,
+    "installedFilesVerified": 167,
+    "unlistedApplicationResourcesAbsent": true,
+    "managedSkillMatchesPackagedVersion": true,
+    "managedSkillFilesVerified": 11,
+    "existingDataDirectoryUsed": "D:/agent_cache/agent-hub",
+    "codexConfigurationUpdated": true,
+    "loginPerformedByAgent": false,
+    "authenticodeSigned": false
+  },
+  "actual_installed_stdio_mcp": {
+    "passed": true,
+    "installedVersion": "0.16.0",
+    "realStdioMcp": true,
+    "configurationFromInstalledCodex": true,
+    "signedFeedVerified": true,
+    "loginState": "LOGIN_REQUIRED",
+    "authenticationNotBypassed": true
+  },
+  "remaining": [
+    "approved-local-execution-adapters-and-automatic-host-launch",
+    "automatic-hook-installation-host-activation-and-uninstall-receipts",
+    "macos-and-remaining-hosts",
+    "multiple-physical-device-and-real-team-validation",
+    "custom-roles-and-feature-specification-task-generation",
+    "long-history-retrieval-quality-and-capacity",
+    "continuous-offsite-backup",
+    "external-alert-delivery",
+    "windows-authenticode-certificate"
+  ],
+  "overall_production_acceptance_complete": false
+}

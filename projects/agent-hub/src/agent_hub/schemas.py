@@ -180,6 +180,60 @@ class TaskClaim(Input):
     harness: Harness
 
 
+class AgentRegistration(TaskClaim):
+    repository_id: UUID | None = None
+    name: str = Field(min_length=1, max_length=100)
+    roles: list[Literal["project-manager", "architect", "designer", "developer"]] = Field(min_length=1, max_length=4)
+    expected_version: int = Field(ge=0)
+    enabled: bool = True
+
+    @field_validator("name")
+    @classmethod
+    def not_blank(cls, value):
+        if not value.strip() or any(ord(c) < 32 for c in value):
+            raise ValueError("Use a nonblank single-line name")
+        return value.strip()
+
+    @field_validator("roles")
+    @classmethod
+    def distinct(cls, values):
+        if len(set(values)) != len(values):
+            raise ValueError("Duplicate roles")
+        return sorted(values)
+
+
+class AgentHeartbeat(Input):
+    expected_version: int = Field(ge=1)
+
+
+class AgentDispatchInput(Input):
+    task_id: UUID
+    endpoint_id: UUID
+    expected_task_version: int = Field(ge=1)
+    expected_endpoint_version: int = Field(ge=1)
+    note: str = Field(min_length=1, max_length=1000)
+    expires_in_seconds: int = Field(default=86400, ge=60, le=604800)
+
+    @field_validator("note")
+    @classmethod
+    def not_blank(cls, value):
+        if not value.strip():
+            raise ValueError("A dispatch note is required")
+        return value.strip()
+
+
+class AgentDispatchDecision(Input):
+    expected_version: int = Field(ge=1)
+    action: Literal["receive", "accept", "decline", "cancel"]
+    reason: str = Field(default="", max_length=1000)
+
+    @model_validator(mode="after")
+    def reason_required(self):
+        if self.action in {"decline", "cancel"} and not self.reason.strip():
+            raise ValueError("A reason is required")
+        return self
+
+
 class LeaseInput(Input):
     run_id: UUID
     lease_epoch: int = Field(ge=1)
@@ -263,6 +317,7 @@ class ChangeEvidence(Input):
 
 
 class WorklogInput(LeaseInput):
+    turn_id: UUID | None = None
     summary: str = Field(min_length=1, max_length=300)
     notes: str = Field(min_length=1, max_length=16000)
     changed_paths: list[str] = Field(default_factory=list, max_length=100)

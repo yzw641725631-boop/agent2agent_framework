@@ -8,7 +8,7 @@ const taskId=crypto.randomUUID(),projectId=crypto.randomUUID(),operationId=crypt
 const all=['tasks:publish','tasks:claim','tasks:write','tasks:review','tasks:test','logs:read'];
 
 test('task discovery separates read, claim, log and review permissions',async()=>{
-  assert.deepEqual(tasks.tools([]).map(t=>t.name),['hub_list_tasks','hub_get_task','hub_list_worklogs','hub_read_worklog','hub_get_policy','hub_list_local_work']);
+  assert.deepEqual(tasks.tools([]).map(t=>t.name),['hub_preview_turn_hooks','hub_list_tasks','hub_get_task','hub_list_worklogs','hub_read_worklog','hub_get_policy','hub_list_local_work']);
   assert.ok(!tasks.tools(['tasks:claim']).some(t=>t.name==='hub_claim_task'));
   assert.ok(!tasks.tools(['tasks:review']).some(t=>t.name==='hub_decide_task'));
   assert.ok(tasks.tools(['tasks:review','logs:read']).some(t=>t.name==='hub_decide_task'));

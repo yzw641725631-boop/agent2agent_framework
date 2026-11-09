@@ -17,6 +17,7 @@ from sqlalchemy.exc import TimeoutError as PoolTimeout
 
 from . import (
     __version__,
+    agent_dispatch,
     closeouts,
     documents,
     git_gateway,
@@ -257,6 +258,7 @@ def create_app(
         )
 
     closeouts.install(app, hub, actor, token, proof, db_dependency)
+    agent_dispatch.install(app, hub, actor, mutate, db_dependency)
 
     @app.get("/healthz")
     def health():

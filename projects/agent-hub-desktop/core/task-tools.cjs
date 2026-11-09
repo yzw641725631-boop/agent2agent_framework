@@ -14,6 +14,12 @@ function define(name,title,description,properties,required,{route='',write=false
     annotations:{readOnlyHint:!write,...(write?{destructiveHint:false,idempotentHint:true}:{})},route,write,cap};
 }
 const definitions=[
+  define('hub_bind_work_session','绑定本宿主对话','使用 UserPromptSubmit 钩子给出的 session_key，将已准备并确认的运行绑定到本对话。相同目录中的其他对话不会继承本运行。',
+    {task_id:id,...lease,session_key:{type:'string',pattern:'^[a-f0-9]{64}$'}},['task_id','run_id','lease_epoch','session_key'],{route:'@local',cap:'tasks:write'}),
+  define('hub_get_work_record_status','检查本轮工作日志缺口','比较实际 Git 证据、绑定对话和最近加密工作日志。missing 须补记，pending 为本机已记尚待共享。未安装或未绑定宿主钩子时明确显示覆盖缺口。',
+    {task_id:id,...lease},['task_id','run_id','lease_epoch'],{route:'@local',cap:'tasks:write'}),
+  define('hub_preview_turn_hooks','预览逐轮记录钩子','生成 Codex 或 Claude Code 的 UserPromptSubmit/Stop 配置；Codex 还支持中断保全入队。不自动修改宿主配置，需按宿主正常信任流程启用。',
+    {harness:{type:'string',enum:['codex','claude-code']}},['harness'],{route:'@local'}),
   define('hub_list_tasks','列出协作任务','列出当前绑定项目的正式任务与状态；进度报告不等于任务完成。',page,[]),
   define('hub_get_task','读取任务及执行角色','读取正式任务、焦点范围、租约、执行身份和可见的流程证据。role 不授予权限。',{task_id:id},['task_id'],{route:':task'}),
   define('hub_list_worklogs','查看工作日志索引','只返回最近日志摘要与 ID，按需翻页。需要原文再调用 hub_read_worklog。logs:read 可读同事日志，否则仅本人。',
@@ -49,7 +55,7 @@ const definitions=[
   define('hub_release_task','释放本轮认领','先记录未完成工作，再释放本人有效租约，供其他执行者认领。不会删除本地文件或推送 Git。',
     {task_id:id,...lease,reason:{type:'string',minLength:1,maxLength:1000}},['task_id','run_id','lease_epoch','reason'],{route:':task/release',write:true,cap:'tasks:claim'}),
   define('hub_write_worklog','保存逐轮工作日志','每轮代码变更后保存变更、验证、阻塞和下一步。代码任务先准备确认规则，桌面端保存实际改动与基线，分别上传日志和加密代码快照。server_confirmed 表示日志共享；server_code_backup 和 code_receipt 才表示代码备份。失败保留本机并重试。',
-    {task_id:id,...lease,summary:{type:'string',minLength:1,maxLength:300},notes:{type:'string',minLength:1,maxLength:16000},
+    {task_id:id,...lease,turn_id:id,summary:{type:'string',minLength:1,maxLength:300},notes:{type:'string',minLength:1,maxLength:16000},
       changed_paths:{type:'array',maxItems:100,items:{type:'string',maxLength:800}},tests:{type:'string',minLength:1,maxLength:8000},
       next_steps:{type:'string',minLength:1,maxLength:4000},outcome:{type:'string',enum:['checkpoint','blocked','failed']},
       git_commit:{type:'string',pattern:'^[a-fA-F0-9]{40,64}$'}},
@@ -79,7 +85,9 @@ function validate(name,args,{internal=false}={}){
   const privateKeys=internal && name==='hub_write_worklog'?['context_id','change_evidence']:internal && name==='hub_submit_task'?['evidence_hash']:[];
   if(!args || typeof args!=='object' || Array.isArray(args) || Object.keys(args).some(k=>!Object.hasOwn(def.inputSchema.properties,k) && !privateKeys.includes(k)) ||
     def.inputSchema.required.some(k=>!Object.hasOwn(args,k)) ||
-    ['task_id','run_id','worklog_id','parent_id','instance_id','operation_id','context_id','repository_id'].some(k=>args[k]!==undefined && !uuid(args[k])) ||
+    ['task_id','run_id','worklog_id','parent_id','instance_id','operation_id','context_id','repository_id','turn_id'].some(k=>args[k]!==undefined && !uuid(args[k])) ||
+    args.session_key!==undefined && (typeof args.session_key!=='string' || !/^[a-f0-9]{64}$/.test(args.session_key)) ||
+    name==='hub_preview_turn_hooks' && !['codex','claude-code'].includes(args.harness) ||
     args.depends_on!==undefined && (!Array.isArray(args.depends_on) || args.depends_on.length>40 || args.depends_on.some(v=>!uuid(v)) || new Set(args.depends_on).size!==args.depends_on.length) ||
     ['offset','limit','lease_epoch','expected_version'].some(k=>args[k]!==undefined && (!Number.isSafeInteger(args[k]) ||
       args[k]<(k==='offset'?0:1) || (k==='offset' && args[k]>100000) || (k==='limit' && args[k]>50))))throw new HubError('INVALID_REQUEST');

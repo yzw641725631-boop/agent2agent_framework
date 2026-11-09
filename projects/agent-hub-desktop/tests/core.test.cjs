@@ -102,9 +102,9 @@ test('broker authenticates local binding and scopes calls to project',async t=>{
 });
 test('MCP only lists authorized tools and reports permission failures as tool errors',async()=>{
   const request={jsonrpc:'2.0',id:1,method:'tools/list'};
-  const read=await dispatch(request,async()=>({capabilities:['project:read']}));assert.equal(read.result.tools.length,18);
+  const read=await dispatch(request,async()=>({capabilities:['project:read']}));assert.equal(read.result.tools.length,21);
   assert.ok(!read.result.tools.some(tool=>['hub_push_task','hub_assemble_project'].includes(tool.name)));
-  const write=await dispatch(request,async()=>({capabilities:['project:read','tasks:write']}));assert.equal(write.result.tools.length,28);
+  const write=await dispatch(request,async()=>({capabilities:['project:read','tasks:write']}));assert.equal(write.result.tools.length,33);
   const denied=await dispatch({jsonrpc:'2.0',id:2,method:'tools/call',params:{name:'hub_report_progress',arguments:{summary:'x'}}},async()=>{throw new HubError('PROJECT_ACCESS_REVOKED');});
   assert.equal(denied.result.isError,true);assert.match(denied.result.content[0].text,/PROJECT_ACCESS_REVOKED/);
   assert.equal((await dispatch({...request,method:'arbitrary_shell'},async()=>{})).error.code,-32601);
@@ -120,5 +120,5 @@ test('standalone stdio bridge emits JSON-RPC only and reads binding on each call
   child.stdin.end(JSON.stringify({jsonrpc:'2.0',id:1,method:'initialize',params:{protocolVersion:'2025-11-25'}})+'\n'+JSON.stringify({jsonrpc:'2.0',method:'notifications/initialized'})+'\n'+JSON.stringify({jsonrpc:'2.0',id:2,method:'tools/list'})+'\n');
   const [code]=await once(child,'exit');assert.equal(code,0,Buffer.concat(errors).toString());
   const messages=Buffer.concat(chunks).toString().trim().split('\n').map(v=>JSON.parse(v));
-  assert.equal(messages.length,2);assert.equal(messages[0].result.protocolVersion,'2025-11-25');assert.equal(messages[1].result.tools.length,18);
+  assert.equal(messages.length,2);assert.equal(messages[0].result.protocolVersion,'2025-11-25');assert.equal(messages[1].result.tools.length,21);
 });

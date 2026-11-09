@@ -8,6 +8,7 @@ let memoryBinding=null,memoryQuery='',memoryOffset=0,memoryLayer='extracts',memo
 let frameworkDialogVersion=0;
 modal.addEventListener('close',()=>{taskDialogVersion++;frameworkDialogVersion++;openTaskBinding=null;});
 const taskLabels={draft:'待准入',ready:'待认领',in_progress:'开发中',review:'待评审',testing:'待测试',release_ready:'待发布确认',completed:'已完成'};
+const dispatchLabels={queued:'等待接收',received:'已接收，待决定',accepted:'已接受并认领',declined:'已拒绝',cancelled:'已取消',expired:'已过期'};
 const roleLabels={'project-manager':'项目经理',architect:'架构师',designer:'产品与交互设计',developer:'开发工程师',reviewer:'代码审查',tester:'测试工程师',publisher:'发布负责人'};
 const labels={active:'已连接',pending:'等待验证 / 审批',offline:'连接中断',blocked:'已拦截',signed_out:'未登录',
   reauth_required:'需要重新登录',running:'执行中',checkpoint:'检查点',completed:'已完成',approved:'已批准'};
@@ -115,6 +116,8 @@ function configDialog(binding){
       button('复制对话启动规则',async()=>{await invoke('copySessionRule');toast('启动规则已复制。',true);}),
       button('复制 Codex 启动钩子',async()=>{await invoke('copySessionHook',{id:binding.id,host:'codex'});toast('已复制。请合并到项目的 .codex/hooks.json，再审查钩子。',true);}),
       button('复制 Claude Code 启动钩子',async()=>{await invoke('copySessionHook',{id:binding.id,host:'claude'});toast('已复制。请合并到项目的 .claude/settings.local.json。',true);}),
+      button('复制 Codex 逐轮检查钩子',async()=>{await invoke('copyTurnHooks',{id:binding.id,harness:'codex'});toast('已复制。合并到项目 .codex/hooks.json 并审查启用；首次对话须绑定工作运行。',true);}),
+      button('复制 Claude Code 逐轮检查钩子',async()=>{await invoke('copyTurnHooks',{id:binding.id,harness:'claude-code'});toast('已复制。合并到 .claude/settings.local.json 并启用，随后绑定工作运行。',true);}),
     ):null,
     dialogActions(button('复制通用配置',async()=>{await invoke('copyConfiguration',{id:binding.id});toast('MCP 配置已复制。',true);}),
       button('预览 .mcp.json',()=>previewDialog(binding),'primary')));
@@ -296,7 +299,7 @@ function tasksScreen(){
   const selector=el('select',{'aria-label':'任务所属连接'},bindings.map(b=>el('option',{value:b.id},b.projectName+' · '+b.workspace)));
   selector.value=taskBinding || '';
   selector.addEventListener('change',()=>{taskBinding=selector.value;closeDialog();openTaskBinding=null;render();});
-  const rows=el('div',{}),sync=text('p','正在读取…','note'),generation=taskVersion,bindingId=taskBinding;
+  const rows=el('div',{}),inbox=el('div',{}),sync=text('p','正在读取…','note'),generation=taskVersion,bindingId=taskBinding;
   const current=()=>view==='tasks' && taskVersion===generation && taskBinding===bindingId && state.bindings.some(b=>b.id===bindingId && b.status==='active');
   let offset=0;
   const load=async()=>{
@@ -304,6 +307,19 @@ function tasksScreen(){
     try{
       const data=await invoke('taskQuery',{bindingId,tool:'hub_list_tasks',args:{offset,limit:50}});
       if(!current())return;
+      const [agents,offers]=await Promise.all([
+        invoke('taskQuery',{bindingId,tool:'hub_list_agents',args:{limit:100}}),
+        invoke('taskQuery',{bindingId,tool:'hub_list_agent_dispatches',args:{limit:20}})]);
+      if(!current())return;
+      inbox.replaceChildren(text('h3','执行者与任务投递'),
+        text('p',agents.items.length?agents.items.map(a=>`${a.name} · ${a.harness} · ${a.recent_agent_activity?'最近有 Agent 活动':'暂无近期活动'}`).join('；'):
+          '尚未登记执行者。在开发工具中通过 MCP 登记自己的实例后，负责人可以投递任务。','note'),
+        text('p','投递和接收均未占用任务；接受成功后才取得开发租约。不会自动启动其他开发工具。','note'),
+        ...offers.items.map(o=>el('article',{class:'binding'},text('h4',o.task_title),
+          text('p',(dispatchLabels[o.state] || o.state)+(o.expired && ['queued','received'].includes(o.state)?' · 已超时':'')),
+          text('p',o.note,'note'),o.reason?text('p',o.reason):null,
+          text('p',o.run_id?'认领回执：'+o.run_id:'尚无认领回执','mono'))),
+        offers.has_more?text('p','这里只展示最近 20 条；完整历史可通过项目 MCP 按任务翻页。','note'):null);
       rows.replaceChildren(...data.items.map(task=>el('article',{class:'binding'},
         el('div',{class:'row between'},text('h3',task.title),text('span',taskLabels[task.status],'pill')),
         text('p',`${roleLabels[task.execution_role] || task.execution_role || '开发工程师'} · ${task.scope.repository} · ${task.scope.platform} · ${task.scope.paths.join('、')}`,'note'),
@@ -320,7 +336,7 @@ function tasksScreen(){
   };
   if(bindingId)load();
   return el('div',{},heading('TASKS & HANDOFF','任务与工作日志','查看与网站共用的任务、执行角色和流程记录。Agent 通过项目 MCP 认领与提交。'),
-    el('section',{class:'card'},bindings.length?el('div',{},field('项目连接',selector),sync,rows):
+    el('section',{class:'card'},bindings.length?el('div',{},field('项目连接',selector),sync,rows,inbox):
       empty('先连接项目','前往“项目与 MCP”绑定获准项目的工程目录。')),
     text('p','代码任务通过工程 MCP 认领和保存；创建任务与流程确认在网站操作。日志共享、代码备份与 Git 交付分别显示回执。','note'),
     button('打开网站后台',()=>invoke('openAdmin')));
@@ -348,7 +364,11 @@ function checkpointsScreen(){
   }).catch(error=>{rows.replaceChildren(text('p',error.message,'warning'));});
   return el('div',{},heading('LOCAL CHECKPOINTS','本机检查点与待发记录','本机检查点加密保存。“日志已共享”与“代码备份成功”各有独立回执；只有后者确认服务器接收了完整代码工作树。'),
     el('section',{class:'card'},el('div',{class:'actions'},button('刷新',render)),
-      ...(state.workRuns || []).filter(r=>r.observation_error).map(r=>text('p','后台观察未完成：'+r.observation_error+' · '+r.task_id,'warning')),rows));
+      ...(state.workRuns || []).map(r=>el('div',{},
+        r.observation_error?text('p','后台观察未完成：'+r.observation_error+' · '+r.task_id,'warning'):null,
+        text('p',(r.record_status?({missing:'存在未记录变更',pending:'日志已记，等待共享',blocked:'日志上传被拦截',recorded:'当前观察未发现漏记'}[r.record_status.state] || r.record_status.state):'尚未核对记录')+' · '+r.task_id,
+          r.record_status?.missing_record?'warning':'note'),
+        text('p',r.record_status?.hook_bound?'已绑定宿主对话':'未绑定逐轮钩子，仅后台 Git 观察；逐轮覆盖尚未建立。','note'))),rows));
 }
 async function taskDetail(bindingId,taskId,generation,offset=0){
   const ticket=++taskDialogVersion,account=state.user?.id;

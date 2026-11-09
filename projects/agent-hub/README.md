@@ -1,6 +1,6 @@
 # Agent Hub：身份与项目基础服务
 
-> 2026-11-09｜0.13.0 / 迁移 0016：新增本地 CPU 模型、增量向量索引、授权范围精确召回与关键词融合；配套 Windows 0.15.0。设计与边界见[语义检索](../../设计文档/31_授权范围内的语义与关键词混合检索.md)。
+> 2026-11-09｜0.14.0 / 迁移 0017：新增按人员、设备、仓库和执行实例登记的 Agent，离线任务投递与原子接受认领，工作日志轮次引用。配套 Windows 0.16.0 的逐轮漏记与宿主绑定。设计与验收见[Agent 投递与逐轮检查](../../设计文档/32_Agent登记投递与逐轮漏记检测.md)。
 
 本服务提供身份、设备审批、逐仓库授权、任务租约、不可覆盖工作日志、代码快照、Git 回执及共享记忆，含 REST API、中文后台、PostgreSQL 迁移和运维 CLI。通过 [桌面端](../agent-hub-desktop/README.md) 提供本机 stdio MCP。配套[私有模型服务](../agent-hub-embedding/README.md)，语义故障明示退回关键词。文档接入见 [Git 文档索引](../../设计文档/11_Git文档索引与MCP查询.md)。
 
@@ -61,7 +61,7 @@
 | `src/agent_hub/repositories.py` | 仓库登记、权限与多源文档范围 |
 | `src/agent_hub/git_gateway.py` | Git 代理、短期票据与任务分支限制 |
 | `src/agent_hub/github_credentials.py` | 加密 App 配置及指定仓库安装令牌 |
-| `migrations/versions/` | 十一份可执行数据库迁移 |
+| `migrations/versions/` | 版本化数据库迁移，当前到 0017 |
 | `tests/` | 真实 PostgreSQL 上的权限与会话测试 |
 | `deploy/compose.server-db.yaml` | 已在指定服务器运行的数据库配置 |
 | `deploy/compose.server-app.yaml` | 已部署的应用配置，复用服务器数据库 |
@@ -77,7 +77,7 @@
 |---|---|
 | 部署目录 | `/opt/agent-hub/database` |
 | 容器 | `agent-hub-postgres`，PostgreSQL 18.6 |
-| 数据库 | `agent_hub`，发行版对应迁移 `0011` |
+| 数据库 | `agent_hub`，当前迁移 `0017` |
 | 数据卷 | `agent-hub-postgres-data` |
 | 私有网络 | `agent-hub-database`，内部主机名 `postgres:5432` |
 | 运行/迁移角色 | `hub_runtime` / `hub_owner` |

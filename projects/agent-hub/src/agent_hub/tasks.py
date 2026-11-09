@@ -53,6 +53,8 @@ def log_payload(w):
         value.update(context_id=str(w.context_id), change_evidence=w.change_evidence, evidence_hash=w.evidence_hash)
     if w.closeout_id:
         value.update(closeout_id=str(w.closeout_id), record_kind="revocation_handoff")
+    if w.turn_id:
+        value["turn_id"] = str(w.turn_id)
     return value
 
 

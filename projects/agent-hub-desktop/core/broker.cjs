@@ -49,11 +49,11 @@ class Broker {
     if (process.platform!=='win32' && this.endpoint) await fs.unlink(this.endpoint).catch(()=>{});
   }
 }
-async function call(descriptor,payload) {
+async function call(descriptor,payload,{timeout=22000}={}) {
   return new Promise((resolve,reject)=>{
     const socket=net.createConnection(descriptor.endpoint); let input='',bytes=0,finished=false;
     const fail=()=>reject(new HubError('DESKTOP_OFFLINE','桌面后台未运行，请先打开 Agent Hub 并登录。'));
-    socket.setEncoding('utf8'); socket.setTimeout(22000,()=>{socket.destroy();fail();});
+    socket.setEncoding('utf8'); socket.setTimeout(Math.max(250,Math.min(timeout,22000)),()=>{socket.destroy();fail();});
     socket.once('error',fail);
     socket.once('close',()=>{if(!finished)fail();});
     socket.on('connect',()=>socket.write(JSON.stringify({binding:descriptor.binding,secret:descriptor.secret,...payload})+'\n'));

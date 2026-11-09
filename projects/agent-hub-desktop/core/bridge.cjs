@@ -65,6 +65,25 @@ async function relay(request, file, options = {}) {
   return dispatch(request, invoke);
 }
 
+async function turnHook(file,options,argv){
+  const event=argv[argv.indexOf('--turn-hook')+1],hostIndex=argv.indexOf('--harness'),host=argv[hostIndex+1];
+  const {sanitize}=require('./turn-runtime.cjs');
+  let bytes=0,input='';
+  process.stdin.setEncoding('utf8');
+  for await(const chunk of process.stdin){
+    bytes+=Buffer.byteLength(chunk);if(bytes>1024*1024)throw new HubError('INVALID_HOOK_INPUT');input+=chunk;
+  }
+  try{
+    if(hostIndex<0)throw new HubError('INVALID_HOOK_INPUT');
+    const args=sanitize(JSON.parse(input),event,host),descriptor=await binding(file,options.expectedId);
+    if(descriptor.scope==='setup')throw new HubError('WORK_SESSION_NOT_ACCESSIBLE');
+    const output=await call(descriptor,{action:'turn_hook',args},{timeout:event==='Interrupt'?1500:9000});
+    process.stdout.write(JSON.stringify(event==='Interrupt'?{}:output)+'\n');
+  }catch(failure){
+    process.stdout.write(JSON.stringify(event==='Interrupt'?{}:{systemMessage:'Agent Hub 逐轮检查未完成：'+(failure.code || 'HOOK_UNAVAILABLE')+'。请打开桌面端核对工作记录。'})+'\n');
+  }
+}
+
 async function run(argv = process.argv.slice(2)) {
   const index = argv.indexOf('--binding');
   if (index < 0 || !argv[index + 1]) throw new Error('Missing --binding');
@@ -74,6 +93,7 @@ async function run(argv = process.argv.slice(2)) {
     expectedId: idIndex < 0 ? undefined : argv[idIndex + 1] };
   if (options.scope === 'setup' && !/^[a-f0-9]{8}(-[a-f0-9]{4}){3}-[a-f0-9]{12}$/i.test(options.expectedId || '')) throw new Error('Missing setup connection identity');
   if (argv.includes('--session-check')) return sessionCheck(file);
+  if (argv.includes('--turn-hook')) return turnHook(file,options,argv);
   let buffer = '', queue = Promise.resolve();
   process.stdin.setEncoding('utf8');
   const emit = response => { if (response) process.stdout.write(JSON.stringify(response) + '\n'); };

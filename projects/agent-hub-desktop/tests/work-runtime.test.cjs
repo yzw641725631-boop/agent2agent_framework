@@ -105,6 +105,78 @@ async function runtimeFixture(t){
   return {dir,data,binding,c,profile,runtime,lease,setOffline(value){offline=value;c.connection=value?'offline':'active';},uploads:()=>uploads,heartbeats:()=>heartbeats};
 }
 
+async function turnFixture(t){
+  const f=await runtimeFixture(t),{TurnRuntime}=require('../core/turn-runtime.cjs');
+  f.c.work=f.runtime;f.c.turns=new TurnRuntime(f.c);t.after(()=>f.c.turns.drain());
+  f.profile.workRuns[f.lease.run_id].harness='codex';
+  f.event={harness:'codex',session_id:crypto.randomUUID(),cwd:f.dir,turn_ref:crypto.randomUUID(),stop_hook_active:false};
+  const output=await f.c.turns.hook(f.binding,{...f.event,event:'UserPromptSubmit'});
+  f.key=output.hookSpecificOutput.additionalContext.match(/session_key=([a-f0-9]{64})/)[1];
+  await f.c.turns.bind(f.binding,{...f.lease,session_key:f.key});
+  return f;
+}
+
+test('bound Stop detects an unlogged real Git edit, then a saved turn clears the gap',async t=>{
+  const f=await turnFixture(t);
+  await fs.writeFile(path.join(f.dir,'src/main.ts'),'must record this turn');
+  const stop=await f.c.turns.hook(f.binding,{...f.event,event:'Stop'});
+  assert.equal(stop.decision,'block');
+  assert.equal((await f.c.turns.status(f.binding,f.lease)).missing_record,true);
+  await f.runtime.save(f.binding,{...f.lease,summary:'turn',notes:'actual code change',tests:'not run',next_steps:'review',operation_id:crypto.randomUUID()});
+  const run=f.profile.workRuns[f.lease.run_id],record=await f.runtime.store.read(run.last_record_id);
+  assert.equal(record.body.turn_id,f.profile.workSessions[f.key].turn_id);
+  assert.equal((await f.c.turns.status(f.binding,f.lease)).state,'recorded');
+  assert.deepEqual(await f.c.turns.hook(f.binding,{...f.event,event:'Stop',stop_hook_active:true}),{});
+});
+
+test('unbound and other conversations cannot inherit a directory run; Stop is bounded',async t=>{
+  const f=await turnFixture(t);
+  await fs.writeFile(path.join(f.dir,'src/main.ts'),'missing worklog');
+  const other={...f.event,session_id:crypto.randomUUID()};
+  assert.equal((await f.c.turns.hook(f.binding,{...other,event:'Stop'})).decision,undefined);
+  const start=await f.c.turns.hook(f.binding,{...other,event:'UserPromptSubmit'}),key=start.hookSpecificOutput.additionalContext.match(/session_key=([a-f0-9]{64})/)[1];
+  await assert.rejects(f.c.turns.bind(f.binding,{...f.lease,session_key:key}),{code:'WORK_SESSION_IN_USE'});
+  assert.equal((await f.c.turns.hook(f.binding,{...f.event,event:'Stop'})).decision,'block');
+  assert.equal((await f.c.turns.hook(f.binding,{...f.event,event:'Stop'})).decision,undefined);
+  f.event.turn_ref=crypto.randomUUID();
+  await f.c.turns.hook(f.binding,{...f.event,event:'UserPromptSubmit'});
+  assert.equal((await f.c.turns.hook(f.binding,{...f.event,event:'Stop'})).decision,undefined);
+});
+
+test('offline turn record remains pending without an infinite Stop wakeup',async t=>{
+  const f=await turnFixture(t);f.setOffline(true);
+  await fs.writeFile(path.join(f.dir,'src/main.ts'),'offline changed work');
+  const receipt=await f.runtime.save(f.binding,{...f.lease,summary:'offline',notes:'changed',tests:'not run',next_steps:'upload',operation_id:crypto.randomUUID()});
+  assert.equal(receipt.state,'pending');
+  const status=await f.c.turns.status(f.binding,f.lease);
+  assert.equal(status.state,'pending');assert.equal(status.missing_record,false);assert.equal(status.server_confirmed,false);
+  assert.equal((await f.c.turns.hook(f.binding,{...f.event,event:'Stop'})).decision,undefined);
+});
+
+test('Interrupt enqueues durably before capture and background produces an encrypted checkpoint',async t=>{
+  const f=await turnFixture(t);await fs.writeFile(path.join(f.dir,'src/main.ts'),'interrupted code');
+  const capture=f.runtime.capture.bind(f.runtime);let captures=0;
+  f.runtime.capture=async(...args)=>{captures++;return capture(...args);};
+  const result=await f.c.turns.hook(f.binding,{...f.event,event:'Interrupt'});
+  assert.equal(result.queued,true);assert.equal(result.checkpoint_confirmed,false);assert.equal(captures,0);
+  assert.equal(f.profile.workSessions[f.key].pending_interrupt,true);
+  await f.c.turns.tick();
+  assert.equal(f.profile.workSessions[f.key].pending_interrupt,undefined);
+  const checkpoint=(await f.runtime.list(f.binding)).items.find(r=>r.state==='local_only');
+  assert.ok(checkpoint && checkpoint.files===1);
+});
+
+test('turn hook input strips prompts and transcripts and rejects paths and stale events',async t=>{
+  const {sanitize}=require('../core/turn-runtime.cjs'),f=await turnFixture(t);
+  const input={hook_event_name:'Stop',session_id:f.event.session_id,cwd:f.dir,prompt:'private',transcript_path:'must-not-read',last_assistant_message:'private'};
+  assert.equal(JSON.stringify(sanitize(input,'Stop','codex')).includes('private'),false);
+  await assert.rejects(f.c.turns.hook(f.binding,{...f.event,event:'Stop',cwd:os.tmpdir()}),{code:'WORK_SESSION_NOT_ACCESSIBLE'});
+  await assert.rejects(f.c.turns.hook(f.binding,{...f.event,event:'Stop',prompt:'private'}),{code:'WORK_SESSION_NOT_ACCESSIBLE'});
+  const turn=f.profile.workSessions[f.key].turn_id;
+  await f.c.turns.hook(f.binding,{...f.event,event:'Stop',turn_ref:'stale-turn'});
+  assert.equal(f.profile.workSessions[f.key].phase,'active');assert.equal(f.profile.workSessions[f.key].turn_id,turn);
+});
+
 test('one physical workspace cannot prepare two live execution instances',async t=>{
   const f=await runtimeFixture(t);
   await assert.rejects(f.runtime.prepare(f.binding,{...f.lease,task_id:crypto.randomUUID(),run_id:crypto.randomUUID(),operation_id:crypto.randomUUID()}),
