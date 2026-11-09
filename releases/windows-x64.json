@@ -1,11 +1,11 @@
 {
   "schema": 1,
   "platform": "win-x64",
-  "version": "0.14.0",
+  "version": "0.15.0",
   "installer": {
-    "url": "https://47.109.23.86:18180/desktop-updates/win-x64/AgentHub-Setup-0.14.0.exe",
-    "bytes": 123152636,
-    "sha256": "2f25221d98fc3a6fad71b2bff9f470377db48384c54a60f5b3be58c9ebdef5ae"
+    "url": "https://47.109.23.86:18180/desktop-updates/win-x64/AgentHub-Setup-0.15.0.exe",
+    "bytes": 123153319,
+    "sha256": "2cb6471c400e3c0b4d20125371155b704debff4983ee319d4547dfb9ce7bc64d"
   },
-  "files_sha256": "f98e382356aa6fbff612c081b99896010491d2598fd31fdf817b368ad1e1c7f3"
+  "files_sha256": "382246f91dfe05763cf06ed3187e66d146badc9cb30882e4342229ecb1edbc90"
 }

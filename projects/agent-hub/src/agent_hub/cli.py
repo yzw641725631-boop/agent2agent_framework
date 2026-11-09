@@ -50,6 +50,13 @@ def memory_worker():
     MemoryWorker(get_settings()).serve()
 
 
+@app.command("embedding-worker")
+def embedding_worker():
+    """Index source-bound cards and reviewed facts with the private CPU model."""
+    from .embedding_worker import EmbeddingWorker
+    EmbeddingWorker(get_settings()).serve()
+
+
 @app.command("check-desktop-feed")
 def check_desktop_feed():
     """Verify the public release feed and fail when fewer than 72 hours remain."""

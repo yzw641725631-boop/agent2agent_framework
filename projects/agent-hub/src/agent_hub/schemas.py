@@ -551,6 +551,7 @@ class DocumentRead(Input):
 
 class MemorySearch(Input):
     query: str = Field(default="", max_length=200)
+    search_mode: Literal["hybrid", "keyword"] = "hybrid"
     repository_id: UUID | None = None
     include_history: bool = False
     offset: int = Field(default=0, ge=0, le=100000)

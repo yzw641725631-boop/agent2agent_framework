@@ -245,13 +245,15 @@ function memoryScreen(){
   memoryBinding=available.some(b=>b.id===memoryBinding)?memoryBinding:available[0].id;
   const picker=el('select',{},available.map(b=>el('option',{value:b.id,...(b.id===memoryBinding?{selected:true}:{})},b.projectName+' · '+(b.repositoryName || b.workspace))));
   picker.addEventListener('change',()=>{memoryBinding=picker.value;memoryOffset=0;render();});
-  const query=el('input',{value:memoryQuery,maxlength:200,placeholder:'关键词，例如 Web、登录、接口'});
+  const query=el('input',{value:memoryQuery,maxlength:200,placeholder:'问题或关键词，例如换电脑怎样验证身份'});
+  const mode=el('select',{},el('option',{value:'hybrid'},'语义与关键词'),el('option',{value:'keyword'},'仅关键词'));
+  mode.value=window.memorySearchMode || 'hybrid';mode.addEventListener('change',()=>{window.memorySearchMode=mode.value;memoryOffset=0;render();});
   const layer=el('select',{},el('option',{value:'extracts'},'日志与文档摘录'),el('option',{value:'knowledge'},'长期知识'));
   layer.value=memoryLayer;layer.addEventListener('change',()=>{memoryLayer=layer.value;memoryOffset=0;render();});
   const history=el('select',{},el('option',{value:'current'},'当前有效'),el('option',{value:'all'},'候选与历史'));
   history.value=memoryHistory?'all':'current';history.addEventListener('change',()=>{memoryHistory=history.value==='all';memoryOffset=0;render();});
   const isKnowledge=memoryLayer==='knowledge';
-  const controls=el('div',{class:'actions'},field('项目工程',picker),field('资料类型',layer),field('版本范围',history),field('关键词',query),button('检索',()=>{memoryQuery=query.value;memoryOffset=0;render();}));
+  const controls=el('div',{class:'actions'},field('项目工程',picker),field('资料类型',layer),field('版本范围',history),field('检索方式',mode),field('问题或关键词',query),button('检索',()=>{memoryQuery=query.value;memoryOffset=0;render();}));
   const counter=text('p','正在核验授权…','note'),bindingId=memoryBinding;
   container.append(controls,counter);
   const list=el('div');container.append(list);
@@ -260,10 +262,13 @@ function memoryScreen(){
   const status=async()=>{
     const s=await call('hub_get_memory_status');if(!current())return;
     counter.textContent=`当前摘录 ${s.visible_cards.active || 0} · 长期知识 ${s.knowledge?.active || 0} · 知识待审 ${s.knowledge?.pending || 0} · 待提取 ${s.visible_jobs.queued || 0} · 失败 ${s.visible_jobs.failed || 0}`;
+    if(s.embeddings){const e=s.embeddings;counter.textContent+=` · 语义索引 ${e.cards.indexed+e.knowledge.indexed}/${e.cards.visible+e.knowledge.visible} · 索引失败 ${e.visible_jobs.failed || 0}`;}
     taskTimer=setTimeout(()=>status().catch(error=>{if(current()){list.replaceChildren();counter.textContent=error.message;}}),5000);
   };
   (async()=>{
-    const data=await call(isKnowledge?'hub_search_knowledge':'hub_search_memory',{query:memoryQuery,offset:memoryOffset,limit:12,include_history:memoryHistory});if(!current())return;
+    const data=await call(isKnowledge?'hub_search_knowledge':'hub_search_memory',{query:memoryQuery,search_mode:mode.value,offset:memoryOffset,limit:12,include_history:memoryHistory});if(!current())return;
+    list.append(text('p',data.semantic_search==='ready'?'已结合语义和关键词排序；结果需核对来源。':data.semantic_search==='unavailable-keyword-fallback'?'语义服务暂不可用，本次已退回关键词。':data.semantic_search==='keyword-requested'?'本次仅按关键词匹配。':data.semantic_search==='browse'?'当前列出获准资料。':'当前按关键词检索。','note'));
+    if(data.candidate_limit_reached)list.append(text('p','已达到候选上限，请缩小问题或仓库范围。','note'));
     for(const card of data.items){
       const raw=el('div'),source=card.source;
       list.append(el('article',{class:'event'},el('span',{class:'dot'}),el('div',{},text('h3',card.title),

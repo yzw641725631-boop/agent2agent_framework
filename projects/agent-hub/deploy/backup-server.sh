@@ -35,6 +35,7 @@ restic() {
     -v "$base/restic:/repository" -v "$base/restic-password:/run/secrets/password:ro" \
     -v "$stage:/data/database:ro" \
     -v /opt/agent-hub/artifacts/work:/data/work-archives:ro \
+    -v /opt/agent-hub/semantic/model-fp32:/data/semantic-model:ro \
     -v /opt/agent-hub/application/.env:/data/config/application.env:ro \
     -v /opt/agent-hub/database/.env:/data/config/database.env:ro \
     -e RESTIC_REPOSITORY=/repository -e RESTIC_PASSWORD_FILE=/run/secrets/password \

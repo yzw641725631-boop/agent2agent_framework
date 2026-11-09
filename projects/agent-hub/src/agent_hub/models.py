@@ -582,6 +582,42 @@ class MemoryFact(Identity, Base):
     version: Mapped[int] = mapped_column(Integer, default=1)
 
 
+class MemoryEmbedding(Base):
+    __tablename__ = "memory_embeddings"
+    from .semantic import Vector
+    card_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("memory_cards.id"), primary_key=True)
+    model: Mapped[str] = mapped_column(String(200), primary_key=True)
+    dimensions: Mapped[int] = mapped_column(Integer)
+    content_hash: Mapped[str] = mapped_column(String(64))
+    embedding = mapped_column(Vector())
+
+
+class KnowledgeEmbedding(Base):
+    __tablename__ = "knowledge_embeddings"
+    from .semantic import Vector
+    fact_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("memory_facts.id"), primary_key=True)
+    model: Mapped[str] = mapped_column(String(200), primary_key=True)
+    dimensions: Mapped[int] = mapped_column(Integer)
+    content_hash: Mapped[str] = mapped_column(String(64))
+    embedding = mapped_column(Vector())
+
+
+class EmbeddingJob(Identity, Base):
+    __tablename__ = "embedding_jobs"
+    project_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("projects.id"))
+    card_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("memory_cards.id"))
+    fact_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("memory_facts.id"))
+    model: Mapped[str] = mapped_column(String(200))
+    content_hash: Mapped[str] = mapped_column(String(64))
+    status: Mapped[str] = mapped_column(String(16), default="queued")
+    attempts: Mapped[int] = mapped_column(Integer, default=0)
+    error_code: Mapped[str | None] = mapped_column(String(80))
+    not_before: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    lease_token: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))
+    lease_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
 class MemoryFactEvent(Identity, Base):
     __tablename__ = "memory_fact_events"
     __table_args__ = (

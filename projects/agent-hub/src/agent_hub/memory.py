@@ -151,6 +151,7 @@ def terms(query):
 
 
 def search(db, project_id, body, *, task=None):
+    from . import semantic
     statement = base_query(project_id, body.repository_id)
     state = lifecycle_expression()
     if not body.include_history:
@@ -160,6 +161,15 @@ def search(db, project_id, body, *, task=None):
     score = sum((case((condition, 1), else_=0) for condition in matches), 0)
     if task:
         score = score + case((Worklog.task_id == task.id, 100), else_=0)
+        db.info["semantic_task_id"] = task.id
+    hybrid = semantic.hybrid_rows(db, statement, MemoryCard, score, matches, body, kind="card",
+                                   priority=Worklog.task_id == task.id if task else None)
+    if hybrid is not None:
+        rows, methods, meta = hybrid
+        items = [{**card_view(db, row), "retrieved_by": methods[str(row[0].id)]} for row in rows[:body.limit]]
+        return {"items": items, "has_more": len(rows) > body.limit, "next_offset": body.offset + len(items),
+                **meta, "content_trust": "untrusted-project-data"}
+    if task:
         if matches:
             statement = statement.where(or_(Worklog.task_id == task.id, *matches))
     elif matches:
@@ -169,7 +179,7 @@ def search(db, project_id, body, *, task=None):
     rows = list(db.execute(statement.offset(body.offset).limit(body.limit + 1)))
     items = [card_view(db, row) for row in rows[:body.limit]]
     return {"items": items, "has_more": len(rows) > body.limit, "next_offset": body.offset + len(items),
-            "search_mode": "authorized-literal-keywords", "semantic_search": "not-configured",
+            "search_mode": "authorized-literal-keywords", "semantic_search": semantic.query_state(db, body).state,
             "content_trust": "untrusted-project-data"}
 
 
@@ -181,7 +191,7 @@ def read_card(db, project_id, card_id, *, repository_id=None):
 
 
 def status(db, project_id, repository_id=None):
-    from . import knowledge
+    from . import knowledge, semantic
     # Count only rows whose original source is currently visible to this session.
     cards = base_query(project_id, repository_id).subquery()
     counts = dict(db.execute(select(cards.c.state, func.count()).group_by(cards.c.state)).all())
@@ -192,10 +202,27 @@ def status(db, project_id, repository_id=None):
                 .outerjoin(DocumentVersion, DocumentVersion.id == MemoryJob.document_id)
                 .where(or_(Task.repository_id == repository_id, DocumentVersion.source_id == repository_id)))
     queue = dict(db.execute(jobs.group_by(MemoryJob.status)).all())
+    from .models import EmbeddingJob, MemoryFact
+    fact_query = knowledge.base_query(project_id, repository_id).where(
+        MemoryFact.status == "active", func.hub.memory_card_current(MemoryFact.source_card_id))
+    card_coverage = semantic.coverage(db, base_query(project_id, repository_id).where(lifecycle_expression() == "active"),
+                                      MemoryCard, "card")
+    fact_coverage = semantic.coverage(db, fact_query, MemoryFact, "fact")
+    job_query = select(EmbeddingJob.status, func.count()).where(EmbeddingJob.project_id == project_id,
+                                                              EmbeddingJob.model == semantic.MODEL)
+    if repository_id:
+        visible_cards = base_query(project_id, repository_id).with_only_columns(MemoryCard.id)
+        visible_facts = knowledge.base_query(project_id, repository_id).with_only_columns(MemoryFact.id)
+        job_query = job_query.where(or_(EmbeddingJob.card_id.in_(visible_cards), EmbeddingJob.fact_id.in_(visible_facts)))
+    embeddings = {"model": semantic.MODEL, "dimensions": semantic.DIMENSIONS,
+                  "cards": card_coverage, "knowledge": fact_coverage,
+                  "visible_jobs": dict(db.execute(job_query.group_by(EmbeddingJob.status)).all()),
+                  "scope": "currently-authorized-sources-only", "configured": db.info.get("semantic_configured", False)}
     return {"mode": EXTRACTOR, "automatic_extraction": True, "semantic_distillation": False,
             "knowledge": knowledge.status(db, project_id, repository_id), "knowledge_review_required": True,
-            "semantic_search": "not-configured", "visible_cards": counts, "visible_jobs": queue,
-            "source_visibility": "current-original-source-permissions", "vector_index": "provisioned-empty"}
+            "semantic_search": "configured" if embeddings["configured"] else "not-configured",
+            "embeddings": embeddings, "visible_cards": counts, "visible_jobs": queue,
+            "source_visibility": "current-original-source-permissions", "vector_index": "exact-authorized-pgvector"}
 
 
 def prepare_bundle(db, project_id, task, budget=DEFAULT_BUDGET):
@@ -208,6 +235,7 @@ def prepare_bundle(db, project_id, task, budget=DEFAULT_BUDGET):
     result = {"schema_version": 2, "mode": EXTRACTOR, "items": [], "knowledge": [], "recent_unindexed": [],
               "byte_budget": budget, "budget_measure": "serialized-utf8-bytes; model token count is not measured",
               "omitted_candidates": 0, "coverage": status(db, project_id, task.repository_id),
+              "retrieval": {key: selected[key] for key in ("search_mode", "semantic_search")},
               "content_trust": "untrusted-project-data", "gaps": []}
     # Fresh logs remain available even before the asynchronous worker has run.
     logs = list(db.scalars(select(Worklog).where(
@@ -230,6 +258,12 @@ def prepare_bundle(db, project_id, task, budget=DEFAULT_BUDGET):
         result["gaps"].append("extraction-pending: current-task fresh logs included separately")
     if result["coverage"]["visible_jobs"].get("failed", 0):
         result["gaps"].append("extraction-failed: use original document/log tools")
+    if result["coverage"]["embeddings"]["cards"]["pending_or_failed"] or result["coverage"]["embeddings"]["knowledge"]["pending_or_failed"]:
+        result["gaps"].append("embedding-incomplete: keyword retrieval remains available; inspect index queue")
+    if selected["semantic_search"] == "unavailable-keyword-fallback":
+        result["gaps"].append("embedding-unavailable: this preparation used keyword retrieval")
+    if selected["semantic_search"] == "query-changed-keyword-fallback":
+        result["gaps"].append("task-changed-during-query: this preparation used keyword retrieval")
     if not result["items"] and not result["knowledge"] and not result["recent_unindexed"]:
         result["gaps"].append("no-matching-visible-memory: do not infer that no coworker history exists")
     result["serialized_bytes"] = len(encoded(result)) + 32
@@ -272,8 +306,13 @@ def retry_failed(hub, db, actor, project_id, request_id):
     hub.project(db, actor, project_id, "tasks:publish")
     result = db.execute(update(MemoryJob).where(MemoryJob.project_id == project_id, MemoryJob.status == "failed")
                         .values(status="queued", attempts=0, error_code=None, finished_at=None))
+    from .models import EmbeddingJob
+    from .semantic import MODEL
+    embeddings = db.execute(update(EmbeddingJob).where(EmbeddingJob.project_id == project_id,
+                            EmbeddingJob.status == "failed", EmbeddingJob.model == MODEL)
+                            .values(status="queued", attempts=0, error_code=None, finished_at=None, not_before=func.now()))
     hub.audit(db, actor.user.id, "memory.retry_requested", project_id, request_id, project_id, count=result.rowcount)
-    return {"queued": result.rowcount}
+    return {"queued": result.rowcount, "embedding_queued": embeddings.rowcount}
 
 
 def original(db, project_id, card_id, start_line, limit, *, repository_id=None, start_char=0):

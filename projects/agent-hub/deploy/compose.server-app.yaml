@@ -13,7 +13,7 @@ services:
     build:
       context: ..
       target: runtime
-    image: agent-hub:0.12.0
+    image: agent-hub:0.13.0
     environment:
       <<: *hub-environment
       HUB_DATABASE_URL: postgresql+psycopg://hub_owner:${HUB_OWNER_PASSWORD}@postgres:5432/agent_hub
@@ -32,7 +32,7 @@ services:
     build:
       context: ..
       target: runtime
-    image: agent-hub:0.12.0
+    image: agent-hub:0.13.0
     environment:
       <<: *hub-environment
       HUB_DATABASE_URL: postgresql+psycopg://hub_runtime:${HUB_RUNTIME_PASSWORD}@postgres:5432/agent_hub
@@ -40,6 +40,7 @@ services:
       HUB_ARTIFACT_DIRECTORY: /var/lib/agent-hub/work-archives
       HUB_ARTIFACT_PROJECT_BYTES: ${HUB_ARTIFACT_PROJECT_BYTES:-1073741824}
       HUB_ARTIFACT_TOTAL_BYTES: ${HUB_ARTIFACT_TOTAL_BYTES:-17179869184}
+      HUB_EMBEDDING_URL: http://embedding:8766
       FORWARDED_ALLOW_IPS: ${HUB_TRUSTED_PROXY_IPS:-127.0.0.1}
     command: [agent-hub, serve, --host, 0.0.0.0, --port, "8765"]
     ports:
@@ -66,6 +67,7 @@ services:
     networks:
       - application
       - database
+      - semantic
     depends_on:
       migrate:
         condition: service_completed_successfully
@@ -76,7 +78,7 @@ services:
       retries: 5
 
   archive-maintenance:
-    image: agent-hub:0.12.0
+    image: agent-hub:0.13.0
     profiles: [maintenance]
     environment:
       <<: *hub-environment
@@ -95,7 +97,7 @@ services:
     networks: [database]
 
   document-worker:
-    image: agent-hub:0.12.0
+    image: agent-hub:0.13.0
     environment:
       <<: *hub-environment
       HUB_DATABASE_URL: postgresql+psycopg://hub_document_worker:${HUB_INDEXER_PASSWORD:?Use the server-only database environment file}@postgres:5432/agent_hub
@@ -124,8 +126,55 @@ services:
       migrate:
         condition: service_completed_successfully
 
+  embedding:
+    image: agent-hub-embedding:0.1.0
+    read_only: true
+    tmpfs: [/tmp]
+    volumes:
+      - /opt/agent-hub/semantic/model-fp32:/model:ro
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    restart: unless-stopped
+    init: true
+    mem_limit: 384m
+    cpus: "0.7"
+    pids_limit: 64
+    logging:
+      driver: json-file
+      options: {max-size: 10m, max-file: "3"}
+    networks: [semantic]
+    healthcheck:
+      test: [CMD, python, -c, "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8766/healthz',timeout=2)"]
+      interval: 20s
+      timeout: 3s
+      retries: 3
+
+  embedding-worker:
+    image: agent-hub:0.13.0
+    environment:
+      <<: *hub-environment
+      HUB_DATABASE_URL: postgresql+psycopg://hub_embedding_worker:${HUB_EMBEDDING_PASSWORD:?Provision the separate embedding worker role}@postgres:5432/agent_hub
+      HUB_EMBEDDING_URL: http://embedding:8766
+    command: [agent-hub, embedding-worker]
+    read_only: true
+    tmpfs: [/tmp]
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    restart: unless-stopped
+    init: true
+    mem_limit: 192m
+    cpus: "0.3"
+    pids_limit: 32
+    logging:
+      driver: json-file
+      options: {max-size: 10m, max-file: "3"}
+    networks: [database, semantic]
+    depends_on:
+      migrate: {condition: service_completed_successfully}
+      embedding: {condition: service_healthy}
+
   memory-worker:
-    image: agent-hub:0.12.0
+    image: agent-hub:0.13.0
     environment:
       <<: *hub-environment
       HUB_DATABASE_URL: postgresql+psycopg://hub_memory_worker:${HUB_MEMORY_PASSWORD:?Use the server-only database environment file}@postgres:5432/agent_hub
@@ -151,6 +200,8 @@ services:
 
 networks:
   application: {}
+  semantic:
+    internal: true
   database:
     external: true
     name: agent-hub-database

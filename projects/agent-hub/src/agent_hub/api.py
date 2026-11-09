@@ -5,7 +5,7 @@ import time
 import uuid
 from contextlib import asynccontextmanager
 from pathlib import Path
-from typing import Annotated
+from typing import Annotated, Literal
 
 from fastapi import Depends, FastAPI, Query, Request
 from fastapi.exceptions import RequestValidationError
@@ -51,6 +51,7 @@ def create_app(
     hub = Hub(cfg, mail)
     setup = Setup(hub)
     deliveries = MailOutbox(cfg, sessions, mail)
+    from .semantic import Embeddings
 
     @asynccontextmanager
     async def lifespan(app):
@@ -94,6 +95,7 @@ def create_app(
     app = FastAPI(title="Agent Hub", version=__version__, lifespan=lifespan)
     app.state.sessions, app.state.mailer, app.state.hub = sessions, mail, hub
     app.state.security_sessions, app.state.deliveries = security_sessions, deliveries
+    app.state.embeddings = Embeddings(cfg)
 
     @app.middleware("http")
     async def request_metadata(request: Request, call_next):
@@ -149,6 +151,7 @@ def create_app(
     def db_dependency(request: Request):
         pending_mail = []
         with sessions() as db:
+            db.info["semantic_configured"] = bool(app.state.embeddings.url)
             try:
                 yield db
                 db.commit()
@@ -195,9 +198,9 @@ def create_app(
             raise HubError("DPOP_TOKEN_REQUIRED", 401)
         return header[5:]
 
-    def actor(request, db, *, users=(), projects=(), resources=(), grant_id=None):
-        value = token(request)
-        _, thumb = proof(request, value)
+    def actor(request, db, *, users=(), projects=(), resources=(), grant_id=None, verified=None):
+        value = token(request) if verified is None else verified[0]
+        thumb = proof(request, value)[1] if verified is None else verified[1]
         params = request.path_params
         hub.lock_session(
             db,
@@ -214,6 +217,19 @@ def create_app(
         )
         identity = hub.authenticate(db, value, thumb)
         request.state.actor_id = identity.user.id
+        return identity
+
+    def semantic_query(request, db, identity, query, mode="hybrid"):
+        if not app.state.embeddings.url or not query.strip() or mode == "keyword":
+            return identity
+        value, thumb = token(request), identity.device.thumbprint
+        # Preflight authorization is read-only. Release locks before model I/O,
+        # then authenticate this already verified request again under fresh locks.
+        db.rollback()
+        db.expunge_all()
+        vector = app.state.embeddings.query(query)
+        identity = actor(request, db, verified=(value, thumb))
+        db.info["semantic_query"] = vector
         return identity
 
     def enrollment(request, db, *, grant_id=None):
@@ -846,6 +862,10 @@ def create_app(
         identity = actor(request, db)
         hub.project(db, identity, project_id, "tasks:write")
         task, run = tasks.live_run(db, identity, project_id, task_id, body)
+        query = (task.title + " " + task.description)[:200]
+        identity = semantic_query(request, db, identity, query)
+        hub.project(db, identity, project_id, "tasks:write")
+        task, run = tasks.live_run(db, identity, project_id, task_id, body)
         result = mutate(request, db, identity, body,
                         lambda: work_policy.prepare(hub, db, identity, project_id, task_id, body, request.state.request_id))
         # A cached preparation must not re-export data after source permissions changed.
@@ -875,13 +895,16 @@ def create_app(
     @app.get("/api/projects/{project_id}/memory/knowledge")
     def knowledge_search(project_id: uuid.UUID, request: Request, db: DB, query: str = Query("", max_length=200),
                          repository_id: uuid.UUID | None = None, include_history: bool = False,
+                         search_mode: Literal["hybrid", "keyword"] = "hybrid",
                          offset: int = Query(0, ge=0, le=100000), limit: int = Query(12, ge=1, le=50)):
         from . import knowledge
         identity = actor(request, db)
         hub.project(db, identity, project_id)
         rate_limit(security_sessions, hub.secret, f"memory-read:{identity.user.id}", 180, 60)
+        identity = semantic_query(request, db, identity, query, search_mode)
+        hub.project(db, identity, project_id)
         return knowledge.search(db, project_id, S.MemorySearch(query=query, repository_id=repository_id,
-                                include_history=include_history, offset=offset, limit=limit))
+                                include_history=include_history, offset=offset, limit=limit, search_mode=search_mode))
 
     @app.post("/api/projects/{project_id}/memory/knowledge")
     def knowledge_proposal(project_id: uuid.UUID, body: S.KnowledgeInput, request: Request, db: DB):
@@ -913,12 +936,15 @@ def create_app(
     @app.get("/api/projects/{project_id}/memory")
     def search_memory(project_id: uuid.UUID, request: Request, db: DB, query: str = Query("", max_length=200),
                       repository_id: uuid.UUID | None = None, include_history: bool = False,
+                      search_mode: Literal["hybrid", "keyword"] = "hybrid",
                       offset: int = Query(0, ge=0, le=100000), limit: int = Query(12, ge=1, le=50)):
         identity = actor(request, db)
         hub.project(db, identity, project_id)
         rate_limit(security_sessions, hub.secret, f"memory-read:{identity.user.id}", 180, 60)
+        identity = semantic_query(request, db, identity, query, search_mode)
+        hub.project(db, identity, project_id)
         return memory.search(db, project_id, S.MemorySearch(query=query, repository_id=repository_id,
-                             include_history=include_history, offset=offset, limit=limit))
+                             include_history=include_history, offset=offset, limit=limit, search_mode=search_mode))
 
     @app.get("/api/projects/{project_id}/memory/{card_id}/original")
     def memory_original(project_id: uuid.UUID, card_id: uuid.UUID, request: Request, db: DB,

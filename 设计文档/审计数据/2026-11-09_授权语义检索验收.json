@@ -1,0 +1,696 @@
+{
+  "date": "2026-11-09",
+  "backend": "0.13.0",
+  "desktop": "0.15.0",
+  "database_schema": "0016",
+  "backend_tests_passed": 215,
+  "desktop_tests_passed": 126,
+  "test_log_sha256": {
+    "backend": "f42c2f646c00f8540ac3863b8946638956b33ab947ff176e26c767e094fc6bc3",
+    "desktop": "037df2e3ada3d91fc3784e8140beed2600e6f9b2a2f3cdcc75ee8eec6dbf9f23"
+  },
+  "database_and_docker_only_on_server": true,
+  "semantic_embeddings_configured": true,
+  "semantic_model": {
+    "model": "bge-small-zh-v1.5-fp32-75c43b0-cls-mean384s320-v1",
+    "synthetic": true,
+    "corpus_size": 10,
+    "queries": 12,
+    "top1": 9,
+    "top3": 11,
+    "load_seconds": 0.655,
+    "rss_mb": 182.9,
+    "long_windows": 6,
+    "long_dimensions": 512,
+    "results": [
+      {
+        "query": "员工被踢出后怎么交接并卸载",
+        "expected": 0,
+        "top3": [
+          0,
+          8,
+          3
+        ],
+        "rank": 1,
+        "seconds": 0.0132
+      },
+      {
+        "query": "数据库灾难恢复",
+        "expected": 1,
+        "top3": [
+          1,
+          0,
+          4
+        ],
+        "rank": 1,
+        "seconds": 0.0405
+      },
+      {
+        "query": "换电脑怎么验证身份",
+        "expected": 2,
+        "top3": [
+          8,
+          1,
+          2
+        ],
+        "rank": 3,
+        "seconds": 0.0095
+      },
+      {
+        "query": "两个人同时抢同一项工作",
+        "expected": 3,
+        "top3": [
+          3,
+          9,
+          6
+        ],
+        "rank": 1,
+        "seconds": 0.0096
+      },
+      {
+        "query": "transaction_id重复请求付款",
+        "expected": 4,
+        "top3": [
+          4,
+          6,
+          8
+        ],
+        "rank": 1,
+        "seconds": 0.0098
+      },
+      {
+        "query": "界面按钮外观",
+        "expected": 5,
+        "top3": [
+          5,
+          8,
+          0
+        ],
+        "rank": 1,
+        "seconds": 0.0082
+      },
+      {
+        "query": "同事总结的经验什么时候正式可用",
+        "expected": 6,
+        "top3": [
+          6,
+          3,
+          7
+        ],
+        "rank": 1,
+        "seconds": 0.0097
+      },
+      {
+        "query": "哪些文件绝对不能动",
+        "expected": 7,
+        "top3": [
+          4,
+          6,
+          7
+        ],
+        "rank": 3,
+        "seconds": 0.0087
+      },
+      {
+        "query": "PC应用如何自动升级",
+        "expected": 8,
+        "top3": [
+          8,
+          1,
+          0
+        ],
+        "rank": 1,
+        "seconds": 0.0088
+      },
+      {
+        "query": "只能访问被授予权限的Git代码",
+        "expected": 9,
+        "top3": [
+          9,
+          3,
+          2
+        ],
+        "rank": 1,
+        "seconds": 0.0402
+      },
+      {
+        "query": "离职时保全尚未交付的工作",
+        "expected": 0,
+        "top3": [
+          3,
+          4,
+          6
+        ],
+        "rank": 4,
+        "seconds": 0.0099
+      },
+      {
+        "query": "长期记忆需别人审查来源",
+        "expected": 6,
+        "top3": [
+          6,
+          9,
+          1
+        ],
+        "rank": 1,
+        "seconds": 0.0096
+      }
+    ]
+  },
+  "model_manifest": {
+    "source_model": "BAAI/bge-small-zh-v1.5",
+    "repository": "Xenova/bge-small-zh-v1.5",
+    "revision": "75c43b069aac4d136ba6bc1122f995fedcfd2781",
+    "dimensions": 512,
+    "pooling": "CLS; per-window L2; mean windows then L2",
+    "window_tokens": 384,
+    "stride_tokens": 320,
+    "query_prefix": "为这个句子生成表示以用于检索相关文章：",
+    "files": {
+      "config.json": "d4193ead3a810fd694fa8a31d7fc72fbaebc0668b603e398734bf2f6538ff42f",
+      "model.onnx": "69a0b846f4f116b5e6aabf9546ea6754d02264f3211a13a1bd69b31b8040749a",
+      "special_tokens_map.json": "b6d346be366a7d1d48332dbc9fdf3bf8960b5d879522b7799ddba59e76237ee3",
+      "tokenizer.json": "48cea5d44424912a6fd1ea647bf4fe50b55ab8b1e5879c3275f80e339e8fae26",
+      "tokenizer_config.json": "e6f3b96db926a37d4039995fbf5ad17de158dfb8f6343d607e4dbaad18d75f5a"
+    },
+    "model_id": "bge-small-zh-v1.5-fp32-75c43b0-cls-mean384s320-v1"
+  },
+  "semantic_search": "exact cosine over currently authorized sources plus keyword RRF; no ANN",
+  "keyword_and_vector_candidate_limits_per_query": 240,
+  "rrf_k": 60,
+  "model_runtime_external_network": false,
+  "new_generative_cloud_model_calls": false,
+  "indexing": "transactional enqueue; asynchronous dedicated worker; not synchronous with log sharing",
+  "embedding_worker_lease_seconds": 45,
+  "embedding_worker_max_attempts": 3,
+  "model_failure_keyword_fallback_explicit": true,
+  "invalid_vectors_and_redirects_rejected": true,
+  "current_source_rls_before_return": true,
+  "query_reauthorized_after_inference": true,
+  "same_http_request_dpop_verified_once": true,
+  "pending_knowledge_not_indexed": true,
+  "retirement_during_inference_discarded": true,
+  "expired_worker_lease_recovered": true,
+  "memory_byte_budget": 12000,
+  "test_memory_serialized_bytes": 4099,
+  "token_savings_measured": false,
+  "byte_budget_is_billing_token_count": false,
+  "physical_windows_hosts_in_integration": 1,
+  "logical_profiles_exercised": [
+    "author",
+    "reader",
+    "restricted",
+    "root-reviewer"
+  ],
+  "actual_http_and_database_integration": {
+    "passed": true,
+    "realWindowsController": true,
+    "realHTTP": true,
+    "realDPoP": true,
+    "realPostgreSQL": true,
+    "realMemoryWorker": true,
+    "knowledgePendingUntilReviewed": true,
+    "independentKnowledgeReview": true,
+    "knowledgeAutoLoaded": true,
+    "knowledgeSourceInvalidated": true,
+    "knowledgeSurvivesNewLog": true,
+    "knowledgeRepositoryDenied": true,
+    "documentAndCoworkerMemoryLoaded": true,
+    "byteBudgetChecked": true,
+    "sourceOriginalRead": true,
+    "repositoryDenied": true,
+    "conflictForcesRefresh": true,
+    "localProjectionInvalidated": true,
+    "incrementalLogVisible": true,
+    "nextColleaguePrepared": true,
+    "revocationDenied": true,
+    "workingCodePreserved": true,
+    "semanticEmbeddingsConfigured": true,
+    "roleBound": "architect",
+    "realFrameworkDeployment": true,
+    "managedFilesDoNotPolluteCodeEvidence": true,
+    "roleRevocationHandoffAndUninstall": true,
+    "physicalWindowsHosts": 1,
+    "logicalDevices": 4,
+    "preparedMemory": {
+      "schema_version": 2,
+      "mode": "extractive-v1",
+      "items": [
+        {
+          "id": "b123de24-4918-4fe9-be12-4a18010078fb",
+          "title": "Web 登录最新交接",
+          "body": "工作：Web 登录最新交接\n说明：最新一轮已核对状态，下一位同事继续检查邮件异常。\n验证（作者报告）：相同任务新交接不使已审核长期知识退出。\n下一步：接手人核对最新日志及长期知识。",
+          "state": "active",
+          "state_version": 0,
+          "state_reason": "",
+          "extractor": "extractive-v1",
+          "source": {
+            "kind": "worklog",
+            "id": "9e6704bd-81b6-48b1-ae55-f1e2457e9b1e",
+            "task_id": "0ee8112c-11bc-485a-82ea-ce1c17a5514c",
+            "repository_id": "fa5666ac-84d0-4756-82f0-bcf3c55fcf58",
+            "git_commit": "12e717148520b9189d8480cab528838c6a6632ce",
+            "receipt_hash": "7be6357652b601ef687d2690047f505428774a4146c0eb6108b55c7ba7be155e",
+            "created_at": "2026-11-09T08:45:41.036303+00:00",
+            "outcome": "checkpoint"
+          },
+          "source_hash": "7be6357652b601ef687d2690047f505428774a4146c0eb6108b55c7ba7be155e",
+          "line_start": null,
+          "line_end": null,
+          "truncated": false,
+          "content_trust": "untrusted-project-data",
+          "retrieved_by": [
+            "keyword",
+            "semantic"
+          ]
+        },
+        {
+          "id": "bae1e459-0dcb-4af9-ac34-03ef7eebc2f2",
+          "title": "完成登录校验",
+          "body": "工作：完成登录校验\n说明：同事交接：Web 登录邮件已确认使用授权码，失败重试保持幂等。\n验证（作者报告）：测试通过 3 项\n下一步：接手人检查 Web 登录边界，保留原有专注范围。",
+          "state": "active",
+          "state_version": 0,
+          "state_reason": "",
+          "extractor": "extractive-v1",
+          "source": {
+            "kind": "worklog",
+            "id": "7c2b9541-254f-4147-b108-5d604c0fb57a",
+            "task_id": "730c258f-ed27-4c7c-80ab-7a6c8e60f412",
+            "repository_id": "fa5666ac-84d0-4756-82f0-bcf3c55fcf58",
+            "git_commit": null,
+            "receipt_hash": "d21cb615dcfc95ea1af798231a0ca44df1147386733dd7598215ed51e350321f",
+            "created_at": "2026-11-09T08:45:06.633141+00:00",
+            "outcome": "checkpoint"
+          },
+          "source_hash": "d21cb615dcfc95ea1af798231a0ca44df1147386733dd7598215ed51e350321f",
+          "line_start": null,
+          "line_end": null,
+          "truncated": false,
+          "content_trust": "untrusted-project-data",
+          "retrieved_by": [
+            "keyword",
+            "semantic"
+          ]
+        }
+      ],
+      "knowledge": [
+        {
+          "id": "09b7f6d0-c088-44d1-8497-3e63d6049a28",
+          "topic": "web.auth.focus",
+          "kind": "lesson",
+          "title": "Web 登录范围长期交接",
+          "body": "Web 登录修复保持当前授权范围，后续任务继续核对邮件重试的幂等性，不自行扩大项目端。",
+          "state": "active",
+          "review_state": "active",
+          "version": 2,
+          "content_hash": "233e917c5fbb3673108591605a050d3bde3e4c6b91975a0c61722e9161bda2ec",
+          "source_card_id": "afbe80cd-fb0e-412a-b503-9c09dbb52c56",
+          "source_hash": "0cb359756be23e1d3bea43bf1b77fbc8993bb2c194c33a2f1dd23e057437c7b5",
+          "source": {
+            "kind": "worklog",
+            "id": "4b130efb-c598-4007-99fe-49e7bb37ff44",
+            "task_id": "0ee8112c-11bc-485a-82ea-ce1c17a5514c",
+            "repository_id": "fa5666ac-84d0-4756-82f0-bcf3c55fcf58",
+            "git_commit": "12e717148520b9189d8480cab528838c6a6632ce",
+            "receipt_hash": "0cb359756be23e1d3bea43bf1b77fbc8993bb2c194c33a2f1dd23e057437c7b5",
+            "created_at": "2026-11-09T08:45:38.469120+00:00",
+            "outcome": "checkpoint"
+          },
+          "line_start": null,
+          "line_end": null,
+          "content_trust": "untrusted-project-data",
+          "retrieved_by": [
+            "keyword",
+            "semantic"
+          ]
+        }
+      ],
+      "recent_unindexed": [],
+      "byte_budget": 12000,
+      "budget_measure": "serialized-utf8-bytes; model token count is not measured",
+      "omitted_candidates": 0,
+      "coverage": {
+        "mode": "extractive-v1",
+        "automatic_extraction": true,
+        "semantic_distillation": false,
+        "knowledge": {
+          "active": 1,
+          "source_stale": 1
+        },
+        "knowledge_review_required": true,
+        "semantic_search": "configured",
+        "embeddings": {
+          "model": "bge-small-zh-v1.5-fp32-75c43b0-cls-mean384s320-v1",
+          "dimensions": 512,
+          "cards": {
+            "visible": 2,
+            "indexed": 2,
+            "pending_or_failed": 0
+          },
+          "knowledge": {
+            "visible": 1,
+            "indexed": 1,
+            "pending_or_failed": 0
+          },
+          "visible_jobs": {
+            "succeeded": 6
+          },
+          "scope": "currently-authorized-sources-only",
+          "configured": true
+        },
+        "visible_cards": {
+          "active": 2,
+          "conflicted": 1,
+          "superseded": 1
+        },
+        "visible_jobs": {
+          "succeeded": 4
+        },
+        "source_visibility": "current-original-source-permissions",
+        "vector_index": "exact-authorized-pgvector"
+      },
+      "retrieval": {
+        "search_mode": "authorized-exact-vector-keyword-rrf",
+        "semantic_search": "ready"
+      },
+      "content_trust": "untrusted-project-data",
+      "gaps": [],
+      "serialized_bytes": 4099
+    }
+  },
+  "browser_and_desktop_ui": {
+    "web": {
+      "passed": true,
+      "realBrowserUI": true,
+      "backend": "fixture",
+      "proposalWithExactMultilineQuote": true,
+      "knowledgeHistoryVisible": true,
+      "explicitVersionedReplacement": true,
+      "selfReviewReasonCollected": true,
+      "correctSourceExpanded": true,
+      "semanticModeSelector": true,
+      "authorizedIndexCoverageVisible": true,
+      "horizontalOverflow": false
+    },
+    "desktop": {
+      "passed": true,
+      "realElectronUI": true,
+      "backend": "fixture",
+      "sharedMemoryNavigation": true,
+      "statusVisible": true,
+      "originalExpandable": true,
+      "knowledgeLayerVisible": true,
+      "correctSourceCardExpanded": true,
+      "semanticModeSelector": true,
+      "authorizedIndexCoverageVisible": true,
+      "keywordModeVisible": true,
+      "horizontalOverflow": false
+    },
+    "backend": "fixture"
+  },
+  "nonempty_upgrade": {
+    "passed": true,
+    "upgrade": "0015->0016",
+    "verification": "read-only post-upgrade audit; migration execution previously passed",
+    "isolatedDatabase": true,
+    "post_upgrade_state": {
+      "schema": "0016",
+      "tasks": 1,
+      "original_logs": 1,
+      "original_cards": 1,
+      "acknowledged_contexts": 1,
+      "reviewed_knowledge": 1,
+      "knowledge_events": 2,
+      "backfill_jobs_succeeded": 2,
+      "semantic_vectors": 2
+    }
+  },
+  "nonempty_vector_restore": {
+    "passed": true,
+    "realDumpRestore": true,
+    "isolatedDatabase": true,
+    "memory": {
+      "documents": 1,
+      "exact_originals": 1,
+      "cards": 5,
+      "knowledge_facts": 2,
+      "knowledge_events": 5,
+      "semantic_vectors": 7,
+      "errors": [],
+      "healthy": true
+    }
+  },
+  "restore_vector_values_and_content_digest_compared": true,
+  "production": {
+    "database": {
+      "database": {
+        "schema": "0016",
+        "vector_version": "0.8.7",
+        "projects": 0,
+        "users": 1,
+        "devices": 4,
+        "facts": 0,
+        "vectors": 0,
+        "derived_tables_forced_rls": true,
+        "worker_non_privileged": true,
+        "runtime_not_embedding_worker": true
+      },
+      "resources": [
+        "agent-hub-app-embedding-1 131.5MiB / 384MiB",
+        "agent-hub-app-embedding-worker-1 71.88MiB / 192MiB"
+      ]
+    },
+    "recovery": {
+      "production_backup_verified": true,
+      "new_schema_restored": true,
+      "operator_checks_healthy": true,
+      "snapshot_id": "b260d1f98f96c028cfb8972badd870bf3eb23e67f6efe70a9ab11293c6697b77",
+      "verified_archives": 0,
+      "memory": {
+        "documents": 0,
+        "exact_originals": 0,
+        "cards": 0,
+        "knowledge_facts": 0,
+        "knowledge_events": 0,
+        "semantic_vectors": 0,
+        "errors": [],
+        "healthy": true
+      },
+      "continuous_offsite_backup": false,
+      "actual_business_memory_data": false
+    },
+    "restore_drill": {
+      "restored_database": "hub_restore_20261109T085055Z",
+      "snapshot_id": "b260d1f98f96c028cfb8972badd870bf3eb23e67f6efe70a9ab11293c6697b77",
+      "database_schema": "0016",
+      "role_bindings_verified": true,
+      "verified_archives": 0,
+      "memory": {
+        "documents": 0,
+        "exact_originals": 0,
+        "cards": 0,
+        "knowledge_facts": 0,
+        "knowledge_events": 0,
+        "semantic_vectors": 0,
+        "errors": [],
+        "healthy": true
+      },
+      "passed": true,
+      "created_at": "2026-11-09T08:51:02.438191+00:00"
+    },
+    "ops": {
+      "schema": 1,
+      "created_at": "2026-11-09T09:00:22.298571+00:00",
+      "checks": [
+        {
+          "id": "container:agent-hub-postgres",
+          "state": "ok"
+        },
+        {
+          "id": "container:agent-hub-app-api-1",
+          "state": "ok"
+        },
+        {
+          "id": "container:agent-hub-app-document-worker-1",
+          "state": "ok"
+        },
+        {
+          "id": "container:agent-hub-app-memory-worker-1",
+          "state": "ok"
+        },
+        {
+          "id": "container:agent-hub-app-embedding-1",
+          "state": "ok"
+        },
+        {
+          "id": "container:agent-hub-app-embedding-worker-1",
+          "state": "ok"
+        },
+        {
+          "id": "container:agent-hub-edge",
+          "state": "ok"
+        },
+        {
+          "id": "database:query",
+          "state": "ok"
+        },
+        {
+          "id": "memory:queue",
+          "state": "ok"
+        },
+        {
+          "id": "semantic:queue",
+          "state": "ok"
+        },
+        {
+          "id": "public:https",
+          "state": "ok",
+          "version": "0.13.0"
+        },
+        {
+          "id": "desktop:signed-feed",
+          "state": "ok",
+          "version": "0.15.0",
+          "remaining_hours": 719
+        },
+        {
+          "id": "disk:capacity",
+          "state": "ok",
+          "free_bytes": 17816920064
+        },
+        {
+          "id": "agent-hub-backup",
+          "state": "ok",
+          "age_hours": 0.16,
+          "maximum_hours": 36
+        },
+        {
+          "id": "agent-hub-archive-audit",
+          "state": "ok",
+          "age_hours": 0.15,
+          "maximum_hours": 36
+        },
+        {
+          "id": "agent-hub-restore-drill",
+          "state": "ok",
+          "age_hours": 0.16,
+          "maximum_hours": 1080
+        },
+        {
+          "id": "offsite:continuous-copy",
+          "state": "warning",
+          "configured": false
+        },
+        {
+          "id": "alerts:external-delivery",
+          "state": "warning",
+          "configured": false
+        }
+      ],
+      "healthy": true,
+      "has_warnings": true,
+      "scope": "local-operator-checks-only"
+    },
+    "business_projects": 0,
+    "business_vectors": 0
+  },
+  "initial_rollout": {
+    "readiness_gate_failed_before_first_model_health_probe": true,
+    "predecessor_application_temporarily_restored": true,
+    "current_symlink_rollback_gap_found_and_fixed": true,
+    "model_readiness_wait_added": true,
+    "final_release_health_and_recovery_verified": true
+  },
+  "model_directory_backed_up_and_restored_with_hash_verification": true,
+  "isolated_test_resources_removed": {
+    "containers": 5,
+    "networks": 2,
+    "verified_anonymous_volume": true,
+    "production_data_volume_preserved": true
+  },
+  "packaged_runtime": {
+    "passed": true,
+    "version": "0.15.0",
+    "packagedRuntime": true,
+    "sharedMemoryNavigationListed": true,
+    "signedOutProjectAccessBlocked": true,
+    "closeToTrayDefault": true,
+    "trayLifetimeVerifiedInSourceSmoke": true,
+    "profileIsolated": true
+  },
+  "public_online_upgrade": {
+    "passed": true,
+    "old_version": "0.14.0",
+    "new_version": "0.15.0",
+    "clicked_from_signed_out_client": true,
+    "signed_release_activated": true,
+    "native_restart_completed": true,
+    "publicDownload": true,
+    "profileIsolated": true
+  },
+  "installed_release": {
+    "passed": true,
+    "version": "0.15.0",
+    "publicInstallerDownloadVerified": true,
+    "installerSha256": "2cb6471c400e3c0b4d20125371155b704debff4983ee319d4547dfb9ce7bc64d",
+    "installedManifestMatchesSignedRelease": true,
+    "installedFilesVerified": 163,
+    "unlistedApplicationResourcesAbsent": true,
+    "managedSkillMatchesPackagedVersion": true,
+    "managedSkillFilesVerified": 10,
+    "existingDataDirectoryUsed": "D:/agent_cache/agent-hub",
+    "codexConfigurationUpdated": true,
+    "loginPerformedByAgent": false,
+    "authenticodeSigned": false
+  },
+  "installed_mcp": {
+    "passed": true,
+    "installedVersion": "0.15.0",
+    "realStdioMcp": true,
+    "configurationFromInstalledCodex": true,
+    "signedFeedVerified": true,
+    "loginState": "LOGIN_REQUIRED",
+    "authenticationNotBypassed": true
+  },
+  "release": {
+    "schema": 1,
+    "platform": "win-x64",
+    "version": "0.15.0",
+    "installer": {
+      "url": "https://47.109.23.86:18180/desktop-updates/win-x64/AgentHub-Setup-0.15.0.exe",
+      "bytes": 123153319,
+      "sha256": "2cb6471c400e3c0b4d20125371155b704debff4983ee319d4547dfb9ce7bc64d"
+    },
+    "files_sha256": "382246f91dfe05763cf06ed3187e66d146badc9cb30882e4342229ecb1edbc90"
+  },
+  "signed_update_metadata": {
+    "schema": 1,
+    "channel": "stable",
+    "platform": "win-x64",
+    "version": "0.15.0",
+    "metadata_version": 16,
+    "issued_at": "2026-11-09T08:51:19.868Z",
+    "expires_at": "2026-12-09T08:51:19.868Z",
+    "bytes": 159984013,
+    "sha256": "50b83ea2845e1d63e502586d2c243c9bd54dce7c366b8caef00991932a5b6219",
+    "files_sha256": "382246f91dfe05763cf06ed3187e66d146badc9cb30882e4342229ecb1edbc90"
+  },
+  "backend_source_archive_sha256": "7e45f7e701c86d3c3980227dd3e2e0d0f9ed18535dd63865ca1b36dccabdb570",
+  "authenticode_signed": false,
+  "automatic_cross_source_model_distillation": false,
+  "automatic_arbitrary_semantic_conflict_detection": false,
+  "cross_harness_scheduler_implemented": false,
+  "all_harness_turn_hooks_verified": false,
+  "macos_device_acceptance_completed": false,
+  "production_business_pilot_completed": false,
+  "pilot_deferred_by_user": true,
+  "long_term_large_scale_retrieval_quality_verified": false,
+  "continuous_offsite_backup": false,
+  "external_alert_delivery": false,
+  "overall_production_acceptance": false,
+  "secrets_scan_findings": 0,
+  "reviewed_nonsecret_matches": {
+    "count": 3,
+    "classification": "public tokenizer file SHA-256 hashes; exact path and line allowlist; matched downloaded pinned model"
+  }
+}

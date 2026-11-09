@@ -567,27 +567,29 @@ class Console {
     const filter=this.memoryFilter?.projectId===projectId?this.memoryFilter:{projectId,query:'',include_history:false,repository_id:'',layer:'extracts'};
     const isKnowledge=filter.layer==='knowledge';
     const registry=await this.api('GET',`/api/projects/${projectId}/repositories`);
-    const query=new URLSearchParams({query:filter.query,include_history:String(filter.include_history),limit:'12'});
+    const query=new URLSearchParams({query:filter.query,search_mode:filter.search_mode || 'hybrid',include_history:String(filter.include_history),limit:'12'});
     if(filter.repository_id)query.set('repository_id',filter.repository_id);
     const base=`/api/projects/${projectId}/memory`;
     const data=await this.api('GET',base+(isKnowledge?'/knowledge':'')+'?'+query);
     const status=await this.api('GET',base+'/status'+(filter.repository_id?'?repository_id='+filter.repository_id:''));
     const statusText=s=>`当前摘录 ${s.visible_cards.active || 0} · 长期知识 ${s.knowledge?.active || 0} · 知识待审 ${s.knowledge?.pending || 0} · 过时 ${s.visible_cards.superseded || 0} · 冲突 ${s.visible_cards.conflicted || 0} · 待提取 ${s.visible_jobs.queued || 0} · 失败 ${s.visible_jobs.failed || 0}`;
-    const counts=h('p',{class:'mono'},statusText(status));
+    const semanticText=s=>s.embeddings?` · 语义索引 ${s.embeddings.cards.indexed+s.embeddings.knowledge.indexed}/${s.embeddings.cards.visible+s.embeddings.knowledge.visible} · 索引失败 ${s.embeddings.visible_jobs.failed || 0}`:'';
+    const counts=h('p',{class:'mono'},statusText(status)+semanticText(status));
     const poll=async()=>{
       if(this.currentView!=='memory' || this.project?.id!==projectId || this.renderVersion!==revision)return;
-      try{const next=await this.api('GET',base+'/status'+(filter.repository_id?'?repository_id='+filter.repository_id:''));counts.textContent=statusText(next);}
+      try{const next=await this.api('GET',base+'/status'+(filter.repository_id?'?repository_id='+filter.repository_id:''));counts.textContent=statusText(next)+semanticText(next);}
       catch(error){counts.textContent=error.message;return;}
       this.viewTimer=setTimeout(poll,5000);
     };
     this.viewTimer=setTimeout(poll,5000);
     const form=h('form',{},h('div',{class:'fields'},
       field('layer','资料类型',{value:filter.layer || 'extracts',items:[['extracts','日志交接与文档摘录'],['knowledge','长期知识与审核候选']]}),
-      field('query','关键词',{value:filter.query,maxlength:200,placeholder:'例如：登录、Web、接口'}),
+      field('query','问题或关键词',{value:filter.query,maxlength:200,placeholder:'例如：换电脑怎样验证身份'}),
+      field('search_mode','检索方式',{value:filter.search_mode || 'hybrid',items:[['hybrid','语义与关键词'],['keyword','仅关键词']]}),
       field('repository_id','仓库范围',{value:filter.repository_id,items:[['','全部获准资料'],...registry.items.map(r=>[r.id,r.name])]}),
       field('history','版本范围',{value:filter.include_history?'all':'current',items:[['current','当前有效卡片'],['all','含候选、过时、冲突和退役卡片']]})));
     form.append(h('div',{class:'actions'},submit(form,'检索',async values=>{
-      this.memoryFilter={projectId,query:values.query,repository_id:values.repository_id,include_history:values.history==='all',layer:values.layer};
+      this.memoryFilter={projectId,query:values.query,search_mode:values.search_mode,repository_id:values.repository_id,include_history:values.history==='all',layer:values.layer};
       await this.renderView();
     })));
     const labels={active:'当前生效',pending:'候选待审核',superseded:'已被新版本替代',conflicted:'存在冲突',retired:'已退役',rejected:'已驳回',source_stale:'来源已失效，需重新核对'};
@@ -640,9 +642,10 @@ class Console {
         card.state_reason?h('p',{},card.state_reason):null,h('div',{class:'row-actions'},actions),original);
     });
     return [title,h('section',{class:'card'},h('h2',{},'增量处理状态'),counts,
-      this.can('tasks:publish') && status.visible_jobs.failed?button('重试失败提取',async()=>{await this.api('POST',base+'/retry',{});await this.renderView();},'small'):null,
-      h('p',{class:'hint'},'日志交接持续自动摘录；本地 Agent 或成员可引用来源提炼长期知识，经审核后纳入开工记忆。来源变化或撤权时重新校验。开工记忆默认最多 12,000 UTF-8 字节，语义向量检索尚未配置。')),
-      h('section',{class:'card'},form),...cards,
+      this.can('tasks:publish') && (status.visible_jobs.failed || status.embeddings?.visible_jobs.failed)?button('重试失败处理',async()=>{await this.api('POST',base+'/retry',{});await this.renderView();},'small'):null,
+      h('p',{class:'hint'},'日志和文档增量摘录；长期知识经审核后进入开工记忆。语义检索在授权范围内与关键词融合，来源变化即时重查。开工记忆共用 12,000 UTF-8 字节预算。')),
+      h('section',{class:'card'},form,h('p',{class:'hint'},data.semantic_search==='ready'?'本次结合语义和关键词排序；请核对来源。':data.semantic_search==='unavailable-keyword-fallback'?'语义服务暂不可用，本次已退回关键词。':data.semantic_search==='keyword-requested'?'本次仅按关键词匹配。':'当前列出获准资料或按关键词匹配。'),
+        data.candidate_limit_reached?h('p',{class:'hint'},'达到检索候选上限，请缩小问题或仓库范围。'):null),...cards,
       !cards.length?h('p',{class:'hint'},'当前检索范围没有匹配卡片。请查看文档同步、队列状态或调整关键词；这不代表没有其他历史记录。'):null,
       data.has_more?h('p',{class:'hint'},'这里只显示前 12 条，缩小检索范围或通过 MCP 翻页。'):null].filter(Boolean);
   }

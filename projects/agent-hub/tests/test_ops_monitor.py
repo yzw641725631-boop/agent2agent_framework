@@ -25,7 +25,7 @@ def environment(tmp_path, monkeypatch):
     }
     for name, value in records.items():
         (tmp_path / name).write_text(json.dumps({'created_at': TIME.isoformat(), **value}))
-    state = {'failed_unit': None, 'feed_exit': 0, 'feed_hours': 720, 'memory_errors': 0}
+    state = {'failed_unit': None, 'feed_exit': 0, 'feed_hours': 720, 'memory_errors': 0, 'embedding_errors': 0}
 
     def command(arguments, timeout=12):
         if arguments[0] == 'systemctl':
@@ -37,6 +37,8 @@ def environment(tmp_path, monkeypatch):
             return 0, '1\n'
         if arguments[-1].startswith('SELECT count(*) FROM memory_jobs'):
             return 0, str(state['memory_errors']) + '\n'
+        if arguments[-1].startswith('SELECT count(*) FROM embedding_jobs'):
+            return 0, str(state['embedding_errors']) + '\n'
         return state['feed_exit'], json.dumps({'version': '0.9.0', 'remaining_hours': state['feed_hours']})
 
     @contextmanager
@@ -109,6 +111,13 @@ def test_overdue_recovery_drill_is_an_error(environment):
     file = environment[0] / 'last-restore-drill.json'
     file.write_text(json.dumps({'passed': True, 'created_at': (TIME - datetime.timedelta(days=46)).isoformat()}))
     assert states(result(environment))['agent-hub-restore-drill'] == 'error'
+
+
+def test_running_model_does_not_hide_failed_or_stalled_embedding_queue(environment):
+    environment[1]['embedding_errors'] = 1
+    report = result(environment)
+    assert states(report)['container:agent-hub-app-embedding-1'] == 'ok'
+    assert states(report)['semantic:queue'] == 'error' and report['healthy'] is False
 
 
 def test_near_expiry_signed_feed_warns_and_invalid_signature_fails(environment):

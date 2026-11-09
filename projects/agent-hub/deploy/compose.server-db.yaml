@@ -14,6 +14,7 @@ services:
       HUB_RUNTIME_PASSWORD: ${HUB_RUNTIME_PASSWORD:?Create the server .env first}
       HUB_INDEXER_PASSWORD: ${HUB_INDEXER_PASSWORD:?Create the server .env first}
       HUB_MEMORY_PASSWORD: ${HUB_MEMORY_PASSWORD:?Create the server .env first}
+      HUB_EMBEDDING_PASSWORD: ${HUB_EMBEDDING_PASSWORD:?Create the server .env first}
     volumes:
       - pgdata:/var/lib/postgresql
       - ./init/01_roles.sql:/docker-entrypoint-initdb.d/01_roles.sql:ro

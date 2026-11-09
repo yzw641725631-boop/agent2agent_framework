@@ -16,6 +16,9 @@ test('memory MCP scope cannot switch a repository or inject a source path',async
   assert.throws(()=>memory.request('hub_search_memory',{repository_id:crypto.randomUUID()},project,repo),{code:'DOCUMENT_SOURCE_NOT_ACCESSIBLE'});
   assert.throws(()=>memory.request('hub_read_memory_source',{card_id:'../../other'},project,repo),{code:'INVALID_REQUEST'});
   assert.throws(()=>memory.request('hub_search_memory',{include_history:'true'},project,repo),{code:'INVALID_REQUEST'});
+  assert.throws(()=>memory.request('hub_search_memory',{search_mode:'global-vector'},project,repo),{code:'INVALID_REQUEST'});
+  const keyword=memory.request('hub_search_memory',{query:'transaction_id',search_mode:'keyword'},project,repo);
+  assert.equal(new URL('https://example.test'+keyword.path).searchParams.get('search_mode'),'keyword');
   assert.throws(()=>memory.request('hub_read_memory_source',{card_id:card,limit:201},project,repo),{code:'INVALID_REQUEST'});
   const listed=await dispatch({jsonrpc:'2.0',id:1,method:'tools/list'},async()=>({capabilities:['project:read']}));
   assert.ok(listed.result.tools.some(t=>t.name==='hub_search_memory'));

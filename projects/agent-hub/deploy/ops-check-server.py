@@ -69,7 +69,9 @@ def collect(base=BASE, time=None):
         if not state['Running'] or state.get('Health', {}).get('Status', 'healthy') != 'healthy':
             raise ValueError()
 
-    for name in ['agent-hub-postgres', 'agent-hub-app-api-1', 'agent-hub-app-document-worker-1', 'agent-hub-app-memory-worker-1', 'agent-hub-edge']:
+    for name in ['agent-hub-postgres', 'agent-hub-app-api-1', 'agent-hub-app-document-worker-1',
+                 'agent-hub-app-memory-worker-1', 'agent-hub-app-embedding-1',
+                 'agent-hub-app-embedding-worker-1', 'agent-hub-edge']:
         check('container:' + name, lambda name=name: container(name))
 
     def database():
@@ -87,6 +89,15 @@ def collect(base=BASE, time=None):
         if code or output.strip() != '0':
             raise ValueError()
     check('memory:queue', memory_queue)
+
+    def embedding_queue():
+        code, output = command(['docker', 'exec', 'agent-hub-postgres', 'psql', '-X', '-U',
+                                'postgres', '-d', 'agent_hub', '-Atc',
+                                "SELECT count(*) FROM embedding_jobs WHERE status='failed' OR "
+                                "(status IN ('queued','running') AND created_at<now()-interval '10 minutes')"])
+        if code or output.strip() != '0':
+            raise ValueError()
+    check('semantic:queue', embedding_queue)
 
     def public_health():
         with urlopen(ORIGIN + '/healthz', timeout=10) as response:

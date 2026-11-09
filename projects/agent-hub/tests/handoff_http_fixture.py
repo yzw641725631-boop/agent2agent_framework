@@ -40,7 +40,8 @@ def main():
         db.execute(text(f"TRUNCATE TABLE {names} CASCADE"))
     owner = sessionmaker(engine, expire_on_commit=False)
     cfg = Settings(database_url=runtime_url, public_url=origin, environment="test", mail_mode="memory",
-                   artifact_directory="/tmp/handoff-artifacts")
+                   artifact_directory="/tmp/handoff-artifacts",
+                   embedding_url="http://embedding:8766" if os.environ.get("HUB_TEST_SEMANTIC") == "isolated" else "")
     Path(cfg.artifact_directory).mkdir(mode=0o700, exist_ok=True)
     mail = Mailer(cfg)
     app = create_app(cfg, mailer=mail)

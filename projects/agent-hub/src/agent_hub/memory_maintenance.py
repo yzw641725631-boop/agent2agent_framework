@@ -9,7 +9,7 @@ from .work_policy import digest
 
 def audit(factory):
     result = {"documents": 0, "exact_originals": 0, "cards": 0, "knowledge_facts": 0,
-              "knowledge_events": 0, "errors": [], "healthy": True}
+              "knowledge_events": 0, "semantic_vectors": 0, "errors": [], "healthy": True}
     with factory() as db:
         owner = db.scalar(text("SELECT pg_get_userbyid(relowner)=current_user FROM pg_class WHERE oid='public.document_versions'::regclass"))
         if not owner:
@@ -39,6 +39,15 @@ def audit(factory):
             if not event or event.state != fact.status:
                 result["errors"].append({"kind": "knowledge", "id": str(fact.id), "code": "KNOWLEDGE_DECISION_MISMATCH"})
         result["knowledge_events"] = db.scalar(select(func.count()).select_from(MemoryFactEvent))
+        from .semantic import DIMENSIONS, MODEL
+        for table, source, key, prefix in [("memory_embeddings", "memory_cards", "card_id", ""),
+                                           ("knowledge_embeddings", "memory_facts", "fact_id", "s.topic||E'\\n'||")]:
+            for row in db.execute(text(f"""SELECT e.{key},e.dimensions,vector_dims(e.embedding),e.content_hash,
+                encode(sha256(convert_to({prefix}s.title||E'\\n'||s.body,'UTF8')),'hex') AS expected
+                FROM {table} e JOIN {source} s ON s.id=e.{key} WHERE e.model=:model"""), {"model": MODEL}):
+                result["semantic_vectors"] += 1
+                if row[1] != DIMENSIONS or row[2] != DIMENSIONS or row[3] != row[4]:
+                    result["errors"].append({"kind": "embedding", "id": str(row[0]), "code": "EMBEDDING_CONTENT_MISMATCH"})
         db.execute(text("SET LOCAL ROLE hub_memory"))
         logs = dict(db.execute(select(Worklog.id, Worklog.receipt_hash)).all())
         for card in db.scalars(select(MemoryCard).execution_options(yield_per=200)):

@@ -50,12 +50,20 @@ def view(db, row, *, compact=False):
 
 
 def search(db, project_id, body, *, compact=False):
+    from . import semantic
     statement = base_query(project_id, body.repository_id)
     if not body.include_history:
         statement = statement.where(MemoryFact.status == "active", func.hub.memory_card_current(MemoryFact.source_card_id))
     matches = [func.strpos(func.lower(MemoryFact.topic + "\n" + MemoryFact.title + "\n" + MemoryFact.body), word) > 0
                for word in memory.terms(body.query)]
     score = sum((case((condition, 1), else_=0) for condition in matches), 0)
+    hybrid = semantic.hybrid_rows(db, statement, MemoryFact, score, matches, body, kind="fact")
+    if hybrid is not None:
+        rows, methods, meta = hybrid
+        return {"items": [{**view(db, row, compact=compact), "retrieved_by": methods[str(row[0].id)]}
+                          for row in rows[:body.limit]], "has_more": len(rows) > body.limit,
+                "next_offset": body.offset + min(len(rows), body.limit), **meta,
+                "review_required": True, "content_trust": "untrusted-project-data"}
     if matches:
         from sqlalchemy import or_
         statement = statement.where(or_(*matches))
@@ -64,7 +72,7 @@ def search(db, project_id, body, *, compact=False):
     rows = list(db.execute(statement.offset(body.offset).limit(body.limit + 1)))
     return {"items": [view(db, row, compact=compact) for row in rows[:body.limit]],
             "has_more": len(rows) > body.limit, "next_offset": body.offset + min(len(rows), body.limit),
-            "search_mode": "authorized-reviewed-knowledge-keywords", "semantic_search": "not-configured",
+            "search_mode": "authorized-reviewed-knowledge-keywords", "semantic_search": semantic.query_state(db, body).state,
             "review_required": True, "content_trust": "untrusted-project-data"}
 
 

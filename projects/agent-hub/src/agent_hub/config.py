@@ -29,6 +29,7 @@ class Settings(BaseSettings):
     artifact_directory: str = ""
     artifact_project_bytes: int = 1073741824
     artifact_total_bytes: int = 17179869184
+    embedding_url: str = ""
 
     @model_validator(mode="after")
     def validate_security(self):
@@ -37,6 +38,9 @@ class Settings(BaseSettings):
         if self.environment not in {"development", "test", "production"}:
             raise ValueError("Unknown environment")
         url = urlsplit(self.public_url)
+        if self.embedding_url and self.embedding_url != "http://embedding:8766":
+            if not (self.environment == "test" and self.embedding_url == "http://127.0.0.1:8766"):
+                raise ValueError("HUB_EMBEDDING_URL must use the private embedding service")
         if not url.hostname or url.query or url.fragment or url.username or url.path.rstrip("/"):
             raise ValueError("HUB_PUBLIC_URL must be an origin without a path or credentials")
         if url.scheme != "https" and not (

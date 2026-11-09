@@ -29,6 +29,9 @@ test('knowledge review requires publishing capability and never accepts a free A
   assert.throws(()=>knowledge.request('hub_decide_knowledge',{...args,fact_id:'../../other'},project,repo,['tasks:publish']),{code:'INVALID_REQUEST'});
   const search=knowledge.request('hub_search_knowledge',{query:'中文 & % _',include_history:true},project,repo,[]);
   assert.equal(new URL('https://example.test'+search.path).searchParams.get('query'),'中文 & % _');
+  const hybrid=knowledge.request('hub_search_knowledge',{query:'不同说法',search_mode:'hybrid'},project,repo,[]);
+  assert.equal(new URL('https://example.test'+hybrid.path).searchParams.get('search_mode'),'hybrid');
+  assert.throws(()=>knowledge.request('hub_search_knowledge',{search_mode:'all-projects'},project,repo,[]),{code:'INVALID_REQUEST'});
 });
 
 test('MCP exposes knowledge writes only to authorized capabilities and hides them after revocation',async()=>{
