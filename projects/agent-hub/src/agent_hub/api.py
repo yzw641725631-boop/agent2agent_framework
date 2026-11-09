@@ -244,7 +244,7 @@ def create_app(
 
     @app.get("/healthz")
     def health():
-        return {"status": "ok", "phase": "P6-role-framework", "version": __version__}
+        return {"status": "ok", "phase": "P7-task-coordination", "version": __version__}
 
     @app.post("/api/auth/enrollments")
     def enroll(body: S.Enroll, request: Request, db: DB):
@@ -928,6 +928,15 @@ def create_app(
         hub.project(db, identity, project_id, "tasks:publish")
         return mutate(request, db, identity, body,
                       lambda: tasks.create(hub, db, identity, project_id, body, request.state.request_id))
+
+    @app.post("/api/projects/{project_id}/tasks/{task_id}/dependencies")
+    def task_dependencies(project_id: uuid.UUID, task_id: uuid.UUID, body: S.TaskDependencies,
+                          request: Request, db: DB):
+        identity = actor(request, db)
+        hub.project(db, identity, project_id, "tasks:publish")
+        return mutate(request, db, identity, body,
+                      lambda: tasks.update_dependencies(hub, db, identity, project_id, task_id, body,
+                                                        request.state.request_id))
 
     @app.post("/api/projects/{project_id}/tasks/{task_id}/claim")
     def claim_task(project_id: uuid.UUID, task_id: uuid.UUID, body: S.TaskClaim, request: Request, db: DB):

@@ -65,6 +65,13 @@ class WorkRuntime{
   }
   async prepare(binding,args){
     const c=this.c,p=c.profile,remote=c.remote;
+    for(const other of Object.values(this.runs()).filter(r=>r.workspace===binding.workspace && r.run_id!==args.run_id && !r.stopped)){
+      const {task}=await c.invokeProjectRemote(binding,'hub_get_task',{task_id:other.task_id});
+      c.ensureCurrent(p,remote);
+      if(task.active_run_id===other.run_id && Date.parse(task.lease_until)>Date.now())
+        throw new HubError('WORKSPACE_IN_USE','这个目录已有其他有效执行实例。请用独立任务 worktree，再准备当前运行。');
+      other.stopped='lease_inactive';delete other.memory;delete other.role;
+    }
     if(c.repositories){
       const {task}=await c.invokeProjectRemote(binding,'hub_get_task',{task_id:args.task_id});
       await c.repositories.verifyTaskBinding(binding,task);c.ensureCurrent(p,remote);

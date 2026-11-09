@@ -341,7 +341,8 @@ class Console {
         const activity = await this.api('GET',`${base}/activity?before=${before}&limit=20`);
         if (!current()) return;
         list.replaceChildren(table('协作任务',['任务 / 父任务','当前阶段','专注范围','开发租约','操作'],tasks.items.map(task => [
-          textPair(task.title,`${short(task.id)}${task.parent_id ? ` · 父 ${short(task.parent_id)}` : ''}`),taskStates[task.status],
+          textPair(task.title,`${short(task.id)}${task.parent_id ? ` · 父 ${short(task.parent_id)}` : ''}`),
+          textPair(taskStates[task.status],task.dependencies_satisfied === false ? '前置任务未完成' : ''),
           textPair(`${task.scope.repository} · ${task.scope.platform}`,task.scope.paths.join('、')),
           task.active_run_id ? textPair(short(task.active_run_id),`到期 ${date(task.lease_until)}`) : '—',
           button('查看 / 推进',() => this.openTask(projectId,task.id),'small')])));
@@ -361,7 +362,7 @@ class Console {
       }
     };
     await refresh();
-    return [title,status,list,feed,h('p',{class:'help-block'},'发布确认是平台流程记录。Git 提交、推送、合并与部署需要各自的真实证据；工作日志尚不包含代码备份。')];
+    return [title,status,list,feed,h('p',{class:'help-block'},'前置任务完成后才能认领；同仓库重叠代码范围在开发及评审测试期间保留占用。日志、代码备份、Git 交付分别核验回执。')];
   }
   async createTask(parentId = null) {
     const projectId = this.project.id;
@@ -378,11 +379,13 @@ class Console {
       !scoped && field('platform','目标端',{required:true,maxlength:80,placeholder:'例如 web'}),
       field('execution_mode','记录类型',{items:[['observed','代码任务：须确认规则并采集真实改动'],['declaration','人工资料记录：不提供代码证据保证']]}),
       field('execution_role','任务负责角色',{items:[['developer','开发工程师'],['project-manager','项目经理'],['architect','架构师'],['designer','产品与交互设计']]}),
+      h('label',{},'须先完成的任务 ID（可选，每行一项）',h('textarea',{name:'depends_on',rows:3})),
       h('label',{},'允许修改的相对目录或文件（每行一项）',h('textarea',{name:'paths',required:true,rows:3,placeholder:'src\ntests'}))));
     dialog(parentId ? '拆解子任务' : '创建任务','任务绑定具体仓库；成员还须具有该仓库的开发权限才能认领。创建后依次完成需求、设计和可行性确认。',form,'创建草稿',data => {
       const repo = repositories.find(repo => repo.id === data.repository_id);
       return this.api('POST',`/api/projects/${projectId}/tasks`,{title:data.title,description:data.description,acceptance:data.acceptance,
         repository_id:repo?.id || null,parent_id:parentId,execution_mode:data.execution_mode,execution_role:data.execution_role,
+        depends_on:data.depends_on.split(/\r?\n/).map(p => p.trim()).filter(Boolean),
         scope:{repository:repo?.slug || data.repository,platform:repo?.platform || data.platform,
           paths:data.paths.split(/\r?\n/).map(p => p.trim()).filter(Boolean)}});
     });
@@ -487,9 +490,18 @@ class Console {
     const reload = () => this.openTask(projectId,taskId,offset);
     const act = async (path,body) => { await this.api('POST',base+path,body); toast('服务器已保存'); await reload(); };
     const actions = [button('关闭',() => modal.close()),button('刷新',reload)];
+    const coordination = data.coordination;
+    if(this.can('tasks:publish') && !task.lease_epoch && ['draft','ready'].includes(task.status) && !coordination?.has_restricted_dependencies)
+      actions.push(button('设置前置任务',() => {
+        const form=h('form',{},h('label',{},'前置任务 ID（每行一项）',h('textarea',{name:'depends_on',rows:4},
+          (coordination?.dependencies || []).map(t=>t.id).join('\n'))),field('reason','调整原因',{required:true,minlength:10,maxlength:1000,full:true}));
+        dialog('设置前置任务','调整后重新进行准入确认；首次认领后依赖冻结。父任务等待子任务的关系也参与循环检查。',form,'保存并重新准入',values=>
+          this.api('POST',base+'/dependencies',{expected_version:task.version,reason:values.reason,
+            depends_on:values.depends_on.split(/\r?\n/).map(v=>v.trim()).filter(Boolean)}));
+      }));
     if (this.can('tasks:publish') && task.status !== 'completed') actions.push(button('拆解子任务',() => this.createTask(taskId)));
     const expired = !task.lease_until || new Date(task.lease_until).getTime() <= Date.now();
-    if (task.execution_mode !== 'observed' && ['ready','in_progress'].includes(task.status) && expired && this.can('tasks:claim') && this.can('tasks:write'))
+    if (task.execution_mode !== 'observed' && ['ready','in_progress'].includes(task.status) && expired && coordination?.claimable !== false && this.can('tasks:claim') && this.can('tasks:write'))
       actions.push(button('本人认领',() => act('/claim',{instance_id:crypto.randomUUID(),harness:'human'}),'primary'));
     if (owned && !expired && task.status === 'in_progress') {
       actions.push(button('续租 10 分钟',() => act('/heartbeat',lease)),
@@ -517,6 +529,11 @@ class Console {
       task.execution_mode === 'observed' && h('p',{class:'help-block'},'代码任务：在工程 MCP 调用 hub_claim_task 认领，再调用 hub_prepare_work、hub_acknowledge_work。保存日志时采集本机实际改动。网页用于查看与流程决定。'),
       h('p',{},`${roleNames[task.execution_role] || task.execution_role} · ${task.scope.repository} / ${task.scope.platform} · ${task.scope.paths.join('、')}`),
       h('h3',{},'需求与验收'),h('pre',{class:'document-content'},task.description+'\n\n验收：'+task.acceptance),
+      coordination && h('section',{},h('h3',{},'前置任务与范围占用'),
+        h('p',{},coordination.dependencies_satisfied ? '前置任务已满足。' : '前置任务未完成，当前不能认领。'),
+        coordination.dependencies.map(t=>h('p',{},button(t.title,()=>this.openTask(projectId,t.id),'small'),` · ${taskStates[t.status]} · ${t.id}`)),
+        coordination.has_restricted_dependencies && h('p',{class:'hint'},'另有当前不可读取的前置关系，请由项目负责人协调。'),
+        coordination.scope_conflicts.map(conflict=>h('p',{class:'danger-note'},`范围占用：${conflict.paths.join('、')} · ${taskStates[conflict.status]} · ${conflict.task_id}`))),
       task.lease_until && h('p',{},`租约到期 ${date(task.lease_until)}。网页认领需手动续租；Agent 使用 MCP 心跳。`),h('div',{class:'row-actions'},actions),
       h('h3',{},`工作日志 · ${logs.visibility === 'project' ? '共享原文' : '仅本人记录'}`),
       logs.items.length ? logs.items.map(log => h('details',{},h('summary',{},`${date(log.created_at)} · ${log.summary} · ${log.outcome}`),

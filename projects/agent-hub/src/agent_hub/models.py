@@ -280,6 +280,18 @@ class Task(Identity, Base):
     submission_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))
 
 
+class TaskDependency(Base):
+    __tablename__ = "task_dependencies"
+    __table_args__ = (
+        ForeignKeyConstraint(["task_id", "project_id"], ["tasks.id", "tasks.project_id"]),
+        ForeignKeyConstraint(["depends_on_id", "project_id"], ["tasks.id", "tasks.project_id"]),
+        Index("ix_task_dependencies_source", "project_id", "depends_on_id"),
+    )
+    project_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("projects.id"), primary_key=True)
+    task_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True)
+    depends_on_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True)
+
+
 class TaskRun(Identity, Base):
     __tablename__ = "task_runs"
     __table_args__ = (

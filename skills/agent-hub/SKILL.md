@@ -25,6 +25,7 @@ description: 安装和使用 Agent Hub 桌面协作框架，通过 MCP 接入授
 - 成员只能处理本人获准的工程与资料。安装了通用 Skill、看到了某个工具名或持有平台项目权限，都不代表获得其他仓库代码、业务日志或管理员权限。
 - 开发前阅读 [任务协作](references/task-workflow.md)，从 `hub_list_tasks` / `hub_get_task` 核对准入状态、验收标准与任务专注范围。需要了解历史决定时先查最近 `hub_list_worklogs`，按需展开原文；只有本人日志可见时，不能声称已读取同事交接。
 - 为当前执行者建立独立 `instance_id`。通过工程 MCP 的 `hub_claim_task` 认领并保存 `run.id`、`lease_epoch` 与到期时间；已被认领时协调或选择其他任务。
+- 有前置或并行任务时读[任务依赖与独立目录](references/parallel-work.md)：`parent_id` 是层级，`depends_on` 是完成依赖；先认领，再在准备前创建独立任务 worktree。同仓库重叠代码范围占用期间停止新认领，不能用新实例绕过。
 - 代码任务默认 `observed`：`hub_prepare_work` 返回当前职责、规则、任务范围及有预算的获准记忆。阅读职责、规则、卡片和 `gaps` 后，用 `hub_acknowledge_work` 确认全部规则 ID 和内容哈希。职责、规则、来源权限或已用事实失效后重新准备；回执不证明模型理解。
 - 修改前用 `hub_check_changes` 核验拟改路径及实际 Git 改动，租约、规则过期或路径被拒绝时停止并处理原因。首次准备需要干净 Git 工程，可先保留原修改并使用独立 worktree；不要自动丢弃或提交用户工作。
 

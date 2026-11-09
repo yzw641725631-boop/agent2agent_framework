@@ -3,6 +3,7 @@ const {test}=require('node:test'),assert=require('node:assert/strict');
 const fs=require('node:fs/promises'),path=require('node:path'),os=require('node:os'),crypto=require('node:crypto');
 const http=require('node:http'),{spawn,execFile}=require('node:child_process'),{promisify}=require('node:util');
 const execute=promisify(execFile),{RepositoryRuntime}=require('../core/repository-runtime.cjs');
+const hostInstall=require('../core/host-install.cjs');
 const {HubError}=require('../core/remote.cjs'),{validate}=require('../core/repository-tools.cjs');
 
 async function fixture(t){
@@ -54,7 +55,8 @@ async function fixture(t){
     async invokeProjectRemote(b,action){
       if(!allowed)throw new HubError('PROJECT_ACCESS_REVOKED');
       if(action==='hub_list_repositories')return {repository_mode:'scoped',items:repos};
-      if(action==='hub_get_task')return {task:{repository_id:webId}};
+      if(action==='hub_get_task')return {task:{repository_id:webId,execution_mode:'observed'}};
+      if(action==='hub_heartbeat_task')return {heartbeat_seconds:120};
       if(action==='hub_list_worklogs')return {items:[{id:worklogId}]};
       throw new Error(action);
     }};
@@ -73,6 +75,8 @@ async function fixture(t){
     return {ticket:secret,expires_at:new Date(Date.now()+120000).toISOString(),git_path:`/api/git/${webId}.git`,branch:'main',
       write_ref:body.action==='write'?`refs/heads/hub/${body.task_id}/${body.run_id}`:null};
   };
+  c.closeouts={options(b){return {workspace:b.workspace,name:Object.keys(c.configuration(b).mcpServers)[0],
+    receiptDirectories:['assembled-projects','task-worktrees','framework-deployments'].map(v=>path.join(data,v,b.id))};}};
   const runtime=new RepositoryRuntime(c);
   return {temporary,source,upstream,root,data,binding,profile,remote,c,runtime,webId,pcId,requests,git,
     revoke(){allowed=false;},repos};
@@ -164,4 +168,88 @@ test('an empty directory owned by an interrupted assembly can retry its first ne
   assert.deepEqual(await fs.readdir(path.join(f.root,'web')),[]);
   f.remote.request=request;
   assert.equal((await f.runtime.invoke(f.binding,'hub_assemble_project',args)).items[0].state,'ready');
+});
+
+test('task worktrees isolate dirty original files, persist task connections and retry without discarding work',async t=>{
+  const f=await fixture(t);await f.runtime.invoke(f.binding,'hub_assemble_project',{operation_id:crypto.randomUUID()});
+  const source=f.profile.bindings.find(b=>b.repositoryId===f.webId);
+  await fs.writeFile(path.join(source.workspace,'src/main.ts'),'original unfinished work\n');
+  const args={task_id:crypto.randomUUID(),run_id:crypto.randomUUID(),lease_epoch:1,operation_id:crypto.randomUUID(),harness:'codex'};
+  const result=await f.runtime.invoke(source,'hub_create_task_worktree',args),child=f.c.binding(result.binding_id);
+  assert.equal(await fs.readFile(path.join(result.workspace,'src/main.ts'),'utf8'),'baseline\n');
+  assert.equal(await fs.readFile(path.join(source.workspace,'src/main.ts'),'utf8'),'original unfinished work\n');
+  assert.equal((await f.git(['branch','--show-current'],source.workspace)).stdout.trim(),'main');
+  assert.equal(child.taskId,args.task_id);assert.equal(child.worktreeRunId,args.run_id);
+  assert.equal(result.code_confidentiality_boundary,false);assert.equal(result.agent_started,false);
+  await fs.writeFile(path.join(child.workspace,'src/main.ts'),'parallel task work\n');
+  assert.equal((await f.runtime.invoke(source,'hub_create_task_worktree',args)).binding_id,child.id);
+  assert.equal(await fs.readFile(path.join(child.workspace,'src/main.ts'),'utf8'),'parallel task work\n');
+  const {Controller}=require('../core/controller.cjs');
+  await assert.rejects(Controller.prototype.projectRequest.call(f.c,child,'hub_get_task',{task_id:crypto.randomUUID()}),{code:'TASK_WORKTREE_MISMATCH'});
+  await assert.rejects(Controller.prototype.projectRequest.call(f.c,child,'hub_prepare_work',{task_id:args.task_id,run_id:crypto.randomUUID()}),{code:'TASK_WORKTREE_MISMATCH'});
+  const cleanup=await hostInstall.uninstallProject(f.c.closeouts.options(child));
+  assert.equal(cleanup.state,'complete');assert.equal(cleanup.business_files_deleted,false);
+  assert.equal(await fs.readFile(path.join(child.workspace,'src/main.ts'),'utf8'),'parallel task work\n');
+  const config=await fs.readFile(path.join(child.workspace,'.codex/config.toml'),'utf8');assert.ok(!config.includes('mcp_servers.'));
+});
+
+test('worktree partial binding resumes, preexisting directories and changed retry identities remain protected',async t=>{
+  const f=await fixture(t);await f.runtime.invoke(f.binding,'hub_assemble_project',{operation_id:crypto.randomUUID()});
+  const source=f.profile.bindings.find(b=>b.repositoryId===f.webId),bind=f.c.bind;
+  const args={task_id:crypto.randomUUID(),run_id:crypto.randomUUID(),lease_epoch:1,operation_id:crypto.randomUUID()};
+  f.c.bind=async()=>{throw new HubError('NETWORK_UNAVAILABLE');};
+  await assert.rejects(f.runtime.invoke(source,'hub_create_task_worktree',args),{code:'NETWORK_UNAVAILABLE'});
+  const op=f.profile.worktreeOperations[args.operation_id];assert.equal(op.state,'interrupted');
+  await fs.writeFile(path.join(op.workspace,'src/main.ts'),'preserve interrupted work\n');
+  f.c.bind=bind;
+  const result=await f.runtime.invoke(source,'hub_create_task_worktree',args);
+  assert.equal(await fs.readFile(path.join(result.workspace,'src/main.ts'),'utf8'),'preserve interrupted work\n');
+  await assert.rejects(f.runtime.invoke(source,'hub_create_task_worktree',{...args,lease_epoch:2}),{code:'IDEMPOTENCY_PAYLOAD_CHANGED'});
+  await assert.rejects(f.runtime.invoke(source,'hub_create_task_worktree',{...args,operation_id:crypto.randomUUID()}),{code:'TASK_WORKTREE_EXISTS'});
+  const conflict={...args,run_id:crypto.randomUUID(),operation_id:crypto.randomUUID()};
+  const existing=path.join(path.dirname(source.workspace),'.agent-hub-worktrees',conflict.task_id,conflict.run_id);
+  await fs.mkdir(existing,{recursive:true});await fs.writeFile(path.join(existing,'keep.txt'),'user data');
+  await assert.rejects(f.runtime.invoke(source,'hub_create_task_worktree',conflict),{code:'WORKTREE_DIRECTORY_EXISTS'});
+  assert.equal(await fs.readFile(path.join(existing,'keep.txt'),'utf8'),'user data');
+});
+
+test('worktree creation refuses revoked authorization, unsafe parent links and a run already prepared elsewhere',async t=>{
+  const f=await fixture(t);await f.runtime.invoke(f.binding,'hub_assemble_project',{operation_id:crypto.randomUUID()});
+  const source=f.profile.bindings.find(b=>b.repositoryId===f.webId);
+  const args={task_id:crypto.randomUUID(),run_id:crypto.randomUUID(),lease_epoch:1,operation_id:crypto.randomUUID()};
+  f.profile.workRuns={[args.run_id]:{binding_id:source.id}};
+  await assert.rejects(f.runtime.invoke(source,'hub_create_task_worktree',args),{code:'TASK_WORKTREE_ALREADY_PREPARED'});
+  delete f.profile.workRuns;
+  const outside=path.join(f.temporary,'outside');await fs.mkdir(outside);
+  const link=path.join(path.dirname(source.workspace),'.agent-hub-worktrees');await fs.symlink(outside,link,'junction');
+  await assert.rejects(f.runtime.invoke(source,'hub_create_task_worktree',args),{code:'WORK_PATH_UNSAFE'});
+  assert.deepEqual(await fs.readdir(outside),[]);
+  f.revoke();await assert.rejects(f.runtime.invoke(source,'hub_create_task_worktree',args),{code:'PROJECT_ACCESS_REVOKED'});
+});
+
+test('Git delivery ignores only receipted untracked framework files and still blocks unknown files or tracked changes',async t=>{
+  const f=await fixture(t);await f.runtime.invoke(f.binding,'hub_assemble_project',{operation_id:crypto.randomUUID(),harness:'codex'});
+  const child=f.profile.bindings.find(b=>b.repositoryId===f.webId),name=Object.keys(f.c.configuration(child).mcpServers)[0];
+  await hostInstall.deployFramework({workspace:child.workspace,name,receiptDirectory:path.join(f.data,'framework-deployments',child.id),
+    files:[{path:'main.md',bytes:Buffer.from('managed rules\n')}]});
+  const args={task_id:crypto.randomUUID(),run_id:crypto.randomUUID(),lease_epoch:1};
+  assert.equal((await f.runtime.invoke(child,'hub_push_task',args)).remote_verified,true);
+  const unknown=path.join(child.workspace,'.agent-hub/unknown.md');await fs.writeFile(unknown,'user data');
+  await assert.rejects(f.runtime.invoke(child,'hub_push_task',args),{code:'WORKTREE_NOT_CLEAN'});await fs.unlink(unknown);
+  await fs.writeFile(path.join(child.workspace,'src/main.ts'),'tracked dirty');
+  await assert.rejects(f.runtime.invoke(child,'hub_push_task',args),{code:'WORKTREE_NOT_CLEAN'});
+});
+
+test('managed checkout does not execute repository filters and worktree-specific includes cannot bypass origin checks',async t=>{
+  const f=await fixture(t);await f.runtime.invoke(f.binding,'hub_assemble_project',{operation_id:crypto.randomUUID()});
+  const source=f.profile.bindings.find(b=>b.repositoryId===f.webId);
+  const args={task_id:crypto.randomUUID(),run_id:crypto.randomUUID(),lease_epoch:1,operation_id:crypto.randomUUID()};
+  await f.git(['config','filter.unknown.smudge','should-never-execute'],source.workspace);
+  await assert.rejects(f.runtime.invoke(source,'hub_create_task_worktree',args),{code:'WORKTREE_FILTER_UNSUPPORTED'});
+  assert.equal(f.profile.worktreeOperations,undefined);
+  await f.git(['config','--remove-section','filter.unknown'],source.workspace);
+  const created=await f.runtime.invoke(source,'hub_create_task_worktree',args);
+  await f.git(['config','extensions.worktreeConfig','true'],source.workspace);
+  await f.git(['config','--worktree','include.path','unknown.config'],created.workspace);
+  await assert.rejects(f.runtime.verifyTaskBinding(f.c.binding(created.binding_id),{repository_id:f.webId}),{code:'REPOSITORY_CONFIGURATION_UNSAFE'});
 });

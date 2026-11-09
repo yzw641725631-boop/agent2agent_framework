@@ -105,6 +105,13 @@ async function runtimeFixture(t){
   return {dir,data,binding,c,profile,runtime,lease,setOffline(value){offline=value;c.connection=value?'offline':'active';},uploads:()=>uploads,heartbeats:()=>heartbeats};
 }
 
+test('one physical workspace cannot prepare two live execution instances',async t=>{
+  const f=await runtimeFixture(t);
+  await assert.rejects(f.runtime.prepare(f.binding,{...f.lease,task_id:crypto.randomUUID(),run_id:crypto.randomUUID(),operation_id:crypto.randomUUID()}),
+    {code:'WORKSPACE_IN_USE'});
+  assert.equal(Object.keys(f.profile.workRuns).length,1);
+});
+
 test('offline work is durably queued, retries once and rejects a changed retry payload',async t=>{
   const f=await runtimeFixture(t);await fs.writeFile(path.join(f.dir,'src/main.ts'),'round code');f.setOffline(true);
   const args={...f.lease,summary:'round',notes:'actual code changed',tests:'not run',next_steps:'review',operation_id:crypto.randomUUID()};

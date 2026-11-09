@@ -5,10 +5,19 @@ import json
 import uuid
 from datetime import timedelta
 
-from sqlalchemy import select
+from sqlalchemy import delete, func, select, text
 
 from . import repositories, roles, work_policy
-from .models import CodeDelivery, ProjectProgress, Task, TaskDecision, TaskRun, Worklog, WorkSnapshot
+from .models import (
+    CodeDelivery,
+    ProjectProgress,
+    Task,
+    TaskDecision,
+    TaskDependency,
+    TaskRun,
+    Worklog,
+    WorkSnapshot,
+)
 from .security import HubError, now
 
 LEASE_SECONDS = 600
@@ -69,13 +78,88 @@ def get_task(db, project_id, task_id):
     return task
 
 
+def dependencies_satisfied(db, task):
+    return db.scalar(select(func.hub.task_dependencies_satisfied(task.project_id, task.id)))
+
+
+def dependency_view(db, task):
+    rows = db.scalars(select(Task).join(TaskDependency, TaskDependency.depends_on_id == Task.id).where(
+        TaskDependency.project_id == task.project_id, TaskDependency.task_id == task.id).order_by(Task.id))
+    return {"dependencies_satisfied": dependencies_satisfied(db, task),
+            "dependencies": [{"id": str(t.id), "title": t.title, "status": t.status,
+                              "repository_id": str(t.repository_id) if t.repository_id else None} for t in rows],
+            "has_restricted_dependencies": db.scalar(select(
+                func.hub.task_has_restricted_dependencies(task.project_id, task.id)))}
+
+
+def scope_conflicts(db, task):
+    if task.execution_mode != "observed":
+        return []
+    statement = select(Task).where(Task.project_id == task.project_id, Task.id != task.id,
+        Task.execution_mode == "observed", Task.repository_id == task.repository_id,
+        ((Task.status == "in_progress") & (Task.lease_until > now())) |
+        Task.status.in_(["review", "testing", "release_ready"]))
+    paths = [p.lower() for p in task.scope["paths"]]
+    conflicts = []
+    for other in db.scalars(statement.order_by(Task.id)):
+        if not task.repository_id and other.scope["repository"].lower() != task.scope["repository"].lower():
+            continue
+        overlaps = [p for p in other.scope["paths"] if any(
+            p.lower() == root or p.lower().startswith(root + "/") or root.startswith(p.lower() + "/")
+            for root in paths)]
+        if overlaps:
+            conflicts.append({"task_id": str(other.id), "status": other.status, "paths": overlaps})
+            if len(conflicts) == 10:
+                break
+    return conflicts
+
+
+def set_dependencies(db, task, dependency_ids):
+    ids = sorted(set(dependency_ids))
+    if len(ids) != len(dependency_ids):
+        raise HubError("TASK_DEPENDENCY_DUPLICATE", 422)
+    # Both endpoints must be visible to the publisher. A hidden edge cannot be removed by omission.
+    if db.scalar(select(func.hub.task_has_restricted_dependencies(task.project_id, task.id))):
+        raise HubError("TASK_DEPENDENCIES_RESTRICTED", 403)
+    visible = set(db.scalars(select(Task.id).where(Task.project_id == task.project_id, Task.id.in_(ids))))
+    if visible != set(ids):
+        raise HubError("TASK_DEPENDENCY_NOT_ACCESSIBLE", 404)
+    if db.scalar(text("SELECT hub.task_dependency_cycle(:pid,:tid,CAST(:deps AS uuid[]))"),
+                 {"pid": task.project_id, "tid": task.id, "deps": ids}):
+        raise HubError("TASK_DEPENDENCY_CYCLE", 409)
+    db.execute(delete(TaskDependency).where(TaskDependency.project_id == task.project_id,
+                                           TaskDependency.task_id == task.id))
+    db.add_all(TaskDependency(project_id=task.project_id, task_id=task.id, depends_on_id=value) for value in ids)
+    db.flush()
+
+
+def update_dependencies(hub, db, actor, project_id, task_id, body, request_id):
+    hub.project(db, actor, project_id, "tasks:publish")
+    task = get_task(db, project_id, task_id)
+    check_version(task, body.expected_version)
+    if task.lease_epoch or task.status not in {"draft", "ready"}:
+        raise HubError("TASK_DEPENDENCIES_FROZEN", 409)
+    set_dependencies(db, task, body.depends_on)
+    # Changed scheduling assumptions require a new admission, preserving all old decisions.
+    task.status, task.admission_step, task.version = "draft", 0, task.version + 1
+    hub.audit(db, actor.user.id, "task.dependency_reason", task.id, request_id, task.project_id,
+              repository_id=task.repository_id, reason=body.reason)
+    db.flush()
+    emit(hub, db, actor, task, "task.dependencies_changed", request_id)
+    # Idempotency stores no cross-repository titles or dependency IDs from this response.
+    return task_view(task)
+
+
 def page(db, project_id, offset, limit, *, repository_id=None):
     statement = select(Task).where(Task.project_id == project_id)
     if repository_id:
         statement = statement.where(Task.repository_id == repository_id)
     rows = list(db.scalars(statement
                           .order_by(Task.created_at.desc(), Task.id).offset(offset).limit(limit)))
-    return {"items": [task_view(t) for t in rows], "has_more": len(rows) == limit, "next_offset": offset + len(rows)}
+    states = dict(db.execute(select(Task.id, func.hub.task_dependencies_satisfied(Task.project_id, Task.id))
+                             .where(Task.id.in_([t.id for t in rows]))).all()) if rows else {}
+    return {"items": [{**task_view(t), "dependencies_satisfied": states[t.id]} for t in rows],
+            "has_more": len(rows) == limit, "next_offset": offset + len(rows)}
 
 
 def detail(db, project_id, task_id):
@@ -84,7 +168,12 @@ def detail(db, project_id, task_id):
                       .order_by(TaskRun.created_at.desc(), TaskRun.id).limit(100))
     decisions = db.scalars(select(TaskDecision).where(TaskDecision.task_id == task_id, TaskDecision.project_id == project_id)
                           .order_by(TaskDecision.created_at.desc(), TaskDecision.id).limit(100))
-    return {"task": task_view(task), "runs": [run_view(r) for r in runs],
+    conflicts = scope_conflicts(db, task)
+    dep = dependency_view(db, task)
+    return {"task": task_view(task), "coordination": {**dep, "scope_conflicts": conflicts,
+                "claimable": task.status in {"ready", "in_progress"} and dep["dependencies_satisfied"]
+                    and not conflicts and (not task.lease_until or task.lease_until <= now())},
+            "runs": [run_view(r) for r in runs],
             "decisions": [decision_view(d) for d in decisions]}
 
 
@@ -92,7 +181,8 @@ def emit(hub, db, actor, task, kind, request_id, *, run_id=None, worklog_id=None
     # Full notes and gate evidence stay behind logs:read; the shared stream has only state.
     label = {"task.created": "任务已创建", "task.claimed": "任务已认领", "task.released": "认领已释放",
              "task.submitted": "任务待评审", "worklog.recorded": "工作日志已保存", "task.gate_decided": "流程已推进",
-             "work.snapshot_saved": "代码检查点已备份", "code.delivery_verified": "代码交付已核验"}[kind]
+             "work.snapshot_saved": "代码检查点已备份", "code.delivery_verified": "代码交付已核验",
+             "task.dependencies_changed": "任务前置依赖已更新"}[kind]
     event = ProjectProgress(project_id=task.project_id, author_id=actor.user.id, device_id=actor.device.id,
                             repository_id=task.repository_id,
                             status="completed" if task.status == "completed" else "checkpoint",
@@ -117,9 +207,11 @@ def create(hub, db, actor, project_id, body, request_id):
         parent = get_task(db, project_id, body.parent_id)
         if parent.status == "completed":
             raise HubError("TASK_PARENT_COMPLETED", 409)
-    task = Task(project_id=project_id, created_by=actor.user.id, **body.model_dump(mode="python"))
+    task = Task(project_id=project_id, created_by=actor.user.id,
+                **body.model_dump(mode="python", exclude={"depends_on"}))
     db.add(task)
     db.flush()
+    set_dependencies(db, task, body.depends_on)
     emit(hub, db, actor, task, "task.created", request_id)
     return task_view(task)
 
@@ -132,6 +224,11 @@ def claim(hub, db, actor, project_id, task_id, body, request_id):
         repositories.require(db, project_id, task.repository_id, "code:write")
     if task.status not in {"ready", "in_progress"}:
         raise HubError("TASK_NOT_CLAIMABLE", 409, task_status=task.status)
+    if not dependencies_satisfied(db, task):
+        raise HubError("TASK_DEPENDENCIES_INCOMPLETE", 409)
+    conflicts = scope_conflicts(db, task)
+    if conflicts:
+        raise HubError("TASK_SCOPE_CONFLICT", 409, conflicts=conflicts)
     if task.active_run_id:
         if task.lease_until > now():
             raise HubError("TASK_ALREADY_CLAIMED", 409, run_id=str(task.active_run_id),
@@ -294,9 +391,7 @@ def decide(hub, db, actor, project_id, task_id, body, request_id):
         elif body.override_reason:
             raise HubError("TASK_OVERRIDE_NOT_APPLICABLE", 422)
         if body.approved and body.gate == "release":
-            pending = db.scalar(select(Task.id).where(Task.parent_id == task_id, Task.project_id == project_id,
-                                                     Task.status != "completed").limit(1))
-            if pending:
+            if not db.scalar(select(func.hub.task_children_completed(project_id, task_id))):
                 raise HubError("TASK_CHILDREN_INCOMPLETE", 409)
         task.status = ({"review": "testing", "test": "release_ready", "release": "completed"}[body.gate]
                        if body.approved else "ready")

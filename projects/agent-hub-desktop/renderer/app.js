@@ -294,6 +294,7 @@ function tasksScreen(){
       rows.replaceChildren(...data.items.map(task=>el('article',{class:'binding'},
         el('div',{class:'row between'},text('h3',task.title),text('span',taskLabels[task.status],'pill')),
         text('p',`${roleLabels[task.execution_role] || task.execution_role || '开发工程师'} · ${task.scope.repository} · ${task.scope.platform} · ${task.scope.paths.join('、')}`,'note'),
+        task.dependencies_satisfied===false?text('p','前置任务尚未完成','warning'):null,
         text('p',task.active_run_id?'认领到期 '+new Date(task.lease_until).toLocaleString('zh-CN'):'当前没有开发租约','note'),
         button('查看日志与流程',()=>taskDetail(bindingId,task.id,generation)))));
       if(!data.items.length)rows.append(empty('没有任务','在网站后台创建，或通过项目 MCP 让架构师拆解任务。'));
@@ -346,6 +347,11 @@ async function taskDetail(bindingId,taskId,generation,offset=0){
   openDialog(text('h2',task.title),text('p',(taskLabels[task.status] || task.status)+' · 版本 '+task.version),
     text('p','负责角色：'+(roleLabels[task.execution_role] || task.execution_role || '开发工程师')),
     text('pre',task.description+'\n\n验收：'+task.acceptance),
+    data.coordination?el('section',{},text('h3','前置任务与范围占用'),
+      text('p',data.coordination.dependencies_satisfied?'前置任务已满足。':'前置任务未完成，当前不能认领。'),
+      ...data.coordination.dependencies.map(t=>text('p',`${t.title} · ${taskLabels[t.status]} · ${t.id}`)),
+      data.coordination.has_restricted_dependencies?text('p','另有当前不可读取的前置关系，请由负责人协调。','note'):null,
+      ...data.coordination.scope_conflicts.map(t=>text('p',`范围占用：${t.paths.join('、')} · ${taskLabels[t.status]} · ${t.task_id}`,'warning'))):null,
     text('h3',logs.visibility==='project'?'共享工作日志':'本人工作日志'),
     ...logs.items.map(log=>{
       const body=el('div',{}),details=el('details',{},text('summary',new Date(log.created_at).toLocaleString('zh-CN')+' · '+log.summary+' · '+log.outcome),body);

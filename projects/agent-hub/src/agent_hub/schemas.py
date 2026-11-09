@@ -1,5 +1,6 @@
 import json
 import re
+import unicodedata
 from typing import Annotated, Literal
 from urllib.parse import urlsplit
 from uuid import UUID
@@ -141,6 +142,7 @@ class TaskScope(Input):
 class NewTask(Input):
     repository_id: UUID | None = None
     parent_id: UUID | None = None
+    depends_on: list[UUID] = Field(default_factory=list, max_length=40)
     title: str = Field(min_length=1, max_length=200)
     description: str = Field(min_length=1, max_length=8000)
     acceptance: str = Field(min_length=1, max_length=8000)
@@ -150,6 +152,11 @@ class NewTask(Input):
 
     @model_validator(mode="after")
     def bounded_record(self):
+        if self.execution_mode == "observed" and any(
+            unicodedata.normalize("NFC", value) != value or ":" in value
+            or any(part.endswith((".", " ")) for part in value.split("/")) for value in self.scope.paths
+        ):
+            raise ValueError("Code task scope must use stable, relative NFC paths")
         if len(json.dumps(self.model_dump(mode="json"), ensure_ascii=False).encode("utf-8")) > 65536:
             raise ValueError("Task record exceeds 64 KiB")
         return self
@@ -160,6 +167,12 @@ class NewTask(Input):
         if not value.strip():
             raise ValueError("A nonblank value is required")
         return value.strip()
+
+
+class TaskDependencies(Input):
+    expected_version: int = Field(ge=1)
+    depends_on: list[UUID] = Field(max_length=40)
+    reason: str = Field(min_length=10, max_length=1000)
 
 
 class TaskClaim(Input):

@@ -91,6 +91,7 @@ class Controller extends EventEmitter {
       projects:visible?this.projects:[],bindings:(visible?p?.bindings || []:[]).map(b=>({id:b.id,projectId:b.projectId,projectName:b.projectName,
         repositoryId:b.repositoryId || null,repositoryName:b.repositoryName || null,
         workspace:b.workspace,status:b.status,message:b.message || '',configuration:this.configuration(b),
+        task_id:b.taskId || null,worktree_run_id:b.worktreeRunId || null,
         installed:b.installed || null})),
       events:(visible?p?.events || []:[]).slice(-100).reverse(),
       workRuns:visible?Object.values(p?.workRuns || {}).map(r=>({task_id:r.task_id,run_id:r.run_id,binding_id:r.binding_id,
@@ -367,7 +368,9 @@ class Controller extends EventEmitter {
       const operation=this.backups.download(b,args);this.projectOperations.add(operation);
       try{return await operation;}finally{this.projectOperations.delete(operation);}
     }
-    if(['hub_assemble_project','hub_fetch_repository','hub_push_task'].includes(action)){
+    if(b.taskId && (args?.task_id && args.task_id!==b.taskId || args?.run_id && args.run_id!==b.worktreeRunId))
+      throw new HubError('TASK_WORKTREE_MISMATCH');
+    if(['hub_assemble_project','hub_fetch_repository','hub_push_task','hub_create_task_worktree'].includes(action)){
       const operation=this.repositories.invoke(b,action,args);
       this.projectOperations.add(operation);
       try{return await operation;}finally{this.projectOperations.delete(operation);}
@@ -410,6 +413,8 @@ class Controller extends EventEmitter {
     await this.work.drain();
   }
   async projectRequest(b,action,args,{internal=false}={}){
+    if(b.taskId && (args?.task_id && args.task_id!==b.taskId || args?.run_id && args.run_id!==b.worktreeRunId))
+      throw new HubError('TASK_WORKTREE_MISMATCH');
     const profile=this.profile,remote=this.remote;
     try{
       const context=await this.context(b.projectId);
@@ -424,7 +429,8 @@ class Controller extends EventEmitter {
         repository_code_write:!!b.repositoryId && !!context.resource_visibility?.code_write_ids.includes(b.repositoryId)};
       if(action==='hub_get_project'){
         if(Object.keys(args).length)throw new HubError('INVALID_REQUEST');
-        return {...context,workspace:b.workspace,repository_id:b.repositoryId || null};
+        return {...context,workspace:b.workspace,repository_id:b.repositoryId || null,
+          ...(b.taskId?{task_id:b.taskId,worktree_run_id:b.worktreeRunId}:{})};
       }
       if(action==='hub_get_roles'){
         require('./framework-tools.cjs').validate(action,args);

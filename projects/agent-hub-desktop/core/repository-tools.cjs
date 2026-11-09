@@ -16,6 +16,9 @@ const tools=[
   define('hub_assemble_project','组装获准项目组','按用户要求，在本连接绑定目录的新子文件夹中拉取指定获准仓库，生成各仓库固定连接。保留现有目录；不会覆盖已有工作。上游 GitHub 凭证不交给 Agent。',
     {repository_ids:{type:'array',minItems:1,maxItems:100,items:id},harness:{type:'string',enum:['codex','claude','cursor']},operation_id:id},['operation_id']),
   define('hub_fetch_repository','获取仓库更新','只在绑定的仓库获取最新分支到 FETCH_HEAD，保留当前分支与工作文件。每次访问重新验证仓库权限。',{},[]),
+  define('hub_create_task_worktree','创建独立任务工作目录','在仓库旁创建独立 Git worktree、任务分支和绑定当前任务运行的 MCP 连接。先认领任务；从当前提交开始，保留原目录改动。共享 Git 对象，不作为同仓库代码保密边界。不启动 Agent。',
+    {task_id:id,run_id:id,lease_epoch:{type:'integer',minimum:1},harness:{type:'string',enum:['codex','claude','cursor']},operation_id:id},
+    ['task_id','run_id','lease_epoch','operation_id']),
   define('hub_push_task','推送已记录的任务提交','将本机干净 Git 工作区的当前提交推送到当前有效任务独有分支。须先保存含该提交号的最新 checkpoint 日志。禁止直接更新主分支、其他任务分支或删除远程分支。此操作不完成评审、合并或发布。',
     {task_id:id,run_id:id,lease_epoch:{type:'integer',minimum:1}},['task_id','run_id','lease_epoch']),
 ];
@@ -35,6 +38,7 @@ function available(meta){
     tool.name==='hub_list_document_sources'?meta.capabilities.includes('documents:read'):
     tool.name==='hub_assemble_project'?meta.repository_code_read && !meta.repository_id:
     tool.name==='hub_fetch_repository'?meta.repository_id && meta.repository_code_read:
+    tool.name==='hub_create_task_worktree'?meta.repository_id && meta.repository_code_write && meta.capabilities.includes('tasks:claim') && meta.capabilities.includes('tasks:write'):
     tool.name==='hub_push_task'?meta.repository_id && meta.repository_code_write && meta.capabilities.includes('tasks:write'):true);
 }
 module.exports={tools,available,validate,uuid};

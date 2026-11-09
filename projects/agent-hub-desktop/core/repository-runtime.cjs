@@ -52,9 +52,10 @@ class RepositoryRuntime{
   }
   async invoke(binding,name,args){
     validate(name,args);
-    if(name==='hub_assemble_project'){
+    if(['hub_assemble_project','hub_create_task_worktree'].includes(name)){
       const profile=this.c.profile,remote=this.c.remote;
-      const action=this.operations.catch(()=>{}).then(()=>{this.guard(profile,remote,binding);return this.assemble(binding,args);});
+      const action=this.operations.catch(()=>{}).then(()=>{this.guard(profile,remote,binding);
+        return name==='hub_assemble_project'?this.assemble(binding,args):require('./task-worktrees.cjs').create(this,binding,args);});
       this.operations=action.catch(()=>{});return action;
     }
     return this.transfer(binding,name,args);
@@ -152,10 +153,10 @@ class RepositoryRuntime{
   }
   async verifyOrigin(workspace,repo,support,base){
     await safePath(workspace);
-    const actual=(await git(workspace,['config','--local','--get','remote.origin.url'],{support})).trim();
+    const actual=(await git(workspace,['config','--no-includes','--get','remote.origin.url'],{support})).trim();
     if(![base+`/api/git/${repo.id}.git`,repo.repository_url,repo.repository_url+'.git'].includes(actual))fail('TASK_REPOSITORY_MISMATCH','本机 Git 来源与获准仓库不一致。');
     // Reject local URL rewrites/includes before issuing an authenticated operation.
-    const config=await git(workspace,['config','--local','--no-includes','--name-only','--list'],{support});
+    const config=await git(workspace,['config','--no-includes','--name-only','--list'],{support});
     if(config.split(/\r?\n/).some(key=>/^(url\.|include\.|includeif\.|remote\..*\.(uploadpack|receivepack)$)/i.test(key)))fail('REPOSITORY_CONFIGURATION_UNSAFE','本机 Git 配置包含额外地址改写或程序入口，请先核对。');
   }
   async verifyTaskBinding(binding,task){
@@ -176,7 +177,8 @@ class RepositoryRuntime{
       if(!repo.capabilities.includes('code:write'))fail('REPOSITORY_NOT_ACCESSIBLE');
       const {task}=await c.invokeProjectRemote(binding,'hub_get_task',{task_id:args.task_id});
       await this.verifyTaskBinding(binding,task);
-      const observed=await observer.initialize(binding.workspace);
+      const ignoreUntracked=c.closeouts?await hostInstall.ownedProjectPaths(c.closeouts.options(binding)):[];
+      const observed=await observer.initialize(binding.workspace,{ignoreUntracked});
       body={action:'write',...args,expected_commit:observed.base_commit};
     }else if(name!=='hub_fetch_repository')fail('UNKNOWN_BRIDGE_ACTION');
     this.guard(p,remote,binding);

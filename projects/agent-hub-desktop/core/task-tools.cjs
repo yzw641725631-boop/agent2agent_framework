@@ -26,8 +26,8 @@ const definitions=[
     {task_id:id,context_id:id,...lease},['task_id','context_id','run_id','lease_epoch'],{route:':task/contexts/:context/status',cap:'tasks:write'}),
   define('hub_download_work_backup','取回可交接代码检查点','按授权下载已保存的完整代码工作树到本机加密检查点，不把代码正文返回模型。随后从 PC 的本机检查点导出到新目录，核验后交接；不覆盖现有工程，不认领任务，不恢复 Git 历史。',
     {task_id:id,worklog_id:id},['task_id','worklog_id'],{route:'@local',write:true,cap:'recovery'}),
-  define('hub_create_task','拆解并创建任务','创建草稿任务，可指定同项目 parent_id。必须依次确认需求、设计、可行性才能认领。范围是声明，不能代替仓库授权或本地文件隔离。',
-    {parent_id:id,repository_id:id,title:{type:'string',minLength:1,maxLength:200},description:{type:'string',minLength:1,maxLength:8000},
+  define('hub_create_task','拆解并创建任务','创建草稿任务，parent_id 表示层级，depends_on 表示须先完成的同项目任务。须完成准入；认领时检查依赖及同仓库代码范围冲突。',
+    {parent_id:id,repository_id:id,depends_on:{type:'array',maxItems:40,uniqueItems:true,items:id},title:{type:'string',minLength:1,maxLength:200},description:{type:'string',minLength:1,maxLength:8000},
       acceptance:{type:'string',minLength:1,maxLength:8000},scope,execution_role:{type:'string',enum:['project-manager','architect','designer','developer'],description:'任务负责职业，默认 developer；角色不授予权限。'},execution_mode:{type:'string',enum:['observed','declaration'],description:'默认 observed 受管代码任务；declaration 仅人工资料记录，不提供代码证据保证。'}},['title','description','acceptance','scope'],{write:true,cap:'tasks:publish'}),
   define('hub_get_policy','读取项目规则','读取不可覆盖的基础规则和当前项目规则版本。规则确认不等于文件系统隔离。',{},[],{route:'@policy'}),
   define('hub_prepare_work','准备开工规则','认领后先调用：核验干净 Git 工程，准备本执行者的规则、焦点与最近获准交接摘要。返回 context ID、哈希和全部规则。',
@@ -39,7 +39,10 @@ const definitions=[
     {task_id:id,...lease,proposed_paths:{type:'array',maxItems:100,items:{type:'string',maxLength:800}}},
     ['task_id','run_id','lease_epoch'],{route:'@local',cap:'tasks:write'}),
   define('hub_list_local_work','查看本机检查点','查看本账号在该工程的加密检查点、日志共享及独立代码备份状态。只有 server_code_backup 和 code_receipt 确认服务器代码备份。',{},[],{route:'@local'}),
-  define('hub_claim_task','原子认领开发任务','一次仅一个主开发者。人和 Agent 共用同一认领规则。为当前执行者生成 instance_id；成功后保存 run.id 和 lease_epoch。10 分钟租约，约每 2 分钟心跳。',
+  define('hub_set_task_dependencies','更新任务前置依赖','仅在首次认领前修改。检查循环及跨仓库授权，更新后重新进行准入确认。不可见的依赖由获权负责人处理，不能按缺失列表删除。',
+    {task_id:id,expected_version:epoch,depends_on:{type:'array',maxItems:40,uniqueItems:true,items:id},reason:{type:'string',minLength:10,maxLength:1000}},
+    ['task_id','expected_version','depends_on','reason'],{route:':task/dependencies',write:true,cap:'tasks:publish'}),
+  define('hub_claim_task','原子认领开发任务','前置任务完成且同仓库无重叠代码范围占用后，一次仅一个主执行者。人和 Agent 共用规则。保存 run.id 和 lease_epoch。10 分钟租约，约每 2 分钟心跳。',
     {task_id:id,instance_id:id,harness},['task_id','instance_id','harness'],{route:':task/claim',write:true,cap:'tasks:claim'}),
   define('hub_heartbeat_task','续租任务','使用认领结果中的 run_id 与 lease_epoch 续租。过期或被替换后停止提交，重新核验任务。新一次心跳使用新的 operation_id，网络重试保留原 ID。',
     {task_id:id,...lease},['task_id','run_id','lease_epoch'],{route:':task/heartbeat',write:true,cap:'tasks:claim'}),
@@ -77,6 +80,7 @@ function validate(name,args,{internal=false}={}){
   if(!args || typeof args!=='object' || Array.isArray(args) || Object.keys(args).some(k=>!Object.hasOwn(def.inputSchema.properties,k) && !privateKeys.includes(k)) ||
     def.inputSchema.required.some(k=>!Object.hasOwn(args,k)) ||
     ['task_id','run_id','worklog_id','parent_id','instance_id','operation_id','context_id','repository_id'].some(k=>args[k]!==undefined && !uuid(args[k])) ||
+    args.depends_on!==undefined && (!Array.isArray(args.depends_on) || args.depends_on.length>40 || args.depends_on.some(v=>!uuid(v)) || new Set(args.depends_on).size!==args.depends_on.length) ||
     ['offset','limit','lease_epoch','expected_version'].some(k=>args[k]!==undefined && (!Number.isSafeInteger(args[k]) ||
       args[k]<(k==='offset'?0:1) || (k==='offset' && args[k]>100000) || (k==='limit' && args[k]>50))))throw new HubError('INVALID_REQUEST');
   return def;

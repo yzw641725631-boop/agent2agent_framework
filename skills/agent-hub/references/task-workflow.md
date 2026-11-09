@@ -12,6 +12,8 @@
 
 ## 认领和逐轮记录
 
+前置完成关系使用 `depends_on`，与 `parent_id` 的层级分开；任务详情返回依赖与范围占用。独立 worktree 和冲突处理见[并行协作](parallel-work.md)。
+
 `hub_claim_task` 要求 `tasks:claim` 与 `tasks:write`。每个实际执行者使用自己的实例 UUID 和 harness 标识，支持 `human`、`claude-code`、`codex`、`cursor`、`qoder`、`workbuddy`、`codebuddy`、`trae`。这些标识记录执行来源，不意味着七种工具都已有自动安装适配器。
 
 成功后记录 `run.id`、`run.lease_epoch`、`task.version`、`task.lease_until`。默认 `execution_mode: observed` 是代码任务；显式 `declaration` 是人工资料记录，不提供代码证据保证。历史任务保留 declaration，不把旧日志重新解释为采集证据。
