@@ -81,7 +81,8 @@ function object(value){return value && typeof value==='object' && !Array.isArray
 async function dispatch(request,invoke,checkVersion,{omitToolText=false,scope='project'}={}) {
   const management=scope==='management';
   const setup=scope==='setup';
-  const available=setup?setupTools:management?managementTools:[...closeoutTools,...readTools,...documentTools,...repositoryTools.tools,reportTool,...taskTools.tools(['tasks:publish','tasks:claim','tasks:write','tasks:review','tasks:test','logs:read'])];
+  const memoryTools=require('./memory-tools.cjs').tools;
+  const available=setup?setupTools:management?managementTools:[...closeoutTools,...readTools,...documentTools,...memoryTools,...repositoryTools.tools,reportTool,...taskTools.tools(['tasks:publish','tasks:claim','tasks:write','tasks:review','tasks:test','logs:read'])];
   const id=request?.id??null;
   if (!object(request) || request.jsonrpc!=='2.0' || typeof request.method!=='string' ||
       ('id' in request && !['string','number'].includes(typeof request.id))) return error(id,-32600,'Invalid Request');
@@ -101,7 +102,7 @@ async function dispatch(request,invoke,checkVersion,{omitToolText=false,scope='p
   else if(request.method==='tools/list'){
     const meta=await invoke('metadata',{});
     const tools=setup?setupTools:management?managementTools.filter(tool=>meta.capabilities.includes(tool.name==='hub_create_project'?'projects:create':'projects:list')):
-      meta.closeout_required?closeoutTools:[...closeoutTools,...readTools,...taskTools.tools(meta.capabilities),...repositoryTools.available(meta),
+      meta.closeout_required?closeoutTools:[...closeoutTools,...readTools,...memoryTools,...taskTools.tools(meta.capabilities),...repositoryTools.available(meta),
         ...(meta.capabilities.includes('documents:read')?documentTools:[]),...(meta.capabilities.includes('tasks:write')?[reportTool]:[])];
     result={tools:[...(checkVersion?[versionTool]:[]),...tools]};
   } else if(request.method==='tools/call'){

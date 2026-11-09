@@ -1,0 +1,89 @@
+{
+  "date": "2026-11-09",
+  "backend_version": "0.9.0",
+  "desktop_version": "0.11.0",
+  "tiktoken_version": "0.14.0",
+  "billing_usage": false,
+  "measured_savings": false,
+  "memory_budget_utf8_bytes": 12000,
+  "semantic_embeddings_configured": false,
+  "warning": "Public-text tokenization and one isolated fixture only; not Astra billing, production usage or measured savings. Tool schemas and referenced documents add context cost.",
+  "measured": {
+    "install.md": {
+      "utf8_bytes": 66530,
+      "o200k_base": 19308,
+      "cl100k_base": 23798
+    },
+    "skills/agent-hub/SKILL.md": {
+      "utf8_bytes": 7260,
+      "o200k_base": 1862,
+      "cl100k_base": 2358
+    },
+    "skills/agent-hub/references/repositories.md": {
+      "utf8_bytes": 4323,
+      "o200k_base": 1118,
+      "cl100k_base": 1402
+    },
+    "skills/agent-hub/references/task-workflow.md": {
+      "utf8_bytes": 5650,
+      "o200k_base": 1475,
+      "cl100k_base": 1854
+    },
+    "skills/agent-hub/references/work-records.md": {
+      "utf8_bytes": 5568,
+      "o200k_base": 1452,
+      "cl100k_base": 1892
+    },
+    "skills/agent-hub/references/revocation.md": {
+      "utf8_bytes": 2028,
+      "o200k_base": 532,
+      "cl100k_base": 709
+    },
+    "skills/agent-hub/references/shared-memory.md": {
+      "utf8_bytes": 2970,
+      "o200k_base": 787,
+      "cl100k_base": 1027
+    },
+    "tools:revoked": {
+      "tool_count": 3,
+      "utf8_bytes": 1246,
+      "o200k_base": 297,
+      "cl100k_base": 352
+    },
+    "tools:setup": {
+      "tool_count": 5,
+      "utf8_bytes": 2631,
+      "o200k_base": 612,
+      "cl100k_base": 667
+    },
+    "tools:group": {
+      "tool_count": 35,
+      "utf8_bytes": 21534,
+      "o200k_base": 5232,
+      "cl100k_base": 5640
+    },
+    "tools:repository-admin": {
+      "tool_count": 36,
+      "utf8_bytes": 21908,
+      "o200k_base": 5319,
+      "cl100k_base": 5723
+    },
+    "tools:project-reader": {
+      "tool_count": 15,
+      "utf8_bytes": 6314,
+      "o200k_base": 1503,
+      "cl100k_base": 1685
+    },
+    "tools:repository-developer": {
+      "tool_count": 33,
+      "utf8_bytes": 18312,
+      "o200k_base": 4439,
+      "cl100k_base": 4802
+    },
+    "fixture:prepared-memory-section": {
+      "utf8_bytes": 2478,
+      "o200k_base": 844,
+      "cl100k_base": 874
+    }
+  }
+}

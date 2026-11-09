@@ -47,13 +47,14 @@ docker run --rm --network agent-hub-database --read-only --tmpfs /tmp --memory 3
   -e HUB_ENVIRONMENT=test -e HUB_MAIL_MODE=memory -e HUB_RESTORE_DATABASE="$target" \
   -e HUB_RESTORE_SNAPSHOT="$snapshot" \
   -e HUB_PUBLIC_URL=http://127.0.0.1:8765 -e HUB_ARTIFACT_DIRECTORY=/restored-archives \
-  -v "$stage/data/work-archives:/restored-archives:ro" --entrypoint python agent-hub:0.8.0 -c '
+  -v "$stage/data/work-archives:/restored-archives:ro" --entrypoint python agent-hub:0.9.0 -c '
 import datetime,json,os,re
 from urllib.parse import quote
 from sqlalchemy import text
 from agent_hub.config import Settings
 from agent_hub.db import session_factory
 from agent_hub.archive_maintenance import audit
+from agent_hub.memory_maintenance import audit as audit_memory
 target=os.environ["HUB_RESTORE_DATABASE"]
 assert re.fullmatch(r"hub_restore_[0-9]{8}T[0-9]{6}Z",target)
 url="postgresql+psycopg://hub_owner:"+quote(os.environ["HUB_OWNER_PASSWORD"],safe="")+"@postgres:5432/"+target
@@ -63,8 +64,10 @@ with factory() as db:
     assert db.scalar(text("SELECT current_database()"))==target
 result=audit(cfg,factory)
 assert result["healthy"] and result["verified"]==result["recorded"]
+memory=audit_memory(factory)
+assert memory["healthy"]
 print(json.dumps({"restored_database":target,"snapshot_id":os.environ["HUB_RESTORE_SNAPSHOT"],
-                  "verified_archives":result["verified"],"passed":True,
+                  "verified_archives":result["verified"],"memory":memory,"passed":True,
                   "created_at":datetime.datetime.now(datetime.timezone.utc).isoformat()}))
 ' >"$stage/result.json"
 cat "$stage/result.json"

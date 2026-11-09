@@ -4,11 +4,12 @@ const notice=document.getElementById('notice');
 const modal=document.getElementById('dialog');
 let state,info={},releaseState,view='overview',selectedFolder=null;
 let taskBinding=null,taskVersion=0,taskTimer,openTaskBinding=null,taskDialogVersion=0;
+let memoryBinding=null,memoryQuery='',memoryOffset=0;
 modal.addEventListener('close',()=>{taskDialogVersion++;openTaskBinding=null;});
 const taskLabels={draft:'待准入',ready:'待认领',in_progress:'开发中',review:'待评审',testing:'待测试',release_ready:'待发布确认',completed:'已完成'};
 const labels={active:'已连接',pending:'等待验证 / 审批',offline:'连接中断',blocked:'已拦截',signed_out:'未登录',
   reauth_required:'需要重新登录',running:'执行中',checkpoint:'检查点',completed:'已完成',approved:'已批准'};
-const titles={overview:'协作概览',workspaces:'项目与 MCP',tasks:'任务与日志',checkpoints:'本机检查点',closeouts:'撤权交接',activity:'项目动态',connection:'账号与设备',desktop:'桌面设置'};
+const titles={overview:'协作概览',workspaces:'项目与 MCP',tasks:'任务与日志',memory:'共享记忆',checkpoints:'本机检查点',closeouts:'撤权交接',activity:'项目动态',connection:'账号与设备',desktop:'桌面设置'};
 function el(tag,props={},...children){
   const element=document.createElement(tag);
   for(const [key,value] of Object.entries(props)){
@@ -201,6 +202,46 @@ function closeoutsScreen(){
         job.cleanup?text('p',`已移除 ${job.cleanup.removed_files} 个受管文件、${job.cleanup.removed_entries} 个连接项；${job.cleanup.conflicts} 个冲突。`):null,
         text('small','收尾授权有效期：'+new Date(job.expires_at).toLocaleString('zh-CN')))),
       !(state.closeouts || []).length?empty('没有撤权收尾任务','正常退出登录、会话自然过期或网络中断不会自行卸载项目。'):null));
+}
+function memoryScreen(){
+  const generation=taskVersion,available=state.bindings.filter(b=>b.status==='active');
+  const container=el('section',{class:'card'},text('h2','共享记忆'));
+  const intro=heading('SHARED MEMORY','共享记忆','查看获准日志与文档的自动摘录。原文保留，默认排除过时、冲突及退役内容；当前未配置语义模型。');
+  if(!available.length)return el('div',{},intro,empty('尚无可用项目连接','先在“项目与 MCP”接入一个获准工程。'));
+  memoryBinding=available.some(b=>b.id===memoryBinding)?memoryBinding:available[0].id;
+  const picker=el('select',{},available.map(b=>el('option',{value:b.id,...(b.id===memoryBinding?{selected:true}:{})},b.projectName+' · '+(b.repositoryName || b.workspace))));
+  picker.addEventListener('change',()=>{memoryBinding=picker.value;memoryOffset=0;render();});
+  const query=el('input',{value:memoryQuery,maxlength:200,placeholder:'关键词，例如 Web、登录、接口'});
+  const controls=el('div',{class:'actions'},field('项目工程',picker),field('关键词',query),button('检索',()=>{memoryQuery=query.value;memoryOffset=0;render();}));
+  const counter=text('p','正在核验授权…','note'),bindingId=memoryBinding;
+  container.append(controls,counter);
+  const list=el('div');container.append(list);
+  const current=()=>view==='memory' && generation===taskVersion && memoryBinding===bindingId && state.bindings.some(b=>b.id===bindingId && b.status==='active');
+  const call=(tool,args={})=>invoke('taskQuery',{bindingId,tool,args});
+  const status=async()=>{
+    const s=await call('hub_get_memory_status');if(!current())return;
+    counter.textContent=`当前 ${s.visible_cards.active || 0} · 过时 ${s.visible_cards.superseded || 0} · 待提取 ${s.visible_jobs.queued || 0} · 失败 ${s.visible_jobs.failed || 0} · 自动规则摘录`;
+    taskTimer=setTimeout(()=>status().catch(error=>{if(current()){list.replaceChildren();counter.textContent=error.message;}}),5000);
+  };
+  (async()=>{
+    const data=await call('hub_search_memory',{query:memoryQuery,offset:memoryOffset,limit:12});if(!current())return;
+    for(const card of data.items){
+      const raw=el('div'),source=card.source;
+      list.append(el('article',{class:'event'},el('span',{class:'dot'}),el('div',{},text('h3',card.title),
+        text('small',source.kind==='document'?`${source.path} · 行 ${card.line_start}–${card.line_end}`:`工作日志 ${source.id.slice(0,8)} · 任务 ${source.task_id.slice(0,8)}`),
+        text('pre',card.body),card.truncated?text('p','摘录已截短，可展开来源原文。','note'):null,
+        button('展开来源',async()=>{
+          const original=await call('hub_read_memory_source',{card_id:card.id,start_line:card.line_start || 1,limit:100});
+          if(current())raw.replaceChildren(text('pre',original.content),original.has_more?text('small','此处仅显示一段，完整内容可通过 MCP 分段继续读取。'):text('small','来源原文已显示。'));
+        }),raw)));
+    }
+    if(!data.items.length)list.append(empty('当前没有匹配卡片','可调整关键词，查看文档同步及提取队列；这不代表没有其他历史记录。'));
+    const pagination=el('div',{class:'actions'});
+    if(memoryOffset)pagination.append(button('上一页',()=>{memoryOffset=Math.max(0,memoryOffset-12);render();}));
+    if(data.has_more)pagination.append(button('下一页',()=>{memoryOffset=data.next_offset;render();}));
+    list.append(pagination);await status();
+  })().catch(error=>{if(current()){list.replaceChildren();counter.textContent=error.message;}});
+  return el('div',{},intro,container);
 }
 function tasksScreen(){
   const bindings=state.bindings.filter(b=>b.status==='active');
@@ -401,7 +442,7 @@ function render(){
   if(view==='desktop')content=desktopScreen();
   else if(view==='closeouts')content=closeoutsScreen();
   else if(!authenticated)content=state.connection==='pending'?pendingScreen():loginScreen();
-  else content=view==='overview'?overview():view==='workspaces'?workspaces():view==='tasks'?tasksScreen():view==='checkpoints'?checkpointsScreen():view==='activity'?
+  else content=view==='overview'?overview():view==='workspaces'?workspaces():view==='tasks'?tasksScreen():view==='memory'?memoryScreen():view==='checkpoints'?checkpointsScreen():view==='activity'?
     el('div',{},heading('PROJECT ACTIVITY','项目动态','记录来自服务器。断线恢复后按游标补齐，重复记录会自动合并。'),el('section',{class:'card'},events())):connection();
   root.replaceChildren(el('div',{class:'layout'},sidebar,el('main',{class:'content'},
     el('header',{class:'topbar'},text('div',authenticated || view==='desktop'?titles[view]:'欢迎使用 Agent Hub'),

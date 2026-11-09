@@ -52,7 +52,7 @@ test('MCP document tools are advertised only with documents read permission',asy
   let capabilities=['project:read'];
   const invoke=async()=>({capabilities});
   const request={jsonrpc:'2.0',id:1,method:'tools/list'};
-  assert.equal((await dispatch(request,invoke)).result.tools.length,11);
+  assert.equal((await dispatch(request,invoke)).result.tools.length,14);
   capabilities.push('documents:read');
   const tools=(await dispatch(request,invoke)).result.tools;
   assert.deepEqual(tools.filter(tool=>tool.name.includes('document')).map(tool=>tool.name),

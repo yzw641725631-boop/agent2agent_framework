@@ -241,7 +241,7 @@ class Console {
   }
   shell() {
     modal.close();
-    const navigation = [['overview','工作台'],['projects','项目组与成员'],['repositories','仓库与资料'],['tasks','任务与日志'],['documents','项目文档'],
+    const navigation = [['overview','工作台'],['projects','项目组与成员'],['repositories','仓库与资料'],['tasks','任务与日志'],['documents','项目文档'],['memory','共享记忆'],
       ...(this.can('members:manage')?[['closeouts','撤权交接']]:[]),...(this.isRoot ? [['users','人员管理'],['devices','设备管理'],['approvals','授权审批'],['settings','系统设置']] : [['devices','我的设备']]),['audit','操作记录']];
     const nav = h('nav',{class:'nav','aria-label':'主要导航'},navigation.map(([key,label]) => button(label,async () => {
       this.currentView = key; this.offset = 0; await this.renderView();
@@ -529,6 +529,62 @@ class Console {
       field('git_commit','Git 提交号（可选，仅引用）',{pattern:'[a-fA-F0-9]{40,64}',maxlength:64}));
     dialog('记录本轮工作','日志不可覆盖；不包含代码备份，请保留本地修改。',form,'保存日志',values => this.api('POST',base+'/worklogs',{
       ...lease,...values,git_commit:values.git_commit || null,changed_paths:values.changed_paths.split(/\r?\n/).map(v => v.trim()).filter(Boolean)}));
+  }
+  async memory() {
+    const title=this.heading('共享记忆','日志交接与文档章节按原文权限共享；旧版本留档，默认加载当前内容。',[button('刷新',()=>this.renderView())]);
+    if(!this.project)return [title,h('section',{class:'card empty'},'请先选择项目组。')];
+    const projectId=this.project.id,revision=this.renderVersion;
+    const filter=this.memoryFilter?.projectId===projectId?this.memoryFilter:{projectId,query:'',include_history:false,repository_id:''};
+    const registry=await this.api('GET',`/api/projects/${projectId}/repositories`);
+    const query=new URLSearchParams({query:filter.query,include_history:String(filter.include_history),limit:'12'});
+    if(filter.repository_id)query.set('repository_id',filter.repository_id);
+    const base=`/api/projects/${projectId}/memory`;
+    const data=await this.api('GET',base+'?'+query);
+    const status=await this.api('GET',base+'/status'+(filter.repository_id?'?repository_id='+filter.repository_id:''));
+    const statusText=s=>`当前 ${s.visible_cards.active || 0} · 过时 ${s.visible_cards.superseded || 0} · 冲突 ${s.visible_cards.conflicted || 0} · 退役 ${s.visible_cards.retired || 0} · 待提取 ${s.visible_jobs.queued || 0} · 失败 ${s.visible_jobs.failed || 0}`;
+    const counts=h('p',{class:'mono'},statusText(status));
+    const poll=async()=>{
+      if(this.currentView!=='memory' || this.project?.id!==projectId || this.renderVersion!==revision)return;
+      try{const next=await this.api('GET',base+'/status'+(filter.repository_id?'?repository_id='+filter.repository_id:''));counts.textContent=statusText(next);}
+      catch(error){counts.textContent=error.message;return;}
+      this.viewTimer=setTimeout(poll,5000);
+    };
+    this.viewTimer=setTimeout(poll,5000);
+    const form=h('form',{},h('div',{class:'fields'},
+      field('query','关键词',{value:filter.query,maxlength:200,placeholder:'例如：登录、Web、接口'}),
+      field('repository_id','仓库范围',{value:filter.repository_id,items:[['','全部获准资料'],...registry.items.map(r=>[r.id,r.name])]}),
+      field('history','版本范围',{value:filter.include_history?'all':'current',items:[['current','当前有效卡片'],['all','含过时、冲突和退役卡片']]})));
+    form.append(h('div',{class:'actions'},submit(form,'检索',async values=>{
+      this.memoryFilter={projectId,query:values.query,repository_id:values.repository_id,include_history:values.history==='all'};
+      await this.renderView();
+    })));
+    const labels={active:'当前',superseded:'已被新版本替代',conflicted:'存在冲突',retired:'已退役'};
+    const cards=data.items.map(card=>{
+      const source=card.source;
+      const original=h('div');
+      const actions=[button('展开来源原文',async()=>{
+        const raw=await this.api('GET',`${base}/${card.id}/original?start_line=${card.line_start || 1}&limit=100`);
+        if(this.renderVersion!==revision || this.project?.id!==projectId)return;
+        original.replaceChildren(h('p',{class:'hint'},`原文共 ${raw.line_count} 行${raw.has_more?' · 此处仅显示一段，可通过 MCP 继续读取':''}`),h('pre',{class:'document-content'},raw.content));
+      },'small')];
+      if(this.can('tasks:publish'))for(const [state,label] of [['conflicted','标记冲突'],['retired','退役'],['active','恢复使用']]){
+        actions.push(button(label,()=>{
+          const reason=h('form',{},h('label',{},'处理原因',h('textarea',{name:'reason',required:true,maxlength:2000,rows:3})));
+          dialog(label,'原文与卡片保留。恢复不会让已经被替代的历史文档或日志成为当前版本。',reason,'保存',values=>
+            this.api('POST',`${base}/${card.id}/decisions`,{expected_version:card.state_version,state,reason:values.reason}));
+        },'quiet small'));
+      }
+      return h('article',{class:'card'},h('h2',{},card.title),h('p',{class:'hint'},labels[card.state] || card.state),
+        h('p',{class:'mono'},source.kind==='document'?`${source.path} · ${short(source.git_commit)} · 行 ${card.line_start}–${card.line_end}`:`日志 ${short(source.id)} · 任务 ${short(source.task_id)}`),
+        h('pre',{class:'document-content'},card.body),card.truncated?h('p',{class:'hint'},'摘录已截短；完整内容保存在来源原文。'):null,
+        card.state_reason?h('p',{},card.state_reason):null,h('div',{class:'row-actions'},actions),original);
+    });
+    return [title,h('section',{class:'card'},h('h2',{},'增量处理状态'),counts,
+      this.can('tasks:publish') && status.visible_jobs.failed?button('重试失败提取',async()=>{await this.api('POST',base+'/retry',{});await this.renderView();},'small'):null,
+      h('p',{class:'hint'},'当前使用自动规则摘录与关键词检索。服务器已准备 pgvector；语义 Embedding 和模型蒸馏尚未配置。开工包默认最多 12,000 UTF-8 字节，保留缺口与来源，不全量加载历史。')),
+      h('section',{class:'card'},form),...cards,
+      !cards.length?h('p',{class:'hint'},'当前检索范围没有匹配卡片。请查看文档同步、队列状态或调整关键词；这不代表没有其他历史记录。'):null,
+      data.has_more?h('p',{class:'hint'},'这里只显示前 12 条，缩小检索范围或通过 MCP 翻页。'):null].filter(Boolean);
   }
   async documents() {
     const title = this.heading('项目文档','从指定 GitHub 分支建立 Markdown 索引；读取结果带文件路径和提交号。',[button('刷新状态',() => this.renderView())]);

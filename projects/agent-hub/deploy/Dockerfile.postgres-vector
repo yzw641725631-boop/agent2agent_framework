@@ -1,0 +1,16 @@
+# pgvector v0.8.7, fixed upstream commit and source digest. PostgreSQL major stays 18.
+FROM postgres:18.6-bookworm@sha256:f1ea2a1a4fb7b68d4836be1fdcb8a6466a89b072158bf9d97663600538c294c5 AS build
+RUN apt-get update && apt-get install -y --no-install-recommends \
+      build-essential postgresql-server-dev-18=18.6-1.pgdg12+2 ca-certificates curl \
+    && rm -rf /var/lib/apt/lists/*
+RUN curl --fail --location --proto '=https' --tlsv1.2 \
+      https://codeload.github.com/pgvector/pgvector/tar.gz/f37c13f68b57d2c3472b2214fbcff699d6d34876 -o /tmp/vector.tar.gz \
+    && echo '83d673c3b287cddbf3879f86215f043f2c2b56c69d37b2a77504910db1ed6e56  /tmp/vector.tar.gz' | sha256sum -c - \
+    && mkdir /tmp/vector && tar -xzf /tmp/vector.tar.gz -C /tmp/vector --strip-components=1 \
+    && cd /tmp/vector && make OPTFLAGS='' && make install
+FROM postgres:18.6-bookworm@sha256:f1ea2a1a4fb7b68d4836be1fdcb8a6466a89b072158bf9d97663600538c294c5
+COPY --from=build /usr/lib/postgresql/18/lib/vector.so /usr/lib/postgresql/18/lib/vector.so
+COPY --from=build /usr/share/postgresql/18/extension/vector* /usr/share/postgresql/18/extension/
+COPY --from=build /tmp/vector/LICENSE /usr/share/doc/pgvector/LICENSE
+LABEL org.opencontainers.image.source="https://github.com/pgvector/pgvector" \
+      org.opencontainers.image.revision="f37c13f68b57d2c3472b2214fbcff699d6d34876"

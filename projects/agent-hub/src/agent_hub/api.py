@@ -21,6 +21,7 @@ from . import (
     documents,
     git_gateway,
     github_credentials,
+    memory,
     progress,
     repositories,
     tasks,
@@ -242,7 +243,7 @@ def create_app(
 
     @app.get("/healthz")
     def health():
-        return {"status": "ok", "phase": "P4-revocation-closeout", "version": __version__}
+        return {"status": "ok", "phase": "P5-shared-memory", "version": __version__}
 
     @app.post("/api/auth/enrollments")
     def enroll(body: S.Enroll, request: Request, db: DB):
@@ -838,16 +839,69 @@ def create_app(
     def prepare_work_context(project_id: uuid.UUID, task_id: uuid.UUID, body: S.LeaseInput, request: Request, db: DB):
         identity = actor(request, db)
         hub.project(db, identity, project_id, "tasks:write")
-        return mutate(request, db, identity, body,
-                      lambda: work_policy.prepare(hub, db, identity, project_id, task_id, body, request.state.request_id))
+        task, run = tasks.live_run(db, identity, project_id, task_id, body)
+        result = mutate(request, db, identity, body,
+                        lambda: work_policy.prepare(hub, db, identity, project_id, task_id, body, request.state.request_id))
+        # A cached preparation must not re-export data after source permissions changed.
+        work_policy.require_context(db, identity, task, run, uuid.UUID(result["id"]), acknowledged=False)
+        return result
 
     @app.post("/api/projects/{project_id}/tasks/{task_id}/context-acknowledgments")
     def acknowledge_work_context(project_id: uuid.UUID, task_id: uuid.UUID, body: S.ContextAcknowledgment,
                                  request: Request, db: DB):
         identity = actor(request, db)
         hub.project(db, identity, project_id, "tasks:write")
+        task, run = tasks.live_run(db, identity, project_id, task_id, body)
+        work_policy.require_context(db, identity, task, run, body.context_id, acknowledged=False)
         return mutate(request, db, identity, body,
                       lambda: work_policy.acknowledge(hub, db, identity, project_id, task_id, body, request.state.request_id))
+
+    @app.get("/api/projects/{project_id}/tasks/{task_id}/contexts/{context_id}/status")
+    def work_context_status(project_id: uuid.UUID, task_id: uuid.UUID, context_id: uuid.UUID,
+                            request: Request, db: DB, run_id: uuid.UUID, lease_epoch: int = Query(ge=1)):
+        identity = actor(request, db)
+        hub.project(db, identity, project_id, "tasks:write")
+        task, run = tasks.live_run(db, identity, project_id, task_id, S.LeaseInput(run_id=run_id, lease_epoch=lease_epoch))
+        row, _ = work_policy.require_context(db, identity, task, run, context_id)
+        return {"can_continue": True, "context_id": str(row.id), "content_hash": row.content_hash,
+                "memory": memory.status(db, project_id, task.repository_id)}
+
+    @app.get("/api/projects/{project_id}/memory/status")
+    def memory_status(project_id: uuid.UUID, request: Request, db: DB, repository_id: uuid.UUID | None = None):
+        hub.project(db, actor(request, db), project_id)
+        return memory.status(db, project_id, repository_id)
+
+    @app.get("/api/projects/{project_id}/memory")
+    def search_memory(project_id: uuid.UUID, request: Request, db: DB, query: str = Query("", max_length=200),
+                      repository_id: uuid.UUID | None = None, include_history: bool = False,
+                      offset: int = Query(0, ge=0, le=100000), limit: int = Query(12, ge=1, le=50)):
+        identity = actor(request, db)
+        hub.project(db, identity, project_id)
+        rate_limit(security_sessions, hub.secret, f"memory-read:{identity.user.id}", 180, 60)
+        return memory.search(db, project_id, S.MemorySearch(query=query, repository_id=repository_id,
+                             include_history=include_history, offset=offset, limit=limit))
+
+    @app.get("/api/projects/{project_id}/memory/{card_id}/original")
+    def memory_original(project_id: uuid.UUID, card_id: uuid.UUID, request: Request, db: DB,
+                        repository_id: uuid.UUID | None = None, start_line: int = Query(1, ge=1, le=1000000),
+                        limit: int = Query(100, ge=1, le=200), start_char: int = Query(0, ge=0, le=300000)):
+        hub.project(db, actor(request, db), project_id)
+        return memory.original(db, project_id, card_id, start_line, limit, repository_id=repository_id, start_char=start_char)
+
+    @app.post("/api/projects/{project_id}/memory/retry")
+    def retry_memory(project_id: uuid.UUID, body: S.Empty, request: Request, db: DB):
+        identity = actor(request, db)
+        hub.project(db, identity, project_id, "tasks:publish")
+        return mutate(request, db, identity, body,
+                      lambda: memory.retry_failed(hub, db, identity, project_id, request.state.request_id))
+
+    @app.post("/api/projects/{project_id}/memory/{card_id}/decisions")
+    def memory_decision(project_id: uuid.UUID, card_id: uuid.UUID, body: S.MemoryDecision, request: Request, db: DB):
+        identity = actor(request, db)
+        hub.project(db, identity, project_id, "tasks:publish")
+        memory.read_card(db, project_id, card_id)
+        return mutate(request, db, identity, body,
+                      lambda: memory.decide(hub, db, identity, project_id, card_id, body, request.state.request_id))
 
     @app.get("/api/projects/{project_id}/activity")
     def recent_activity(project_id: uuid.UUID, request: Request, db: DB,

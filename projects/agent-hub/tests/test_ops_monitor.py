@@ -25,7 +25,7 @@ def environment(tmp_path, monkeypatch):
     }
     for name, value in records.items():
         (tmp_path / name).write_text(json.dumps({'created_at': TIME.isoformat(), **value}))
-    state = {'failed_unit': None, 'feed_exit': 0, 'feed_hours': 720}
+    state = {'failed_unit': None, 'feed_exit': 0, 'feed_hours': 720, 'memory_errors': 0}
 
     def command(arguments, timeout=12):
         if arguments[0] == 'systemctl':
@@ -35,6 +35,8 @@ def environment(tmp_path, monkeypatch):
             return 0, json.dumps({'Running': True, 'Health': {'Status': 'healthy'}})
         if arguments[-1] == 'SELECT 1':
             return 0, '1\n'
+        if arguments[-1].startswith('SELECT count(*) FROM memory_jobs'):
+            return 0, str(state['memory_errors']) + '\n'
         return state['feed_exit'], json.dumps({'version': '0.9.0', 'remaining_hours': state['feed_hours']})
 
     @contextmanager
@@ -94,6 +96,13 @@ def test_invalid_backup_record_is_an_error_even_with_green_units(environment, fa
 def test_failed_service_is_an_error_with_a_recent_success_file(environment):
     environment[1]['failed_unit'] = 'agent-hub-backup.service'
     assert states(result(environment))['agent-hub-backup'] == 'error'
+
+
+def test_stalled_or_failed_memory_jobs_are_not_hidden_by_running_worker(environment):
+    environment[1]['memory_errors'] = 1
+    report = result(environment)
+    assert states(report)['container:agent-hub-app-memory-worker-1'] == 'ok'
+    assert states(report)['memory:queue'] == 'error' and report['healthy'] is False
 
 
 def test_overdue_recovery_drill_is_an_error(environment):

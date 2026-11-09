@@ -78,8 +78,35 @@ class WorkRuntime{
     this.runs()[args.run_id]={binding_id:binding.id,project_id:binding.projectId,repository_id:binding.repositoryId || null,task_id:args.task_id,run_id:args.run_id,
       lease_epoch:args.lease_epoch,owner:this.owner(),...baseline,context_id:context.id,context_hash:context.content_hash,
       scope:context.payload.task.scope,policy:context.payload.policy,acknowledged:false,last_activity:Date.now(),next_heartbeat:0,
+      memory:context.payload.memory || null,memory_required:context.payload.schema_version>=2,
       execution_mode:context.payload.task.execution_mode};
-    await c.persist();this.start();return {...context,baseline_commit:baseline.base_commit,local_write_isolation:false};
+    await c.persist();this.start();return {...context,baseline_commit:baseline.base_commit,local_write_isolation:false,
+      local_memory:{storage:'os-encrypted-vault',scope:'account-device-repository-run',context_id:context.id,
+        present:!!context.payload.memory}};
+  }
+  async validateMemory(binding,r){
+    if(!r.memory_required)return null;
+    if(!r.memory)throw new HubError('WORK_CONTEXT_REQUIRED','本机执行记忆已失效，请重新准备并确认。');
+    const c=this.c,p=c.profile,remote=c.remote;
+    if(c.connection!=='active' || binding.status!=='active')throw new HubError('NETWORK_UNAVAILABLE','联网核验来源权限后再加载执行记忆。');
+    try{
+      const result=await c.invokeProjectRemote(binding,'hub_validate_work_context',{
+        task_id:r.task_id,run_id:r.run_id,lease_epoch:r.lease_epoch,context_id:r.context_id});
+      c.ensureCurrent(p,remote);
+      if(result.content_hash!==r.context_hash)throw new HubError('WORK_CONTEXT_STALE');
+      return result;
+    }catch(error){
+      if(!retryable.has(error.code)){delete r.memory;await c.persist();}
+      throw error;
+    }
+  }
+  async loadMemory(binding,args){
+    const r=this.run(binding,args);
+    if(!r.acknowledged)throw new HubError('WORK_CONTEXT_ACK_REQUIRED');
+    const status=await this.validateMemory(binding,r);
+    if(!r.memory)throw new HubError('WORK_CONTEXT_REQUIRED','请升级服务器并重新准备共享记忆。');
+    return {context_id:r.context_id,content_hash:r.context_hash,memory:r.memory,
+      current_status:status?.memory,storage:'os-encrypted-vault',fresh_source_authorization:true};
   }
   async acknowledge(binding,args){
     const r=this.run(binding,args),p=this.c.profile,remote=this.c.remote;
@@ -91,6 +118,7 @@ class WorkRuntime{
     const r=this.run(binding,args),p=this.c.profile,remote=this.c.remote;
     if(!r.acknowledged)throw new HubError('WORK_CONTEXT_ACK_REQUIRED');
     if(this.c.connection!=='active')throw new HubError('NETWORK_UNAVAILABLE','离线时只保全工作，恢复连接并核验后再开始受管修改。');
+    await this.validateMemory(binding,r);
     const policy=await this.c.invokeProjectRemote(binding,'hub_get_policy',{});
     this.c.ensureCurrent(p,remote);
     if(policy.content_hash!==r.policy.content_hash)throw new HubError('WORK_CONTEXT_STALE','规则已更新，请重新准备并确认。');
@@ -225,7 +253,7 @@ class WorkRuntime{
         throw new HubError('WORK_REMOTE_BACKUP_REQUIRED');
     }
     const result=await this.c.invokeProjectRemote(binding,'hub_submit_task',{...args,evidence_hash:snapshot.evidence_hash},{internal:true});
-    r.stopped='submitted';await this.c.persist();return result;
+    r.stopped='submitted';delete r.memory;await this.c.persist();return result;
   }
   async export(id,destination){
     return this.serialize(id,async()=>{

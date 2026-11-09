@@ -65,7 +65,7 @@ def archive_documents(data, include_paths):
                 total += len(blob)
                 if len(blob) > MAX_DOCUMENT or total > MAX_TOTAL:
                     raise HubError("DOCUMENT_LIMIT_EXCEEDED", 422)
-                documents.append(markdown_document(path, blob))
+                documents.append({**markdown_document(path, blob), "original_bytes": blob})
     except (zipfile.BadZipFile, OSError, RuntimeError, ValueError) as exc:
         raise HubError("INVALID_REPOSITORY_ARCHIVE", 422) from exc
     return documents, skipped
@@ -245,9 +245,13 @@ class DocumentWorker:
                 job.status, job.error_code = "failed", failure
             else:
                 commit, documents, skipped = loaded
+                from .memory import archive_document
+                versions = [(doc, archive_document(db, repo, job.id, commit, doc)) for doc in documents]
                 db.execute(delete(ProjectDocument).where(ProjectDocument.source_id == source_id))
                 db.add_all(
-                    ProjectDocument(project_id=project_id, source_id=source_id, snapshot_id=job.id, **doc) for doc in documents
+                    ProjectDocument(project_id=project_id, source_id=source_id, snapshot_id=job.id,
+                                    version_id=version.id, **{k: v for k, v in doc.items() if k != "original_bytes"})
+                    for doc, version in versions
                 )
                 repo.snapshot_id, repo.git_commit, repo.indexed_at = job.id, commit, now()
                 repo.document_count, repo.skipped_count = len(documents), skipped

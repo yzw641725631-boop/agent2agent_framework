@@ -8,6 +8,7 @@ from sqlalchemy import (
     ForeignKeyConstraint,
     Index,
     Integer,
+    LargeBinary,
     String,
     Text,
     UniqueConstraint,
@@ -485,6 +486,62 @@ class ProjectDocument(Base):
     content: Mapped[str] = mapped_column(Text)
     sha256: Mapped[str] = mapped_column(String(64))
     byte_size: Mapped[int] = mapped_column(Integer)
+    version_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("document_versions.id"))
+
+
+class DocumentVersion(Identity, Base):
+    __tablename__ = "document_versions"
+    project_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("projects.id"))
+    source_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("document_repositories.id"))
+    configuration_version: Mapped[int] = mapped_column(Integer)
+    snapshot_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True))
+    repository_url: Mapped[str] = mapped_column(String(400))
+    branch: Mapped[str] = mapped_column(String(200))
+    git_commit: Mapped[str | None] = mapped_column(String(64))
+    path: Mapped[str] = mapped_column(String(800))
+    title: Mapped[str] = mapped_column(String(300))
+    content: Mapped[str] = mapped_column(Text)
+    sha256: Mapped[str] = mapped_column(String(64))
+    content_hash: Mapped[str] = mapped_column(String(64))
+    original_bytes: Mapped[bytes | None] = mapped_column(LargeBinary)
+    exact_bytes: Mapped[bool] = mapped_column(default=False)
+
+
+class MemoryJob(Identity, Base):
+    __tablename__ = "memory_jobs"
+    project_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("projects.id"))
+    worklog_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("worklogs.id"))
+    document_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("document_versions.id"))
+    status: Mapped[str] = mapped_column(String(16), default="queued")
+    attempts: Mapped[int] = mapped_column(Integer, default=0)
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    error_code: Mapped[str | None] = mapped_column(String(64))
+
+
+class MemoryCard(Identity, Base):
+    __tablename__ = "memory_cards"
+    project_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("projects.id"))
+    worklog_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("worklogs.id"))
+    document_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("document_versions.id"))
+    ordinal: Mapped[int] = mapped_column(Integer)
+    title: Mapped[str] = mapped_column(String(300))
+    body: Mapped[str] = mapped_column(Text)
+    source_hash: Mapped[str] = mapped_column(String(64))
+    line_start: Mapped[int | None] = mapped_column(Integer)
+    line_end: Mapped[int | None] = mapped_column(Integer)
+    truncated: Mapped[bool] = mapped_column(default=False)
+    extractor: Mapped[str] = mapped_column(String(40))
+
+
+class MemoryEvent(Identity, Base):
+    __tablename__ = "memory_events"
+    card_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("memory_cards.id"))
+    project_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("projects.id"))
+    version: Mapped[int] = mapped_column(Integer)
+    author_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id"))
+    device_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("devices.id"))
+    state: Mapped[str] = mapped_column(String(16))
+    reason: Mapped[str] = mapped_column(Text)
 
 
 Index(

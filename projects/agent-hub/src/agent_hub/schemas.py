@@ -533,3 +533,17 @@ class DocumentRead(Input):
     @classmethod
     def path_valid(cls, value):
         return document_path(value)
+
+
+class MemorySearch(Input):
+    query: str = Field(default="", max_length=200)
+    repository_id: UUID | None = None
+    include_history: bool = False
+    offset: int = Field(default=0, ge=0, le=100000)
+    limit: int = Field(default=12, ge=1, le=50)
+
+
+class MemoryDecision(Input):
+    expected_version: int = Field(ge=0)
+    state: Literal["active", "conflicted", "retired"]
+    reason: str = Field(min_length=1, max_length=2000)

@@ -1,0 +1,318 @@
+{
+  "schema": 1,
+  "created_at": "2026-11-09T04:35:27.069219+00:00",
+  "backend": {
+    "version": "0.9.0",
+    "phase": "P5-shared-memory",
+    "migration": "0012",
+    "database": {
+      "schema": "0012",
+      "vector_version": "0.8.7",
+      "users": 1,
+      "devices": 4,
+      "projects": 0,
+      "settings": 1,
+      "repositories": 0,
+      "document_versions": 0,
+      "memory_cards": 0,
+      "memory_embeddings": 0,
+      "memory_jobs_failed": 0,
+      "new_tables_forced_rls": true,
+      "worker_limited": true,
+      "worker_cannot_read_repository_credentials": true,
+      "runtime_cannot_mutate_cards": true,
+      "runtime_cannot_mutate_originals": true
+    },
+    "runtime_image_id": "sha256:d23f3d2392110a6d6efecf30fcd590156105a4bf20d16a9cbe342ca578a92e4c",
+    "build_archive_sha256": "5ff3a734648b2b35aa2f787bcd92744e61e9bc387824140ecdea8c6b99016f1a",
+    "tested_source_difference": "Only localized static/api.js messages differ from the final tested candidate; migrations and Python runtime sources match.",
+    "temporary_restore_databases_remaining": 0,
+    "labeled_test_containers_networks_and_anonymous_volume_removed": true,
+    "production_volume_preserved": true,
+    "gateway_cutover": {
+      "initial_public_check_triggered_application_rollback": true,
+      "cause": "Nginx retained the replaced API container address",
+      "fixed_by": "Validate and reload Nginx after API recreation",
+      "retry_public_health_passed": true,
+      "production_data_preserved": true
+    }
+  },
+  "pgvector": {
+    "postgresql": "18.6",
+    "extension": "0.8.7",
+    "image_id": "sha256:02379aeb6ffc220ae64ee8ba6e61bf66799a69155d6ba61bca1f88df4be6a05d",
+    "source_commit": "f37c13f68b57d2c3472b2214fbcff699d6d34876",
+    "source_archive_sha256": "83d673c3b287cddbf3879f86215f043f2c2b56c69d37b2a77504910db1ed6e56",
+    "operator_installed_extension": true,
+    "semantic_embeddings_configured": false,
+    "production_embedding_rows": 0,
+    "database_public_port": false
+  },
+  "memory": {
+    "mode": "deterministic-extractive-v1",
+    "external_model_calls": false,
+    "raw_worklogs_retained": true,
+    "document_versions_retained": true,
+    "new_document_original_bytes_preserved": true,
+    "legacy_exact_bytes_not_claimed": true,
+    "transactional_incremental_queue": true,
+    "independent_worker_role": true,
+    "source_permissions_inherited": true,
+    "context_source_revalidated": true,
+    "automatic_prepare_loading": true,
+    "local_storage": "OS-encrypted vault scoped by user/device/repository/run",
+    "memory_budget_utf8_bytes": 12000,
+    "budget_is_billing_tokens": false,
+    "automatic_semantic_conflict_detection": false,
+    "automatic_long_term_semantic_distillation": false,
+    "lifecycle": "Source replacement plus explicit versioned conflict/retirement decisions; originals retained.",
+    "new_work_does_not_silently_rewrite_acknowledged_context": true
+  },
+  "validation": {
+    "backend_real_postgresql_tests_passed": 156,
+    "desktop_tests_passed": 106,
+    "ruff_undefined_and_unused_checks_passed": true,
+    "skill_format_validation_passed": true,
+    "real_windows_http_dpop_postgresql_worker": {
+      "passed": true,
+      "realWindowsController": true,
+      "realHTTP": true,
+      "realDPoP": true,
+      "realPostgreSQL": true,
+      "realMemoryWorker": true,
+      "documentAndCoworkerMemoryLoaded": true,
+      "byteBudgetChecked": true,
+      "sourceOriginalRead": true,
+      "repositoryDenied": true,
+      "conflictForcesRefresh": true,
+      "localProjectionInvalidated": true,
+      "incrementalLogVisible": true,
+      "nextColleaguePrepared": true,
+      "revocationDenied": true,
+      "workingCodePreserved": true,
+      "semanticEmbeddingsConfigured": false,
+      "physicalWindowsHosts": 1,
+      "logicalDevices": 3
+    },
+    "desktop_memory_ui_fixture_backend": {
+      "passed": true,
+      "realElectronUI": true,
+      "backend": "fixture",
+      "sharedMemoryNavigation": true,
+      "statusVisible": true,
+      "originalExpandable": true,
+      "horizontalOverflow": false
+    },
+    "web_memory_ui_fixture_backend": {
+      "passed": true,
+      "realBrowserUI": true,
+      "backend": "fixture",
+      "searchAndStatus": true,
+      "sourceExpanded": true,
+      "conflictDecisionRecorded": true,
+      "horizontalOverflow": false
+    },
+    "packaged_runtime": {
+      "passed": true,
+      "version": "0.11.0",
+      "packagedRuntime": true,
+      "sharedMemoryNavigationListed": true,
+      "signedOutProjectAccessBlocked": true,
+      "closeToTrayDefault": true,
+      "trayLifetimeVerifiedInSourceSmoke": true,
+      "profileIsolated": true
+    },
+    "public_online_update": {
+      "passed": true,
+      "old_version": "0.10.1",
+      "new_version": "0.11.0",
+      "clicked_from_signed_out_client": true,
+      "signed_release_activated": true,
+      "native_restart_completed": true,
+      "publicDownload": true,
+      "profileIsolated": true
+    },
+    "installed_stdio": {
+      "passed": true,
+      "installedVersion": "0.11.0",
+      "realStdioMcp": true,
+      "configurationFromInstalledCodex": true,
+      "signedFeedVerified": true,
+      "loginState": "LOGIN_REQUIRED",
+      "authenticationNotBypassed": true
+    },
+    "installed_release": {
+      "passed": true,
+      "version": "0.11.0",
+      "publicInstallerDownloadVerified": true,
+      "installerSha256": "5e3ad820fea6109efc4be7956f79e9f45ef9c468050ce6a0ec7f39ca7555528d",
+      "installedManifestMatchesSignedRelease": true,
+      "installedFilesVerified": 156,
+      "unlistedApplicationResourcesAbsent": true,
+      "managedSkillMatchesPackagedVersion": true,
+      "managedSkillFilesVerified": 7,
+      "existingDataDirectoryUsed": "D:/agent_cache/agent-hub",
+      "codexConfigurationUpdated": true,
+      "loginPerformedByAgent": false,
+      "authenticodeSigned": false
+    },
+    "physical_windows_hosts": 1,
+    "logical_devices_in_integration": 3,
+    "real_business_repository_pilot": false,
+    "macos_accepted": false,
+    "all_seven_harnesses_accepted": false
+  },
+  "desktop_release": {
+    "schema": 1,
+    "platform": "win-x64",
+    "version": "0.11.0",
+    "installer": {
+      "url": "https://47.109.23.86:18180/desktop-updates/win-x64/AgentHub-Setup-0.11.0.exe",
+      "bytes": 123132059,
+      "sha256": "5e3ad820fea6109efc4be7956f79e9f45ef9c468050ce6a0ec7f39ca7555528d"
+    },
+    "files_sha256": "e390211ef74352dacc8e2e0c3a1fb486c75dfd9060f6342ac34601bc212757bd",
+    "zip": {
+      "bytes": 159960136,
+      "sha256": "bd5ce6b750a6ee7a3e1bf1071d731d2748e12b2c3b3a11f6683700ecf50ad537"
+    },
+    "signed_metadata_version": 12,
+    "metadata_expires_at": "2026-12-09T04:24:13.950Z",
+    "ed25519_feed_verified": true,
+    "authenticode_signed": false
+  },
+  "backup": {
+    "pre_migration_dump_and_configuration_preserved": true,
+    "post_migration_production_recovery": {
+      "production_backup_verified": true,
+      "new_schema_restored": true,
+      "operator_checks_healthy": true,
+      "snapshot_id": "f8a8e527b50699cde121e0326c188ebbb73b2fe85ccd0aae987a5ade8b1607f3",
+      "verified_archives": 0,
+      "memory": {
+        "documents": 0,
+        "exact_originals": 0,
+        "cards": 0,
+        "errors": [],
+        "healthy": true
+      },
+      "continuous_offsite_backup": false,
+      "actual_business_memory_data": false
+    },
+    "nonempty_isolated_fixture_restore": {
+      "documents": 1,
+      "exact_originals": 1,
+      "cards": 3,
+      "errors": [],
+      "healthy": true,
+      "vector_version": "0.8.7",
+      "passed": true,
+      "data_kind": "isolated-fixture-not-production-business"
+    },
+    "one_time_encrypted_offsite_copy": true,
+    "offsite_copy_sha256": "106dd338f43003b3324bcd361b20949af45a39c3ce5438710143d76195d5e971",
+    "recovery_password_outside_repository": true,
+    "continuous_offsite_backup": false,
+    "external_alert_delivery": false,
+    "retention_configured": false,
+    "operator_checks": {
+      "schema": 1,
+      "created_at": "2026-11-09T04:32:11.127185+00:00",
+      "checks": [
+        {
+          "id": "container:agent-hub-postgres",
+          "state": "ok"
+        },
+        {
+          "id": "container:agent-hub-app-api-1",
+          "state": "ok"
+        },
+        {
+          "id": "container:agent-hub-app-document-worker-1",
+          "state": "ok"
+        },
+        {
+          "id": "container:agent-hub-app-memory-worker-1",
+          "state": "ok"
+        },
+        {
+          "id": "container:agent-hub-edge",
+          "state": "ok"
+        },
+        {
+          "id": "database:query",
+          "state": "ok"
+        },
+        {
+          "id": "memory:queue",
+          "state": "ok"
+        },
+        {
+          "id": "public:https",
+          "state": "ok",
+          "version": "0.9.0"
+        },
+        {
+          "id": "desktop:signed-feed",
+          "state": "ok",
+          "version": "0.11.0",
+          "remaining_hours": 719
+        },
+        {
+          "id": "disk:capacity",
+          "state": "ok",
+          "free_bytes": 21227802624
+        },
+        {
+          "id": "agent-hub-backup",
+          "state": "ok",
+          "age_hours": 0.18,
+          "maximum_hours": 36
+        },
+        {
+          "id": "agent-hub-archive-audit",
+          "state": "ok",
+          "age_hours": 0.17,
+          "maximum_hours": 36
+        },
+        {
+          "id": "agent-hub-restore-drill",
+          "state": "ok",
+          "age_hours": 0.17,
+          "maximum_hours": 1080
+        },
+        {
+          "id": "offsite:continuous-copy",
+          "state": "warning",
+          "configured": false
+        },
+        {
+          "id": "alerts:external-delivery",
+          "state": "warning",
+          "configured": false
+        }
+      ],
+      "healthy": true,
+      "has_warnings": true,
+      "scope": "local-operator-checks-only"
+    }
+  },
+  "publication_checks": {
+    "gitleaks_staged_scan_passed": true,
+    "known_local_credentials_absent": true,
+    "github_credential_absent": true,
+    "staged_paths_and_document_links_checked": true
+  },
+  "token_measurement": "2026-11-09_0110_Token测量.json",
+  "limitations": [
+    "Embedding provider, semantic retrieval and model distillation are not configured or implemented.",
+    "No year-scale real-business recall, cost or load acceptance.",
+    "Original install.md role deployment, per-turn host hooks and cross-host role scheduling remain incomplete.",
+    "One physical Windows host and isolated fixtures do not establish multi-device business acceptance.",
+    "macOS and four other harness adapters are not accepted.",
+    "The private kms project is not onboarded; user credentials and approved scope are pending.",
+    "No OS-level file-write isolation; MCP receipts do not control arbitrary host shell commands.",
+    "Continuous offsite backup, external alerts, retention policy and server OS migration are pending."
+  ],
+  "full_platform_production_acceptance": false
+}

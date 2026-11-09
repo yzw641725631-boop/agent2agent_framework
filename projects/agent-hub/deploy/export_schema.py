@@ -25,6 +25,7 @@ command.upgrade(Config(str(project / "alembic.ini"), output_buffer=output), "hea
 target = Path(sys.argv[1]).resolve()
 with target.open("x", encoding="utf-8", newline="\n") as file:
     file.write("-- Fresh server volume only. Object owner is the separate migration role.\n")
+    file.write("CREATE EXTENSION IF NOT EXISTS vector;\n")
     file.write("SET ROLE hub_owner;\n")
     file.write(output.getvalue())
     file.write("\nRESET ROLE;\n")

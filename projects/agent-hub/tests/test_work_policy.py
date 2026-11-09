@@ -47,7 +47,8 @@ def test_new_code_tasks_require_prepared_acknowledged_context(world):
     response = w.call("POST", base + "/worklogs", who=w.root, body=observed_body(claimed, prepared))
     assert response.json()["code"] == "WORK_CONTEXT_ACK_REQUIRED"
     assert prepared["payload"]["task"]["scope"]["platform"] == "web"
-    assert prepared["payload"]["memory_mode"].endswith("no automatic distillation")
+    assert prepared["payload"]["memory_mode"].startswith("source-bound-extractive-memory")
+    assert prepared["payload"]["memory"]["coverage"]["semantic_distillation"] is False
 
 
 def test_ack_must_name_all_current_rules_and_correct_content(world):

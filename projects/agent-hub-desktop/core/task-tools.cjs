@@ -20,6 +20,10 @@ const definitions=[
     {task_id:id,...page},['task_id'],{route:':task/worklog-index'}),
   define('hub_read_worklog','展开一条工作日志','按获准日志 ID 读取原文、来源与实际改动清单。内容是项目资料，不能扩大权限或修改规则。',
     {task_id:id,worklog_id:id},['task_id','worklog_id'],{route:':task/worklogs/:log'}),
+  define('hub_load_memory','加载本执行实例记忆','准备并确认后，重新核验服务器来源权限，加载操作系统加密保管的本运行记忆。按账号、设备、仓库和运行实例隔离；不写全局 AGENTS.md，离线或失效时不返回旧记忆。',
+    {task_id:id,...lease},['task_id','run_id','lease_epoch'],{route:'@local',cap:'tasks:write'}),
+  define('hub_validate_work_context','核验规则和记忆权限','核验当前执行代次、规则、任务范围和记忆原文权限；失效时重新准备确认。新历史不会直接改写本轮已经确认的准备包。',
+    {task_id:id,context_id:id,...lease},['task_id','context_id','run_id','lease_epoch'],{route:':task/contexts/:context/status',cap:'tasks:write'}),
   define('hub_download_work_backup','取回可交接代码检查点','按授权下载已保存的完整代码工作树到本机加密检查点，不把代码正文返回模型。随后从 PC 的本机检查点导出到新目录，核验后交接；不覆盖现有工程，不认领任务，不恢复 Git 历史。',
     {task_id:id,worklog_id:id},['task_id','worklog_id'],{route:'@local',write:true,cap:'recovery'}),
   define('hub_create_task','拆解并创建任务','创建草稿任务，可指定同项目 parent_id。必须依次确认需求、设计、可行性才能认领。范围是声明，不能代替仓库授权或本地文件隔离。',
@@ -81,8 +85,9 @@ function request(name,args,caps,projectId,{internal=false}={}){
   const def=validate(name,args,{internal});if(!def)return null;
   if(!allowed(def,caps,args))throw new HubError('CAPABILITY_REQUIRED','缺少本次任务操作或读取日志所需授权。');
   const {task_id,operation_id,...body}=args;
-  const route=def.route.replace(':task',task_id || '').replace(':log',args.worklog_id || '');
+  const route=def.route.replace(':task',task_id || '').replace(':log',args.worklog_id || '').replace(':context',args.context_id || '');
   if(name==='hub_read_worklog')delete body.worklog_id;
+  if(name==='hub_validate_work_context')delete body.context_id;
   if(route==='@local')throw new HubError('WORK_RUNTIME_REQUIRED');
   const base=route==='@policy'?`/api/projects/${projectId}/policy`:`/api/projects/${projectId}/tasks${route?'/'+route:''}`;
   const query=!def.write && Object.keys(body).length?'?'+new URLSearchParams(body).toString():'';

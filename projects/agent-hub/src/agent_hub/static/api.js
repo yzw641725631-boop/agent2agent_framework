@@ -5,6 +5,9 @@ const encode = value => btoa(String.fromCharCode(...new Uint8Array(value)))
 const json = value => encode(encoder.encode(JSON.stringify(value)));
 
 export const messages = {
+  MEMORY_NOT_FOUND:'该记忆或来源当前不可读取。',MEMORY_VERSION_CONFLICT:'记忆处理状态已变化，请刷新后重试。',
+  WORK_MEMORY_ACCESS_CHANGED:'已载入记忆的原文权限已变化，请重新准备。',WORK_MEMORY_STALE:'已载入资料已换版、退役或存在冲突，请重新准备。',
+  MEMORY_SOURCE_CURSOR_INVALID:'原文读取位置无效，请从来源返回的游标继续。',
   WORK_REMOTE_BACKUP_REQUIRED:'请先在 PC 端完成最新检查点的服务器代码备份，再提交评审。',
   WORK_ARCHIVE_INTEGRITY_FAILED:'服务器代码备份未通过完整性校验，已停止恢复和提交。请保留本机工作并联系管理员。',
   WORK_ARCHIVE_NOT_FOUND:'该日志尚无服务器代码备份。',WORK_ARCHIVE_QUOTA_EXCEEDED:'代码备份容量已达配额，请联系管理员处理。',

@@ -42,6 +42,14 @@ def document_worker():
     DocumentWorker(get_settings()).serve()
 
 
+@app.command("memory-worker")
+def memory_worker():
+    """Extract incremental source-bound memory using the separate hub_memory role."""
+    from .memory_worker import MemoryWorker
+
+    MemoryWorker(get_settings()).serve()
+
+
 @app.command("check-desktop-feed")
 def check_desktop_feed():
     """Verify the public release feed and fail when fewer than 72 hours remain."""

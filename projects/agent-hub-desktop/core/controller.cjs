@@ -56,6 +56,9 @@ class Controller extends EventEmitter {
     if(this.closed || this.profile!==profile || this.remote!==remote)return;
     const terminal=stopped.has(error.code);
     if(!terminal && !transient.has(error.code))return;
+    if(terminal)for(const run of Object.values(profile.workRuns || {})){
+      if(!projectId || run.project_id===projectId)delete run.memory;
+    }
     if(identityStopped.has(error.code) || (platform && terminal)){
       this.connection='reauth_required';this.message=error.message;this.stopWatches();this.cancelRecovery();
       for(const b of profile.bindings){b.status='blocked';b.message=error.message;b.errorCode=error.code;}
@@ -232,6 +235,9 @@ class Controller extends EventEmitter {
     if(!visibility || !Array.isArray(visibility.code_read_ids) || !Array.isArray(visibility.document_read_ids))return;
     const p=this.profile;if(!p)return;
     let changed=JSON.stringify(p.resourceVisibility?.[projectId])!==JSON.stringify(visibility);
+    if(changed && p.resourceVisibility?.[projectId])for(const run of Object.values(p.workRuns || {})){
+      if(run.project_id===projectId)delete run.memory;
+    }
     const count=(p.events || []).length;
     (p.resourceVisibility??={})[projectId]=visibility;
     p.events=(p.events || []).filter(event=>event.project_id!==projectId || visibility.all_repositories ||
@@ -361,7 +367,7 @@ class Controller extends EventEmitter {
       try{return await operation;}finally{this.projectOperations.delete(operation);}
     }
     const localActions={hub_prepare_work:'prepare',hub_acknowledge_work:'acknowledge',hub_check_changes:'check',
-      hub_list_local_work:'list'};
+      hub_list_local_work:'list',hub_load_memory:'loadMemory'};
     const prepared=args?.run_id && this.profile?.workRuns?.[args.run_id];
     const method=localActions[action] || (prepared && action==='hub_write_worklog'?'save':
       prepared && action==='hub_submit_task'?'submit':null);
@@ -373,7 +379,7 @@ class Controller extends EventEmitter {
       try{return await operation;}finally{this.projectOperations.delete(operation);}
     }
     const result=await this.invokeProjectRemote(b,action,args);
-    if(action==='hub_release_task' && prepared){prepared.stopped='released';await this.persist();}
+    if(action==='hub_release_task' && prepared){prepared.stopped='released';delete prepared.memory;await this.persist();}
     return result;
   }
   async invokeProjectRemote(b,action,args,{internal=false}={}){
@@ -424,6 +430,8 @@ class Controller extends EventEmitter {
         const {operation_id,...body}=args;
         return await remote.request('POST',`/api/projects/${b.projectId}/repositories`,body,{slot,idempotency:operation_id});
       }
+      const memoryRequest=require('./memory-tools.cjs').request(action,args,b.projectId,b.repositoryId);
+      if(memoryRequest)return await remote.request('GET',memoryRequest.path,undefined,{slot});
       const taskRequest=require('./task-tools.cjs').request(action,args,context.capabilities,b.projectId,{internal});
       if(taskRequest){
         if(b.repositoryId){
@@ -557,6 +565,7 @@ class Controller extends EventEmitter {
     this.remote?.close();this.remote=null;
     if(p){
       p.sessions={};delete p.enrollment;delete p.challengeId;
+      for(const run of Object.values(p.workRuns || {}))delete run.memory;
     }
     this.connection='signed_out';this.projects=[];this.grants=[];this.message=complete?'':'本机已退出，服务器会话撤销未全部确认。';
     // Freeze local access and persist before any network wait; old refreshes cannot repopulate sessions.

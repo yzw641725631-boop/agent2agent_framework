@@ -24,6 +24,8 @@ const messages = {
   GIT_TICKET_EXPIRED_OR_INSUFFICIENT:'本次 Git 访问凭证已失效，请重新验证授权后重试。',
   REPOSITORY_UPSTREAM_REJECTED:'GitHub 拒绝本次仓库访问，请核对服务器凭证与仓库设置。',
   GITHUB_APP_NOT_CONFIGURED:'请先在后台配置 GitHub App。',GITHUB_APP_AUTHORIZATION_FAILED:'GitHub App 授权失败，请核对 App 安装及仓库权限。',
+  MEMORY_NOT_FOUND:'该记忆或来源当前不可读取。',MEMORY_VERSION_CONFLICT:'记忆状态已更新，请刷新后重试。',
+  WORK_MEMORY_ACCESS_CHANGED:'已载入记忆的原文权限已变化，请重新准备。',WORK_MEMORY_STALE:'已载入资料已换版、退役或存在冲突，请重新准备。',
   WORK_CONTEXT_REQUIRED:'请先准备本执行实例的开工规则。',WORK_CONTEXT_ACK_REQUIRED:'请实际读取并确认全部当前规则。',
   WORK_CONTEXT_STALE:'规则或任务范围已变化，请重新准备并确认。',WORK_CONTEXT_ACK_MISMATCH:'规则哈希或确认列表不匹配。',
   WORK_CHANGE_EVIDENCE_REQUIRED:'代码任务需要桌面端采集的实际改动清单。',WORK_EVIDENCE_CHANGED:'检查点之后代码已变化，请重新记录。',
@@ -110,7 +112,9 @@ class Remote {
   }
   async raw(method,path,body,token,{idempotency,signal,stream=false,binary=false,contentHash}={}) {
     this.checkOpen();
-    if (!/^\/api\/[A-Za-z0-9_/?=&.%:-]+$/.test(path) || path.includes('..') || path.includes('%')) {
+    const [pathname,query,...extra]=typeof path==='string'?path.split('?'):[];
+    if (!pathname || !/^\/api\/[A-Za-z0-9_/-]+$/.test(pathname) || pathname.includes('..') || extra.length ||
+        (query!==undefined && (!/^[A-Za-z0-9_=&.%:+*~-]*$/.test(query) || /%(?![a-fA-F0-9]{2})/.test(query)))) {
       throw new HubError('INVALID_API_PATH');
     }
     const headers={DPoP:proof(this.profile.identity,this.canonical,method,path,token),

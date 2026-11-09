@@ -69,7 +69,7 @@ def collect(base=BASE, time=None):
         if not state['Running'] or state.get('Health', {}).get('Status', 'healthy') != 'healthy':
             raise ValueError()
 
-    for name in ['agent-hub-postgres', 'agent-hub-app-api-1', 'agent-hub-app-document-worker-1', 'agent-hub-edge']:
+    for name in ['agent-hub-postgres', 'agent-hub-app-api-1', 'agent-hub-app-document-worker-1', 'agent-hub-app-memory-worker-1', 'agent-hub-edge']:
         check('container:' + name, lambda name=name: container(name))
 
     def database():
@@ -78,6 +78,15 @@ def collect(base=BASE, time=None):
         if code or output.strip() != '1':
             raise ValueError()
     check('database:query', database)
+
+    def memory_queue():
+        code, output = command(['docker', 'exec', 'agent-hub-postgres', 'psql', '-X', '-U',
+                                'postgres', '-d', 'agent_hub', '-Atc',
+                                "SELECT count(*) FROM memory_jobs WHERE status='failed' OR "
+                                "(status='queued' AND created_at<now()-interval '10 minutes')"])
+        if code or output.strip() != '0':
+            raise ValueError()
+    check('memory:queue', memory_queue)
 
     def public_health():
         with urlopen(ORIGIN + '/healthz', timeout=10) as response:

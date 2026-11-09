@@ -1,8 +1,8 @@
 # Agent Hub：身份与项目基础服务
 
-> 2026-11-09｜0.8.0 / 迁移 0011：设备绑定的撤权交接、冻结原运行范围、释放任务、持久清单确认和卸载报告。配套 Windows 0.10.1，验证与边界见[本轮实施](../../设计文档/26_撤权收尾与归属卸载验收.md)。
+> 2026-11-09｜0.9.0 / 迁移 0012：不可覆盖文档档案、共享记忆增量摘录、来源权限继承、有预算的开工加载及服务器 pgvector。配套 Windows 0.11.0，验证与边界见[本轮实施](../../设计文档/27_共享记忆与pgvector验收.md)。
 
-本服务提供身份、设备审批、逐仓库授权、任务租约、不可覆盖工作日志、代码快照和 Git 交付回执，含 REST API、中文后台、PostgreSQL 迁移及运维 CLI。通过 [Electron 桌面端](../agent-hub-desktop/README.md) 提供本机 stdio MCP。自动记忆仍待接入。文档接入步骤见 [Git 文档索引](../../设计文档/11_Git文档索引与MCP查询.md)。
+本服务提供身份、设备审批、逐仓库授权、任务租约、不可覆盖工作日志、代码快照、Git 交付回执及共享记忆摘录，含 REST API、中文后台、PostgreSQL 迁移及运维 CLI。通过 [Electron 桌面端](../agent-hub-desktop/README.md) 提供本机 stdio MCP。语义模型尚未配置。文档接入步骤见 [Git 文档索引](../../设计文档/11_Git文档索引与MCP查询.md)。
 
 ## 已实现
 
@@ -84,7 +84,7 @@
 | 文档 Worker | `hub_document_worker` 登录，继承 `hub_indexer`；与 API 角色分开 |
 | 凭证 | 服务器 `.env`，root 所有，权限 `0600` |
 | 对外端口 | 数据库不发布宿主机或公网端口 |
-| 应用目录 | `/opt/agent-hub/application/current`，发行版目录 `releases/0.8.0` |
+| 应用目录 | `/opt/agent-hub/application/current`，发行版目录 `releases/0.9.0` |
 | 应用容器 | `agent-hub-app-api-1`，仅发布服务器 `127.0.0.1:8765` |
 | 公网入口 | `https://47.109.23.86:18180`，容器 `agent-hub-edge` |
 | 入口与证书状态 | `/opt/agent-hub/edge`；每六小时检查证书续期 |
