@@ -13,7 +13,7 @@ async function main() {
   let bytes = 0;
   for await (const chunk of response.body) {
     bytes += chunk.byteLength;
-    if (bytes > 16384) throw new Error('Release metadata exceeds size limit');
+    if (bytes > 65536) throw new Error('Release metadata exceeds size limit');
     chunks.push(chunk);
   }
   const release = verifiedRelease(JSON.parse(Buffer.concat(chunks)), publicKey);

@@ -3240,6 +3240,191 @@ CREATE POLICY code_audit_progress_owner ON project_progress FOR INSERT TO hub_ow
 
 UPDATE alembic_version SET version_num='0027' WHERE alembic_version.version_num = '0026';
 
+-- Running upgrade 0027 -> 0028
+
+ALTER TABLE generation_calls ADD COLUMN source_receipt jsonb;
+      ALTER TABLE generation_calls DROP CONSTRAINT generation_calls_kind_check;
+      ALTER TABLE generation_calls ADD CONSTRAINT generation_calls_kind_check
+        CHECK(kind IN ('distillation','guide','code_audit'));
+      ALTER TABLE generation_receipts ADD COLUMN code_audit_id uuid REFERENCES code_audits(id);
+      DO $migration$
+      DECLARE constraint_name text;
+      BEGIN
+        SELECT conname INTO STRICT constraint_name FROM pg_constraint
+          WHERE conrelid='public.generation_receipts'::regclass
+          AND pg_get_constraintdef(oid) LIKE '%num_nonnulls%';
+        EXECUTE format('ALTER TABLE public.generation_receipts DROP CONSTRAINT %I',constraint_name);
+      END $migration$;
+      ALTER TABLE generation_receipts ADD CONSTRAINT generation_receipt_one_source
+        CHECK(num_nonnulls(distillation_id,guide_id,code_audit_id)=1);
+      CREATE UNIQUE INDEX uq_generation_audit_epoch ON generation_receipts(code_audit_id,lease_epoch);
+      DROP POLICY receipt_read ON generation_receipts;
+      CREATE POLICY receipt_read ON generation_receipts FOR SELECT TO hub_runtime USING(
+        hub.can_read_scope(project_id,repository_id) AND (
+          distillation_id IS NOT NULL AND EXISTS(SELECT 1 FROM distillation_jobs j WHERE j.id=distillation_id)
+          OR guide_id IS NOT NULL AND EXISTS(SELECT 1 FROM guide_jobs j WHERE j.id=guide_id)
+          OR code_audit_id IS NOT NULL AND EXISTS(SELECT 1 FROM code_audits j WHERE j.id=code_audit_id)));
+      DROP POLICY receipt_insert ON generation_receipts;
+      CREATE POLICY receipt_insert ON generation_receipts FOR INSERT TO hub_generation WITH CHECK(
+        author_id=nullif(current_setting('hub.user_id',true),'')::uuid
+        AND device_id=nullif(current_setting('hub.device_id',true),'')::uuid
+        AND hub.can_read_scope(project_id,repository_id) AND (
+          hub.has_project_cap(project_id,'tasks:write') AND (
+            distillation_id IS NOT NULL AND EXISTS(SELECT 1 FROM distillation_jobs j
+              WHERE j.id=distillation_id AND j.project_id=generation_receipts.project_id
+              AND j.repository_id IS NOT DISTINCT FROM generation_receipts.repository_id
+              AND j.target_user_id=author_id AND j.target_device_id=device_id
+              AND j.lease_epoch=generation_receipts.lease_epoch AND j.state='succeeded')
+            OR guide_id IS NOT NULL AND EXISTS(SELECT 1 FROM guide_jobs j
+              WHERE j.id=guide_id AND j.project_id=generation_receipts.project_id
+              AND j.repository_id IS NOT DISTINCT FROM generation_receipts.repository_id
+              AND j.target_user_id=author_id AND j.target_device_id=device_id
+              AND j.lease_epoch=generation_receipts.lease_epoch AND j.state='review'))
+          OR hub.has_project_cap(project_id,'tasks:review') AND hub.has_project_cap(project_id,'logs:read')
+            AND code_audit_id IS NOT NULL AND EXISTS(SELECT 1 FROM code_audits j
+              WHERE j.id=code_audit_id AND j.project_id=generation_receipts.project_id
+              AND j.repository_id=generation_receipts.repository_id
+              AND j.reviewer_id=author_id AND j.device_id=generation_receipts.device_id
+              AND j.lease_epoch=generation_receipts.lease_epoch AND j.state='completed')));
+      DO $migration$
+      DECLARE definition text; needle text := 'NEW.content->>''source_basis''=''exact_checkout''';
+      BEGIN
+        SELECT pg_get_functiondef('hub.guard_code_audit_report()'::regprocedure) INTO definition;
+        IF length(definition)-length(replace(definition,needle,''))<>length(needle) THEN
+          RAISE EXCEPTION 'Unexpected audit source validation definition'; END IF;
+        EXECUTE replace(definition,needle,
+          'NEW.content->>''source_basis'' IN (''exact_checkout'',''exact_git_objects'')');
+      END $migration$;;
+
+UPDATE alembic_version SET version_num='0028' WHERE alembic_version.version_num = '0027';
+
+-- Running upgrade 0028 -> 0029
+
+CREATE TABLE account_recovery_codes (
+        id uuid PRIMARY KEY DEFAULT gen_random_uuid(), created_at timestamptz NOT NULL DEFAULT now(),
+        user_id uuid NOT NULL REFERENCES users(id), device_id uuid NOT NULL REFERENCES devices(id),
+        batch_id uuid NOT NULL, user_epoch integer NOT NULL CHECK(user_epoch>0),
+        digest varchar(64) NOT NULL UNIQUE CHECK(digest~'^[a-f0-9]{64}$'),
+        expires_at timestamptz NOT NULL, consumed_at timestamptz
+      );
+      CREATE INDEX ix_recovery_codes_user ON account_recovery_codes(user_id,batch_id);
+      ALTER TABLE account_recovery_codes ENABLE ROW LEVEL SECURITY;
+      ALTER TABLE account_recovery_codes FORCE ROW LEVEL SECURITY;
+      CREATE POLICY owner_access ON account_recovery_codes TO hub_owner USING(true) WITH CHECK(true);
+      GRANT SELECT,INSERT ON account_recovery_codes TO hub_runtime;
+      GRANT UPDATE(consumed_at) ON account_recovery_codes TO hub_runtime;
+      CREATE POLICY recovery_own_read ON account_recovery_codes FOR SELECT TO hub_runtime
+        USING(user_id=nullif(current_setting('hub.user_id',true),'')::uuid);
+      CREATE POLICY recovery_own_insert ON account_recovery_codes FOR INSERT TO hub_runtime WITH CHECK(
+        user_id=nullif(current_setting('hub.user_id',true),'')::uuid
+        AND device_id=nullif(current_setting('hub.device_id',true),'')::uuid
+        AND hub.account_closeout_allowed(user_id));
+      CREATE POLICY recovery_own_retire ON account_recovery_codes FOR UPDATE TO hub_runtime
+        USING(user_id=nullif(current_setting('hub.user_id',true),'')::uuid)
+        WITH CHECK(user_id=nullif(current_setting('hub.user_id',true),'')::uuid);
+      CREATE FUNCTION hub.offline_recovery_user(code_hash text) RETURNS uuid
+        LANGUAGE sql STABLE SECURITY DEFINER SET search_path=pg_catalog,public AS $$
+        SELECT c.user_id FROM public.account_recovery_codes c JOIN public.users u ON u.id=c.user_id
+          WHERE c.digest=code_hash AND c.consumed_at IS NULL AND c.expires_at>now()
+          AND c.user_epoch=u.auth_epoch AND u.status='active'
+      $$;
+      REVOKE ALL ON FUNCTION hub.offline_recovery_user(text) FROM PUBLIC;
+      GRANT EXECUTE ON FUNCTION hub.offline_recovery_user(text) TO hub_runtime;
+      DO $migration$
+      DECLARE definition text; marker text := 'SELECT EXISTS(';
+      BEGIN
+        SELECT pg_get_functiondef('hub.account_closeout_allowed(uuid)'::regprocedure) INTO definition;
+        IF strpos(definition,marker)=0 THEN RAISE EXCEPTION 'Unknown recovery authorization'; END IF;
+        definition=replace(definition,marker,
+          'SELECT uid=hub.offline_recovery_user(current_setting(''hub.offline_recovery_digest'',true)) OR EXISTS(');
+        EXECUTE definition;
+      END $migration$;
+      CREATE FUNCTION hub.consume_offline_recovery(code_hash text) RETURNS boolean
+        LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog,public AS $$
+      DECLARE cid uuid;
+      BEGIN
+        IF code_hash IS DISTINCT FROM current_setting('hub.offline_recovery_digest',true)
+          OR hub.offline_recovery_user(code_hash) IS NULL THEN RETURN false; END IF;
+        UPDATE public.account_recovery_codes SET consumed_at=now() WHERE digest=code_hash
+          AND consumed_at IS NULL AND expires_at>now() RETURNING id INTO cid;
+        RETURN cid IS NOT NULL;
+      END $$;
+      REVOKE ALL ON FUNCTION hub.consume_offline_recovery(text) FROM PUBLIC;
+      GRANT EXECUTE ON FUNCTION hub.consume_offline_recovery(text) TO hub_runtime;;
+
+UPDATE alembic_version SET version_num='0029' WHERE alembic_version.version_num = '0028';
+
+-- Running upgrade 0029 -> 0030
+
+CREATE TABLE oauth_clients (
+        id uuid PRIMARY KEY DEFAULT gen_random_uuid(), created_at timestamptz NOT NULL DEFAULT now(),
+        client_id varchar(100) NOT NULL UNIQUE, name varchar(200) NOT NULL,
+        author_id uuid NOT NULL REFERENCES users(id), approver_device_id uuid NOT NULL REFERENCES devices(id),
+        user_id uuid NOT NULL REFERENCES users(id), device_id uuid NOT NULL REFERENCES devices(id),
+        grant_id uuid REFERENCES access_grants(id), project_id uuid NOT NULL REFERENCES projects(id),
+        repository_id uuid NOT NULL REFERENCES project_repositories(id), redirect_uris jsonb NOT NULL,
+        scopes jsonb NOT NULL, version integer NOT NULL DEFAULT 1 CHECK(version>0),
+        status varchar(16) NOT NULL DEFAULT 'active' CHECK(status IN ('active','revoked')),
+        CHECK(jsonb_typeof(redirect_uris)='array' AND jsonb_array_length(redirect_uris) BETWEEN 1 AND 5),
+        CHECK(jsonb_typeof(scopes)='array' AND scopes <@ '["mcp:read","mcp:coordinate"]'::jsonb),
+        FOREIGN KEY(repository_id,project_id) REFERENCES project_repositories(id,project_id)
+      );
+      CREATE TABLE oauth_requests (
+        id uuid PRIMARY KEY DEFAULT gen_random_uuid(), created_at timestamptz NOT NULL DEFAULT now(),
+        client_id uuid NOT NULL REFERENCES oauth_clients(id), client_version integer NOT NULL,
+        redirect_uri varchar(2000) NOT NULL, resource varchar(1000) NOT NULL, scopes jsonb NOT NULL,
+        state varchar(2048) NOT NULL, challenge varchar(43) NOT NULL, expires_at timestamptz NOT NULL,
+        session_id uuid REFERENCES auth_sessions(id), code_digest varchar(64) UNIQUE,
+        decided_at timestamptz, consumed_at timestamptz
+      );
+      CREATE TABLE oauth_sessions (
+        id uuid PRIMARY KEY DEFAULT gen_random_uuid(), created_at timestamptz NOT NULL DEFAULT now(),
+        client_id uuid NOT NULL REFERENCES oauth_clients(id), client_version integer NOT NULL,
+        session_id uuid NOT NULL REFERENCES auth_sessions(id), resource varchar(1000) NOT NULL,
+        scopes jsonb NOT NULL, family_id uuid NOT NULL, access_digest varchar(64) NOT NULL UNIQUE,
+        refresh_digest varchar(64) NOT NULL UNIQUE, access_expires_at timestamptz NOT NULL,
+        refresh_expires_at timestamptz NOT NULL,
+        state varchar(16) NOT NULL DEFAULT 'active' CHECK(state IN ('active','rotated','revoked'))
+      );
+      CREATE INDEX ix_oauth_session_family ON oauth_sessions(family_id);
+      CREATE INDEX ix_oauth_request_expiry ON oauth_requests(expires_at);
+      GRANT SELECT,INSERT ON oauth_clients TO hub_runtime;
+      GRANT UPDATE(status,version) ON oauth_clients TO hub_runtime;
+      GRANT SELECT,INSERT ON oauth_requests,oauth_sessions TO hub_runtime;
+      GRANT UPDATE(session_id,code_digest,decided_at,consumed_at) ON oauth_requests TO hub_runtime;
+      GRANT UPDATE(state) ON oauth_sessions TO hub_runtime;;
+
+ALTER TABLE oauth_clients ENABLE ROW LEVEL SECURITY;
+
+ALTER TABLE oauth_clients FORCE ROW LEVEL SECURITY;
+
+CREATE POLICY owner_access ON oauth_clients TO hub_owner USING(true) WITH CHECK(true);
+
+ALTER TABLE oauth_requests ENABLE ROW LEVEL SECURITY;
+
+ALTER TABLE oauth_requests FORCE ROW LEVEL SECURITY;
+
+CREATE POLICY owner_access ON oauth_requests TO hub_owner USING(true) WITH CHECK(true);
+
+ALTER TABLE oauth_sessions ENABLE ROW LEVEL SECURITY;
+
+ALTER TABLE oauth_sessions FORCE ROW LEVEL SECURITY;
+
+CREATE POLICY owner_access ON oauth_sessions TO hub_owner USING(true) WITH CHECK(true);
+
+CREATE POLICY oauth_client_read ON oauth_clients FOR SELECT TO hub_runtime USING(true);
+      CREATE POLICY oauth_client_insert ON oauth_clients FOR INSERT TO hub_runtime WITH CHECK(
+        hub.is_superadmin() AND author_id=nullif(current_setting('hub.user_id',true),'')::uuid
+        AND approver_device_id=nullif(current_setting('hub.device_id',true),'')::uuid);
+      CREATE POLICY oauth_client_revoke ON oauth_clients FOR UPDATE TO hub_runtime
+        USING(hub.is_superadmin()) WITH CHECK(hub.is_superadmin());
+      -- Protocol storage contains hashes and fixed approval references. Public code
+      -- exchange needs lookup before an authenticated context exists, like auth_sessions.
+      CREATE POLICY oauth_protocol ON oauth_requests TO hub_runtime USING(true) WITH CHECK(true);
+      CREATE POLICY oauth_protocol ON oauth_sessions TO hub_runtime USING(true) WITH CHECK(true);;
+
+UPDATE alembic_version SET version_num='0030' WHERE alembic_version.version_num = '0029';
+
 COMMIT;
 
 

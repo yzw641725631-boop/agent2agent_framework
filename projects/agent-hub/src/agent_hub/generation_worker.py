@@ -4,6 +4,7 @@ Repository authorization is issued by the superadmin. The worker never creates u
 tokens or grants, executes project instructions, or approves its own results.
 """
 
+import json
 import logging
 import time
 import uuid
@@ -11,7 +12,17 @@ from datetime import timedelta
 
 from sqlalchemy import func, select, text
 
-from . import distillation, generation, guides, repositories
+from . import (
+    code_audit,
+    distillation,
+    generation,
+    github_credentials,
+    guides,
+    repositories,
+    tasks,
+    work_policy,
+)
+from .audit_source import AuditSource
 from .db import context, coordinate, session_factory
 from .generation_provider import Provider
 from .insights import require_budget
@@ -24,16 +35,17 @@ log = logging.getLogger(__name__)
 
 
 class GenerationWorker:
-    def __init__(self, settings, *, factory=None, provider=None):
+    def __init__(self, settings, *, factory=None, provider=None, audit_source=None):
         self.settings = settings
         self.sessions = factory or session_factory(settings, security=True)
         self.config = Configuration(settings)
         self.provider = provider or Provider(test=settings.environment == "test")
         self.hub = Hub(settings, None)
+        self.audit_source = audit_source or AuditSource()
         self.scan_offsets = {}
         self.last_repository = None
 
-    def authorize(self, db, policy, user_id=None, device_id=None):
+    def authorize(self, db, policy, user_id=None, device_id=None, *, kind=None):
         # The original enabling device must remain trusted; changing policy, disabling
         # its issuer/device or archiving the repository immediately blocks new commits.
         context(db, policy.author_id, policy.device_id)
@@ -43,6 +55,11 @@ class GenerationWorker:
         if not current or current.version != policy.version or not current.content["enabled"]:
             raise HubError("GENERATION_AUTHORIZATION_CHANGED", 409)
         repositories.require(db, policy.project_id, policy.repository_id, "code:write")
+        if kind == "code_audit":
+            if not policy.content.get("code_audit"):
+                raise HubError("GENERATION_CODE_AUDIT_NOT_AUTHORIZED", 403)
+            user_id = uuid.UUID(policy.content["reviewer_user_id"])
+            device_id = uuid.UUID(policy.content["reviewer_device_id"])
         user_id, device_id = user_id or policy.author_id, device_id or policy.device_id
         user, device = db.get(User, user_id), db.get(Device, device_id)
         if (
@@ -73,9 +90,11 @@ class GenerationWorker:
             for candidate in grants:
                 try:
                     self.hub.validate_grant(db, user, device, candidate)
-                    if "tasks:write" in candidate.capabilities and any(
+                    required = {"tasks:review", "logs:read"} if kind == "code_audit" else {"tasks:write"}
+                    code_cap = "code:read" if kind == "code_audit" else "code:write"
+                    if required <= set(candidate.capabilities) and any(
                         p.get("repository_id") == str(policy.repository_id)
-                        and "code:write" in p.get("capabilities", [])
+                        and code_cap in p.get("capabilities", [])
                         for p in candidate.repository_permissions
                     ):
                         grant = candidate
@@ -86,9 +105,23 @@ class GenerationWorker:
                 raise HubError("GENERATION_ACTOR_REVOKED", 403)
         context(db, user.id, device.id, grant.id if grant else None)
         identity = Principal(user, device, None, grant)
-        self.hub.project(db, identity, policy.project_id, "tasks:write")
-        repositories.require(db, policy.project_id, policy.repository_id, "code:write")
+        self.hub.project(
+            db, identity, policy.project_id, "tasks:review" if kind == "code_audit" else "tasks:write"
+        )
+        if kind == "code_audit":
+            self.hub.project(db, identity, policy.project_id, "logs:read")
+        repositories.require(
+            db, policy.project_id, policy.repository_id, "code:read" if kind == "code_audit" else "code:write"
+        )
         return identity
+
+    @staticmethod
+    def job_model(kind):
+        return {
+            "distillation": distillation.DistillationJob,
+            "guide": guides.GuideJob,
+            "code_audit": code_audit.CodeAudit,
+        }[kind]
 
     def guard(self, db):
         if not db.scalar(text("SELECT pg_has_role(current_user,'hub_generation','member')")):
@@ -148,13 +181,11 @@ class GenerationWorker:
                         require_budget(db, policy.project_id)
                         kinds = [
                             k
-                            for k in ("distillation", "guide")
+                            for k in ("distillation", "guide", "code_audit")
                             if policy.content.get("guides" if k == "guide" else k)
                         ]
                         for kind in kinds:
-                            model = (
-                                distillation.DistillationJob if kind == "distillation" else guides.GuideJob
-                            )
+                            model = self.job_model(kind)
                             key = (policy.repository_id, kind)
                             candidates = list(
                                 db.scalars(
@@ -201,10 +232,16 @@ class GenerationWorker:
 
     def reserve_job(self, db, policy, candidate, kind, config, provider_version, reserved):
         coordinate(
-            db, user_ids=(policy.author_id, candidate.target_user_id), project_ids=(policy.project_id,)
+            db,
+            user_ids=(
+                policy.author_id,
+                getattr(candidate, "target_user_id", None),
+                policy.content.get("reviewer_user_id") if kind == "code_audit" else None,
+            ),
+            project_ids=(policy.project_id,),
         )
-        identity = self.authorize(db, policy)
-        model = distillation.DistillationJob if kind == "distillation" else guides.GuideJob
+        identity = self.authorize(db, policy, kind=kind)
+        model = self.job_model(kind)
         job = db.scalar(select(model).where(model.id == candidate.id).with_for_update(skip_locked=True))
         if not job:
             return None
@@ -219,7 +256,7 @@ class GenerationWorker:
                 distillation.Claim(expected_version=job.version, instance_id=instance),
                 str(uuid.uuid4()),
             )
-        else:
+        elif kind == "guide":
             identity = self.authorize(db, policy, job.target_user_id, job.target_device_id)
             instance = job.instance_id
             guides.claim(
@@ -231,8 +268,22 @@ class GenerationWorker:
                 str(uuid.uuid4()),
             )
             bundle = self.guide_input(db, job)
-        payload = self.provider.prepare(config, kind, bundle)
-        reservation = len(payload) + config["max_output_tokens"]
+        else:
+            instance = policy.instance_id
+            # Background workers never manufacture the superadmin self-review exception.
+            code_audit.claim(
+                self.hub,
+                db,
+                identity,
+                job,
+                code_audit.Claim(expected_version=job.version, instance_id=instance),
+                str(uuid.uuid4()),
+            )
+            bundle = self.audit_input(db, job)
+        payload = None if kind == "code_audit" else self.provider.prepare(config, kind, bundle)
+        reservation = (config["max_input_bytes"] if payload is None else len(payload)) + config[
+            "max_output_tokens"
+        ]
         if reserved + reservation > config["daily_token_limit"]:
             raise HubError("GENERATION_DAILY_BUDGET", 409)
         if not db.scalar(select(func.hub.generation_project_budget_open(policy.project_id, reservation))):
@@ -247,19 +298,33 @@ class GenerationWorker:
             job_id=job.id,
             state="reserved",
             lease_token=uuid.uuid4(),
-            lease_until=now() + timedelta(seconds=180),
+            lease_until=now() + timedelta(seconds=240),
             user_id=identity.user.id,
             device_id=identity.device.id,
             instance_id=instance,
             job_version=job.version,
             job_lease_epoch=job.lease_epoch,
-            source_hash=job.source_hash if kind == "guide" else job.fingerprint,
+            source_hash=job.fingerprint if kind == "distillation" else job.source_hash,
             reserved_tokens=reservation,
-            input_bytes=len(payload),
+            input_bytes=len(payload) if payload is not None else 1,
         )
         db.add(row)
         db.flush()
-        return {"call_id": row.id, "lease": row.lease_token, "config": config, "payload": payload}
+        result = {"call_id": row.id, "lease": row.lease_token, "config": config, "payload": payload}
+        if kind == "code_audit":
+            repo = repositories.require(db, row.project_id, row.repository_id)
+            source = db.get(Worklog, job.worklog_id)
+            base = (source.change_evidence or {}).get("base_commit")
+            if not base:
+                raise HubError("CODE_AUDIT_BASE_COMMIT_REQUIRED", 409)
+            result["audit"] = {
+                "bundle": bundle,
+                "repository_url": repo.repository_url,
+                "base_commit": base,
+                "git_commit": job.git_commit,
+                "credential": github_credentials.credential_material(self.hub, db, repo),
+            }
+        return result
 
     def apply_retry(self):
         with self.sessions.begin() as db:
@@ -305,7 +370,7 @@ class GenerationWorker:
                         or not policy.content["enabled"]
                     ):
                         raise HubError("GENERATION_CALL_NOT_RETRYABLE", 409)
-                    model = distillation.DistillationJob if row.kind == "distillation" else guides.GuideJob
+                    model = self.job_model(row.kind)
                     job = db.scalar(select(model).where(model.id == row.job_id).with_for_update())
                     if not job:
                         raise HubError("GENERATION_SOURCE_CHANGED", 409)
@@ -320,8 +385,10 @@ class GenerationWorker:
                             or job.lease_epoch != row.job_lease_epoch
                         ):
                             raise HubError("GENERATION_SOURCE_CHANGED", 409)
-                        identity = self.authorize(db, policy, row.user_id, row.device_id)
-                        if (job.source_hash if row.kind == "guide" else job.fingerprint) != row.source_hash:
+                        identity = self.authorize(db, policy, row.user_id, row.device_id, kind=row.kind)
+                        if (
+                            job.fingerprint if row.kind == "distillation" else job.source_hash
+                        ) != row.source_hash:
                             raise HubError("GENERATION_SOURCE_CHANGED", 409)
                         if job.state == "running" and job.lease_until <= now():
                             if row.kind == "distillation":
@@ -336,13 +403,24 @@ class GenerationWorker:
                                     ),
                                     str(request.id),
                                 )
-                            else:
+                            elif row.kind == "guide":
                                 guides.claim(
                                     self.hub,
                                     db,
                                     identity,
                                     job,
                                     guides.Claim(expected_version=job.version, instance_id=row.instance_id),
+                                    str(request.id),
+                                )
+                            else:
+                                code_audit.claim(
+                                    self.hub,
+                                    db,
+                                    identity,
+                                    job,
+                                    code_audit.Claim(
+                                        expected_version=job.version, instance_id=row.instance_id
+                                    ),
                                     str(request.id),
                                 )
                             row.job_version, row.job_lease_epoch = job.version, job.lease_epoch
@@ -365,6 +443,18 @@ class GenerationWorker:
             "source_hash": job.source_hash,
         }
 
+    def audit_input(self, db, job):
+        source = db.get(Worklog, job.worklog_id)
+        return {
+            "task": job.task_context,
+            "worklog": {k: v for k, v in tasks.log_view(source).items() if k not in {"change_evidence"}},
+            "git_commit": job.git_commit,
+            "source_hash": job.source_hash,
+            "policy": db.get(code_audit.AuditPolicy, (job.repository_id, job.policy_version)).content,
+            "project_rules": work_policy.current(db, job.project_id),
+            "base_rules": code_audit.BASE_RULES,
+        }
+
     def lock_call(self, db, call_id):
         initial = db.get(Call, call_id)
         if not initial:
@@ -384,7 +474,9 @@ class GenerationWorker:
         if not policy:
             raise HubError("GENERATION_AUTHORIZATION_CHANGED", 409)
         coordinate(db, user_ids=(policy.author_id, row.user_id), project_ids=(row.project_id,))
-        identity = self.authorize(db, policy, row.user_id, row.device_id)
+        identity = self.authorize(db, policy, row.user_id, row.device_id, kind=row.kind)
+        if (identity.user.id, identity.device.id) != (row.user_id, row.device_id):
+            raise HubError("GENERATION_ACTOR_CHANGED", 409)
         _, provider_version = self.config.read(db)
         if before_request and provider_version != row.provider_version:
             raise HubError("GENERATION_CONFIGURATION_VERSION_CONFLICT", 409)
@@ -392,7 +484,7 @@ class GenerationWorker:
             require_budget(db, row.project_id)
             if not db.scalar(select(func.hub.generation_project_budget_open(row.project_id, 0))):
                 raise HubError("GENERATION_PROJECT_BUDGET", 409)
-        model = distillation.DistillationJob if row.kind == "distillation" else guides.GuideJob
+        model = self.job_model(row.kind)
         job = db.get(model, row.job_id)
         if not job:
             raise HubError("GENERATION_SOURCE_CHANGED", 409)
@@ -410,7 +502,7 @@ class GenerationWorker:
                     reason="Verify current authorization before the provider request",
                 ),
             )
-        else:
+        elif row.kind == "guide":
             guides.live(
                 self.hub,
                 db,
@@ -424,6 +516,17 @@ class GenerationWorker:
                 ),
             )
             self.guide_input(db, job)
+        else:
+            code_audit.live(self.hub, db, identity, job, row.instance_id, row.job_lease_epoch)
+            code_audit.version(job, row.job_version)
+            if job.source_hash != row.source_hash:
+                raise HubError("GENERATION_SOURCE_CHANGED", 409)
+            if db.scalar(
+                select(Worklog.id)
+                .where(Worklog.task_id == job.task_id, Worklog.author_id == identity.user.id)
+                .limit(1)
+            ):
+                raise HubError("CODE_AUDIT_INDEPENDENT_REVIEW_REQUIRED", 403)
         return identity, job
 
     def run_once(self):
@@ -432,17 +535,41 @@ class GenerationWorker:
         if not task:
             return False
         call_id = task.get("resume") or task["call_id"]
+        provider_started = False
         try:
             if "resume" in task:
                 self.commit_result(call_id)
                 return True
+            if task.get("audit"):
+                source = task["audit"]
+                token = github_credentials.exchange_credential(source["credential"])
+                code, receipt = self.audit_source.read(
+                    source["repository_url"],
+                    source["base_commit"],
+                    source["git_commit"],
+                    token,
+                    max_bytes=max(
+                        1000,
+                        task["config"]["max_input_bytes"]
+                        - len(json.dumps(source["bundle"], ensure_ascii=False).encode())
+                        - 14000,
+                    ),
+                )
+                task["payload"] = self.provider.prepare(
+                    task["config"], "code_audit", source["bundle"] | {"source": code}
+                )
+                task["source_receipt"] = receipt
             with self.sessions.begin() as db:
                 row = self.lock_call(db, call_id)
                 if row.state != "reserved" or row.lease_token != task["lease"] or row.lease_until <= now():
                     raise HubError("GENERATION_CALL_STALE", 409)
                 self.revalidate(db, row, before_request=True)
+                if task.get("source_receipt"):
+                    row.source_receipt = task["source_receipt"]
+                    row.input_bytes = len(task["payload"])
                 row.state = "calling"
             # No database connection, advisory lock or user token is held across inference.
+            provider_started = True
             result = self.provider.invoke(task["config"], task["payload"], call_id)
             with self.sessions.begin() as db:
                 row = db.get(Call, call_id)
@@ -457,7 +584,7 @@ class GenerationWorker:
             with self.sessions.begin() as db:
                 row = db.get(Call, call_id)
                 if row and row.state != "shared":
-                    row.state = "blocked" if row.encrypted_result else "uncertain"
+                    row.state = "blocked" if row.encrypted_result or not provider_started else "uncertain"
                     row.error_code = error.code if isinstance(error, HubError) else "GENERATION_FAILED"
                     row.finished_at = now()
             log.warning("Server generation deferred; original sources and billing reservation retained")
@@ -510,13 +637,40 @@ class GenerationWorker:
                     str(row.id),
                     generation_report=report,
                 )
-            else:
+            elif row.kind == "guide":
                 guides.complete(
                     self.hub,
                     db,
                     identity,
                     job,
                     guides.Complete(**lease, content=guides.GuideContent(**value)),
+                    str(row.id),
+                    generation_report=report,
+                )
+            else:
+                content = code_audit.ReportContent.model_validate(value)
+                receipt = row.source_receipt or {}
+                paths = set(receipt.get("changed_paths", []))
+                source = db.get(Worklog, job.worklog_id)
+                required_paths = paths | set(source.changed_paths)
+                extra_gaps = list(receipt.get("gaps", []))
+                missing = required_paths - set(content.reviewed_paths)
+                if missing:
+                    extra_gaps.append("Incomplete changed-path coverage: " + ", ".join(sorted(missing)))
+                if not receipt or receipt.get("git_commit") != job.git_commit:
+                    raise HubError("CODE_AUDIT_SOURCE_MISMATCH", 409)
+                if content.source_basis != "exact_git_objects" or content.checkout_commit != job.git_commit:
+                    raise HubError("CODE_AUDIT_SOURCE_MISMATCH", 409)
+                if extra_gaps:
+                    content.gaps = list(dict.fromkeys(content.gaps + extra_gaps))[:100]
+                    if content.conclusion == "pass":
+                        content.conclusion = "incomplete"
+                code_audit.complete(
+                    self.hub,
+                    db,
+                    identity,
+                    job,
+                    code_audit.Complete(**lease, content=content),
                     str(row.id),
                     generation_report=report,
                 )

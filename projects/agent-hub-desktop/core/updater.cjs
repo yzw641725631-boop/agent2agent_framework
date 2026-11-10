@@ -34,7 +34,7 @@ async function readEnvelope(response) {
   let bytes = 0;
   for await (const chunk of response.body) {
     bytes += chunk.byteLength;
-    if (bytes > 16384) throw new Error('Release response is too large');
+    if (bytes > 65536) throw new Error('Release response is too large');
     chunks.push(Buffer.from(chunk));
   }
   return JSON.parse(Buffer.concat(chunks));
@@ -67,7 +67,7 @@ class Updater extends EventEmitter {
 
   async readRecord(name) {
     try {
-      const record = await readJson(this.file(name));
+      const record = await readJson(this.file(name),65536);
       return { ...record, release: verifiedRelease(record.envelope, this.channel.publicKey) };
     } catch { return null; }
   }
@@ -172,6 +172,8 @@ class Updater extends EventEmitter {
         UPDATE_METADATA_ROLLBACK: '发布清单版本回退，项目操作已暂停。请联系管理员。',
         UPDATE_METADATA_REUSED: '发布清单编号被重复使用，项目操作已暂停。请联系管理员。',
         UPDATE_METADATA_INVALID: '发布清单缺少有效的新鲜度信息。请联系管理员更新清单。',
+        UPDATE_TRUST_ROLLBACK: '更新签名密钥版本回退，已暂停项目操作，请联系管理员。',
+        UPDATE_TRUST_EXPIRED: '更新签名密钥授权已到期或时间异常，请联系管理员续签。',
       };
       return this.set('unavailable', code,
         messages[code] || '无法核验发布清单。请恢复连接后重新检查版本。');

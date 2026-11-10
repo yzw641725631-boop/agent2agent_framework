@@ -1,0 +1,12 @@
+# Combine with the verified 0.18.0 compose file after migration to 0030.
+services:
+  api:
+    image: agent-hub:0.18.0-schema0030
+  document-worker:
+    image: agent-hub:0.18.0-schema0030
+  memory-worker:
+    image: agent-hub:0.18.0-schema0030
+  embedding-worker:
+    image: agent-hub:0.18.0-schema0030
+  generation-worker:
+    image: agent-hub:0.18.0-schema0030

@@ -10,7 +10,7 @@ const array=(items,maxItems)=>({type:'array',items,maxItems});
 const lease={expected_version:version,instance_id:id,lease_epoch:version};
 const content=object({conclusion:{type:'string',enum:['pass','fail','incomplete']},summary:str(10,4000),
   checkout_commit:{type:'string',pattern:'^([a-f0-9]{40}|[a-f0-9]{64})$'},
-  source_basis:{type:'string',enum:['exact_checkout','archived_worktree']},reviewed_paths:array(str(1,800),1000),
+  source_basis:{type:'string',enum:['exact_checkout','exact_git_objects','archived_worktree']},reviewed_paths:array(str(1,800),1000),
   rule_checks:{type:'object',maxProperties:63,additionalProperties:{type:'string',enum:['pass','fail','not_applicable','unverified']}},
   findings:array(object({severity,rule_id:ruleId,path:str(1,800),line:{type:'integer',minimum:1,maximum:10000000},
     title:str(1,200),evidence:str(10,2000),recommendation:str(10,2000)}),100),

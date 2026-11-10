@@ -27,8 +27,9 @@ async function main() {
   if (code !== 0) throw new Error('Installer build did not complete');
   await verifyTree(bundle, integrity);
   const file = path.join(root, config.directories.output, `AgentHub-Setup-${version}.exe`);
+  const signing=require('./windows-signing.cjs').sign(file);
   const result = { version, file, bytes: (await fs.stat(file)).size, sha256: await hashFile(file),
-    type: 'Windows x64 per-user NSIS installer', authenticode_signed: false };
+    type: 'Windows x64 per-user NSIS installer', ...signing };
   await fs.writeFile(file + '.sha256', `${result.sha256}  ${path.basename(file)}\n`);
   await fs.writeFile(path.join(root, config.directories.output, 'installer.json'), JSON.stringify(result, null, 2));
   const pkg = await readJson(path.join(bundle, 'resources', 'app', 'package.json'));

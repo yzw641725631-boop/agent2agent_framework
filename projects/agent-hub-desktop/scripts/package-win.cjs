@@ -24,6 +24,7 @@ async function main(){
       OriginalFilename:'Agent Hub.exe',CompanyName:'Agent Hub',
     },
   });
+  require('./windows-signing.cjs').sign(path.join(target,'Agent Hub.exe'));
   const app=path.join(target,'resources/app');await fs.mkdir(app,{recursive:true});
   for(const item of ['main.cjs','preload.cjs','core','renderer','assets'])await fs.cp(path.join(root,item),path.join(app,item),{recursive:true});
   await fs.cp(path.resolve(root,'../../skills/agent-hub'),path.join(app,'skills/agent-hub'),{recursive:true});

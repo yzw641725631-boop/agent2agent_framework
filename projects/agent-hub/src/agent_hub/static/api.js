@@ -5,6 +5,10 @@ const encode = value => btoa(String.fromCharCode(...new Uint8Array(value)))
 const json = value => encode(encoder.encode(JSON.stringify(value)));
 
 export const messages = {
+  RECOVERY_CODE_INVALID:'恢复码无效、已使用或已过期。请使用当前批次的恢复码。',
+  OAUTH_ACCESS_DENIED:'此授权请求不属于当前账号和浏览器设备，或已过期。请使用已获批准的设备重新发起。',
+  OAUTH_INVALID_GRANT:'连接对应的账号、设备或项目授权当前不可用，请核对审批状态。',
+  OAUTH_INVALID_CLIENT:'该远程连接不存在或已被撤销。',
   GENERATION_ENDPOINT_INVALID:'模型接口必须为公网 HTTPS 完整地址，使用 443 端口并以 /chat/completions 结尾。',
   GENERATION_NEW_ENDPOINT_KEY_REQUIRED:'更换模型地址时请重新填写该服务的密钥。',
   GENERATION_CONFIGURATION_VERSION_CONFLICT:'模型设置已更新，请刷新后重新保存。',
@@ -222,6 +226,7 @@ export class Client {
     catch { throw new Error('连接中断。请保留输入，确认网络恢复后再操作。'); }
     const data = await response.json();
     if (!response.ok) {
+      if(!data.code && data.error)data.code='OAUTH_'+String(data.error).toUpperCase();
       if (data.code === 'SESSION_EXPIRED_OR_REVOKED' && this.session && !options.noRefresh && !options.setup && !options.enrollment && !options.token) {
         if (!this.refreshing) this.refreshing = this.request('POST', '/api/auth/refresh', {}, {token: this.session.refresh_token, noRefresh: true})
           .then(result => { this.session = result; }).finally(() => { this.refreshing = null; });

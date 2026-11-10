@@ -68,6 +68,7 @@ class Call(Identity, Base):
     encrypted_result: Mapped[str | None] = mapped_column(Text)
     error_code: Mapped[str | None] = mapped_column(String(100))
     finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    source_receipt: Mapped[dict | None] = mapped_column(JSONB)
 
 
 class RetryRequest(Identity, Base):
@@ -109,7 +110,16 @@ class PolicyInput(S.Input):
     enabled: bool = False
     distillation: bool = True
     guides: bool = False
+    code_audit: bool = False
+    reviewer_user_id: uuid.UUID | None = None
+    reviewer_device_id: uuid.UUID | None = None
     reason: str = Field(min_length=10, max_length=2000)
+
+    @model_validator(mode="after")
+    def audit_actor(self):
+        if self.code_audit and not (self.reviewer_user_id and self.reviewer_device_id):
+            raise ValueError("Background code review requires an explicitly approved reviewer and device")
+        return self
 
 
 class RetryInput(S.Input):
@@ -185,6 +195,9 @@ def policy_view(row):
             "enabled": False,
             "distillation": True,
             "guides": False,
+            "code_audit": False,
+            "reviewer_user_id": None,
+            "reviewer_device_id": None,
         }
     )
 
@@ -200,6 +213,7 @@ def call_view(row):
         "output_tokens": row.output_tokens,
         "model": row.provider_model,
         "has_saved_result": bool(row.encrypted_result),
+        "source_receipt": row.source_receipt,
         "execution_location": "server",
         "billing_independently_verified": False,
     }
@@ -260,7 +274,7 @@ def install(app, hub, actor, mutate, dependency):
                 author_id=identity.user.id,
                 device_id=identity.device.id,
                 instance_id=uuid.uuid4(),
-                content=body.model_dump(exclude={"expected_version"}),
+                content=body.model_dump(mode="json", exclude={"expected_version"}),
             )
             db.add(row)
             hub.audit(

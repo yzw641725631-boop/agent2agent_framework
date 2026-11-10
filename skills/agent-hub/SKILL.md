@@ -7,6 +7,8 @@ description: 安装和使用 Agent Hub 桌面协作框架，通过 MCP 接入授
 
 安装与更新桌面端、Skill 和 MCP 时，先读 [Windows 安装](references/install-windows.md)。已有可用连接时直接使用工具，不重复安装。
 
+用户选择 HTTP 远程连接时按[远程 MCP](references/remote-mcp.md)完成超管预注册与本人授权。远程工具只用于云端读取与进展协调；下面涉及本机开发、代码采集和卸载的流程需要桌面连接。
+
 ## 接入项目
 
 1. 在安装连接 `agent-hub-setup` 调用 `hub_connection_status`。需要登录或设备验证时，引导用户在 PC 桌面端完成；不要向工具、命令或聊天传入账号密码、邮箱验证码。
@@ -46,7 +48,7 @@ description: 安装和使用 Agent Hub 桌面协作框架，通过 MCP 接入授
 - 需要交付 Git 提交且连接提供 `hub_push_task` 时：先提交本机代码，再保存含该提交号的最新 checkpoint 日志，在租约有效时推送，核对 `remote_verified`、`delivery_receipt`、`git_commit` 和任务分支，最后提交评审。推送不会合并或部署。细节见[项目组与仓库](references/repositories.md)。
 - `hub_report_progress` 可补充通告，但 `status: completed` 不会改变正式任务状态，也不代表 Git 推送、合并或部署成功。
 - 仓库要求外部交付凭据时按[交付核验](references/delivery-evidence.md)逐项核验当前提交的 PR、测试、合并及环境结果。只读回执不执行部署，也不证明线上服务持续健康；不能用旧成功替代最新失败。
-- 推送或提交响应包含 `code_audit.required: true` 时，使用 `agent-hub-code-review` 处理只读审计。开发参与者交给独立获准审查者；排队和通知不算执行完成。规范或提交改变须复审；审计报告与必需 CI 均满足后才能通过已启用的任务关口。
+- 推送或提交响应包含 `code_audit.required: true` 时，核对待办的 `execution_policy.server_enabled`：已开启后台代码审查时查看结果，不重复认领；未开启时使用 `agent-hub-code-review`。开发参与者交给独立获准审查者；排队和通知不算执行完成。规范或提交改变须复审；审计报告与必需 CI 均满足后才能通过已启用的任务关口。
 - 报告失败时保留本地原记录并说明待补报，不把未确认的上报说成已共享。记录中不写凭证、完整环境文件或无关业务数据。
 - 提供快照功能的新版桌面分别上传日志和代码：`server_confirmed` 仅确认日志；`server_code_backup: true` 和 `code_receipt` 才确认代码工作树已接收。失败保留本机记录，在 PC“本机检查点”查看或重试，不将共享日志当作代码备份。
 - 接手时先展开获准日志，核对 `snapshot`。若工具提供 `hub_download_work_backup`，用稳定 `operation_id` 取回到本机加密检查点，再由 PC 导出到新目录并核验；代码正文不返回模型。不覆盖现有工程、不恢复 Git 历史、不自动认领任务，细节见工作记录参考。

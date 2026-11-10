@@ -2,17 +2,19 @@
 
 源码与安装入口：<https://github.com/yzw641725631-boop/agent2agent_framework>。EXE 和签名在线更新包由该仓库指定的正式服务器提供。
 
-当前一体安装针对 Windows x64，自动配置 Codex、Claude Code、Cursor。用户已经说明开发工具时直接选择；其他开发工具和 macOS 暂不套用未验证的安装路径。
+当前一体安装针对 Windows x64，支持配置 Codex、Claude Code、Cursor、Qoder、WorkBuddy、CodeBuddy、TRAE。参数依次为 `codex`、`claude`、`cursor`、`qoder`、`workbuddy`、`codebuddy`、`trae`。配置写入、宿主信任加载、原生钩子和实际 CLI 执行分别核验；七种配置合并通过测试不表示七种工具已在实机运行。TRAE 应在其 MCP 编辑页核对实际配置路径；macOS 暂缓。
 
 首次安装无需预先安装本 Skill。Agent 读取框架仓库 README 和安装脚本，从仓库取安装入口及 `releases/windows-x64.json`，在临时安装目录执行。用户的业务代码目录与框架安装源码分开。
 
-从框架仓库工作目录运行以下命令，`codex` 可替换为 `claude` 或 `cursor`：
+从框架仓库工作目录运行以下命令，`codex` 可替换为上述工具参数，也可用逗号指定多个：
 
 ```powershell
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/install-windows.ps1 -Harness codex
 ```
 
 这里的执行策略参数只作用于本次 PowerShell 进程，不更改系统长期设置。遵守当前宿主对脚本执行、网络与 MCP 使用的权限要求，不修改其审批、信任或沙箱策略。
+
+工具使用了自定义配置目录时，在其 MCP 设置页确认实际文件，再用 `-McpConfigPath 'C:\绝对路径\mcp.json'` 指定。自定义路径一次只用于一个工具；Codex 使用 `.toml`，其他工具使用 `.json`。保持原有连接并记录安装归属，不把模板路径当成实机加载证据。
 
 安装入口负责校验并安装或复用桌面端、安装同一发行版的 Skill、合并开发工具的用户级 MCP 配置。已有其他连接与设置保留；同名未受管配置有冲突时停止并保留原文件。不要自动删除冲突项以绕过检查。重试可以复用已成功安装的程序。
 

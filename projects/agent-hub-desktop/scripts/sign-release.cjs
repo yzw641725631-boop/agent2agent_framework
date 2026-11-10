@@ -11,19 +11,19 @@ const { hashFile, releaseName, compareVersions, verifiedRelease, verifyFreshness
 async function main(keyPath, options = {}) {
   if (!keyPath || !path.isAbsolute(keyPath)) throw new Error('Pass the absolute path to the protected release key');
   const key = crypto.createPrivateKey(await fs.readFile(keyPath));
-  const pinned = crypto.createPublicKey(publicKey).export({ type: 'spki', format: 'der' });
-  if (!crypto.createPublicKey(key).export({ type: 'spki', format: 'der' }).equals(pinned)) {
-    throw new Error('Release key does not match the public key built into the client');
-  }
+  const trust=require('../core/update-trust.cjs');
+  const chain=options['root-chain']?JSON.parse(await fs.readFile(path.resolve(options['root-chain']),'utf8')):undefined;
+  const root=trust.resolve(chain,publicKey);
+  if(!root.keys[trust.keyId(crypto.createPublicKey(key).export({type:'spki',format:'pem'}))])throw new Error('Release key is not authorized by the trusted root');
   const directory = path.resolve(__dirname, '..', 'dist');
   // Preserve the published feed locally before signing, including renewals of the
   // same ZIP. Never reset this sequence when creating a new software version.
   const stateFile = path.join(directory, 'stable.json');
   let previous;
-  try { previous = verifiedRelease(await readJson(stateFile), publicKey); }
+  try { previous = verifiedRelease(await readJson(stateFile,65536), publicKey); }
   catch (error) { if (error.code !== 'ENOENT') throw error; }
   if (options.previous) {
-    const published = verifiedRelease(await readJson(path.resolve(options.previous)), publicKey);
+    const published = verifiedRelease(await readJson(path.resolve(options.previous),65536), publicKey);
     if (!previous || (published.metadata_version || 0) > (previous.metadata_version || 0)) previous = published;
   }
   const sequence = options.sequence === undefined ? (previous?.metadata_version || 0) + 1 : Number(options.sequence);
@@ -43,8 +43,21 @@ async function main(keyPath, options = {}) {
   const payload = Buffer.from(JSON.stringify(release));
   const envelope = { payload: payload.toString('base64url'),
     signature: crypto.sign(null, payload, key).toString('base64url') };
-  verifiedRelease(envelope, publicKey);
-  verifyFreshness(release, previous);
+  if(chain) {
+    const signers=[key];
+    for(const file of (options['additional-keys'] || '').split(',').filter(Boolean)) {
+      if(!path.isAbsolute(file))throw new Error('Signing key path must be absolute');
+      signers.push(crypto.createPrivateKey(await fs.readFile(file)));
+    }
+    envelope.root_chain=chain;envelope.signatures=signers.map(value=>trust.sign(payload,value));
+    if(options['bridge-key']) {
+      if(!path.isAbsolute(options['bridge-key']))throw new Error('Bridge key path must be absolute');
+      const bridge=crypto.createPrivateKey(await fs.readFile(options['bridge-key']));
+      if(trust.keyId(crypto.createPublicKey(bridge).export({type:'spki',format:'pem'}))!==trust.keyId(publicKey))throw new Error('Bridge key does not match legacy clients');
+      envelope.signature=crypto.sign(null,payload,bridge).toString('base64url');
+    }
+  }
+  verifyFreshness(verifiedRelease(envelope, publicKey), previous);
   if (previous && compareVersions(version, previous.version) < 0) {
     throw new Error('Refusing to sign an older application version');
   }
@@ -59,7 +72,7 @@ async function main(keyPath, options = {}) {
 const args = process.argv.slice(3), options = {};
 for (let i = 0; i < args.length; i += 2) {
   const name = args[i].slice(2);
-  if (!args[i].startsWith('--') || !['previous', 'sequence', 'days'].includes(name) || !args[i + 1]) {
+  if (!args[i].startsWith('--') || !['previous', 'sequence', 'days','root-chain','additional-keys','bridge-key'].includes(name) || !args[i + 1]) {
     throw new Error('Use --previous <saved-feed> --sequence <increasing-integer> --days <1..31>');
   }
   options[name] = args[i + 1];

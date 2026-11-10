@@ -155,7 +155,7 @@ class ReportContent(S.Input):
     conclusion: Literal["pass", "fail", "incomplete"]
     summary: str = Field(min_length=10, max_length=4000)
     checkout_commit: str = Field(pattern=r"^[a-f0-9]{40}$|^[a-f0-9]{64}$")
-    source_basis: Literal["exact_checkout", "archived_worktree"]
+    source_basis: Literal["exact_checkout", "exact_git_objects", "archived_worktree"]
     reviewed_paths: list[str] = Field(max_length=1000)
     rule_checks: dict[str, Literal["pass", "fail", "not_applicable", "unverified"]] = Field(max_length=63)
     findings: list[Finding] = Field(default_factory=list, max_length=100)
@@ -278,6 +278,7 @@ def report_view(row):
 
 
 def view(db, row, *, details=False):
+    from . import generation
     result = {
         "id": str(row.id),
         "task_id": str(row.task_id),
@@ -300,8 +301,10 @@ def view(db, row, *, details=False):
         "reason": row.reason,
         "current": current(db, row),
         "created_at": row.created_at.isoformat(),
+        "execution_policy": generation.policy_hint(db, row.repository_id, "code_audit"),
     }
     if details:
+        result["generation"] = generation.view(db, row, "code_audit")
         result["reports"] = [
             report_view(r)
             for r in db.scalars(
@@ -407,7 +410,7 @@ def claim(hub, db, identity, row, body, request_id):
     return view(db, row)
 
 
-def complete(hub, db, identity, row, body, request_id):
+def complete(hub, db, identity, row, body, request_id, *, generation_report=None):
     live(hub, db, identity, row, body.instance_id, body.lease_epoch)
     version(row, body.expected_version)
     if body.source_hash != row.source_hash or body.content.checkout_commit != row.git_commit:
@@ -421,7 +424,7 @@ def complete(hub, db, identity, row, body, request_id):
     passed = (
         content["conclusion"] == "pass"
         and not content["gaps"]
-        and content["source_basis"] == "exact_checkout"
+        and content["source_basis"] in {"exact_checkout", "exact_git_objects"}
         and set(source.changed_paths) <= set(content["reviewed_paths"])
         and all(v in {"pass", "not_applicable"} for v in content["rule_checks"].values())
         and not any(f["severity"] in config["blocking_severities"] for f in content["findings"])
@@ -455,6 +458,9 @@ def complete(hub, db, identity, row, body, request_id):
     row.state, row.lease_until, row.version = "completed", None, row.version + 1
     row.reason = content["summary"][:2000]
     db.flush()
+    if generation_report is not None:
+        from . import generation
+        generation.record(db, identity, row, generation_report, "code_audit")
     hub.audit(
         db,
         identity.user.id,

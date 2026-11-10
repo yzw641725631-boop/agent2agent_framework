@@ -227,7 +227,7 @@ async function assembleDialog(binding){
   const repositories=registry.items.filter(repo=>repo.status==='active' && repo.capabilities.includes('code:read'));
   if(!repositories.length)throw new Error('当前没有获准的代码仓库，请先在后台接入仓库并批准权限。');
   const picks=repositories.map(repo=>({repo,input:el('input',{type:'checkbox',checked:true})}));
-  const harness=el('select',{},[['codex','Codex'],['claude','Claude Code'],['cursor','Cursor']].map(([value,label])=>el('option',{value},label)));
+  const harness=el('select',{},[['codex','Codex'],['claude','Claude Code'],['cursor','Cursor'],['qoder','Qoder'],['workbuddy','WorkBuddy'],['codebuddy','CodeBuddy'],['trae','TRAE']].map(([value,label])=>el('option',{value},label)));
   const progress=text('p','','note');
   const operationId=crypto.randomUUID();
   openDialog(text('h2','组装项目组仓库'),text('p',binding.workspace,'mono'),

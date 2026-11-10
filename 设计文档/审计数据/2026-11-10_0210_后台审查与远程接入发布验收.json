@@ -1,0 +1,191 @@
+{
+  "schema": 1,
+  "created_at": "2026-11-10T15:42:44.651595+00:00",
+  "scope": "background-code-review-remote-oauth-recovery-host-install-and-update-trust",
+  "backend": "0.19.0",
+  "desktop": "0.21.0",
+  "database_schema": "0030",
+  "backend_tests": {
+    "passed": 385,
+    "failed": 0,
+    "database": "isolated-real-postgresql-on-server",
+    "log_sha256": "fa4ac87dfd9f9bb36c9a69ca8ab1ca23528871da37b0f0b9329ac3e684736dca"
+  },
+  "previous_runtime_tests": {
+    "passed": 365,
+    "failed": 0,
+    "business_version": "0.18.0",
+    "explicit_schema_declaration": "0030",
+    "log_sha256": "e7ee8e9e44c2615248ed98da285943a5f842eefe42b1a975908686625e0f46c1"
+  },
+  "desktop_tests": {
+    "passed": 179,
+    "failed": 0,
+    "source_hashes_verified": true,
+    "log_sha256": "0a793d59ebe8c01ab3b7b4801e29661dea47667c12960c3f1067f40d6a850584"
+  },
+  "web_ui": {
+    "real_electron": true,
+    "backend": "synthetic-fixtures",
+    "oauth_registration_and_approval": true,
+    "self_session_revocation": true,
+    "recovery_codes_rotated_and_cleared": true,
+    "reviewer_device_selection": true,
+    "untrusted_text_not_executed": true,
+    "horizontal_overflow": false
+  },
+  "public_gateway": {
+    "https": true,
+    "landing_page": true,
+    "assets_match_source": true,
+    "oauth_discovery": true,
+    "protected_resource_discovery": true,
+    "unauthenticated_mcp_rejected": true,
+    "bearer_challenge": true,
+    "unauthenticated_sensitive_api_rejected": true,
+    "unregistered_origin_rejected": true,
+    "user_credentials_used": false,
+    "authentication_bypassed": false
+  },
+  "deployed_sources_match_verified_release": true,
+  "backend_image_id": "sha256:6c1c8dceff98f9a59a5c75196c1bf368ad59da6943d220196cf6e650e76d5b5f",
+  "rollback_image_id": "sha256:42ae9e6eb205fdbcb15476cd4c024020162079a0fb95a385064ab07862813e3c",
+  "synthetic_database": {
+    "upgrade_preserved_old_tables": 74,
+    "upgrade_preserved_rows": 211,
+    "exact_restore_rows": 212,
+    "restored_tables": 79,
+    "fresh_and_upgraded_structure_equal": true,
+    "archive_and_memory_audited": true,
+    "semantic_vectors": 4,
+    "real_business_pilot": false
+  },
+  "production_upgrade": {
+    "passed": true,
+    "migration_performed": true,
+    "old_schema": "0027",
+    "new_schema": "0030",
+    "volume_preserved": true,
+    "existing_rows_preserved": true,
+    "verified_tables": 74,
+    "verified_rows": 61
+  },
+  "backup_restore": {
+    "passed": true,
+    "structure_verified": true,
+    "role_bindings_verified": true,
+    "verified_tables": 79,
+    "verified_rows": 62,
+    "offsite_confirmed": false
+  },
+  "public_desktop": {
+    "version": "0.21.0",
+    "metadata_sequence": 22,
+    "ed25519_feed_verified": true,
+    "zip_sha256": "16e413579c5ed984db332b41457bb61f68535cd5fac2f41d233477a91880e9ae",
+    "installer_sha256": "7b2fd5e8e7d7e654e4be0e15af4a5219d7306cc2668a47143b0b6654828fb4d1",
+    "files_sha256": "2b43e2f5796cada28270a36ff68afe4e86904a1d0d70a744a45a764bdfbc2f6d",
+    "public_gateway_full_bytes_verified": true,
+    "authenticode_signed": false
+  },
+  "installed_desktop": {
+    "passed": true,
+    "files_verified": 188,
+    "skill_files_verified": 18,
+    "two_managed_skills": true,
+    "codex_configuration_updated": true,
+    "real_stdio_mcp": true,
+    "login_state": "LOGIN_REQUIRED",
+    "authentication_bypassed": false,
+    "online_upgrade_from": "0.20.0",
+    "online_upgrade_passed": true
+  },
+  "background_code_review": {
+    "implemented": true,
+    "default_enabled": false,
+    "server_side_code_model_calls_added": true,
+    "explicit_repository_code_egress_consent": true,
+    "independent_user_and_approved_device_required": true,
+    "fixed_repository_and_sha": true,
+    "git_objects_and_blob_hashes_verified": true,
+    "repository_code_not_executed": true,
+    "max_files": 40,
+    "max_provider_requests": 85,
+    "source_deadline_seconds": 45,
+    "unknown_billing_requires_decision": true,
+    "missing_coverage_blocks_pass": true,
+    "ci_verified_separately": true,
+    "real_provider_test_performed": false,
+    "real_provider_quality_or_billing_verified": false
+  },
+  "remote_mcp": {
+    "implemented": true,
+    "public_discovery_verified": true,
+    "preapproved_clients_only": true,
+    "pkce_s256": true,
+    "exact_callback_and_resource_binding": true,
+    "one_time_codes": true,
+    "refresh_rotation_and_replay_family_revocation": true,
+    "authorization_rechecked_each_call": true,
+    "source_family_logout_invalidates": true,
+    "hash_only_token_storage": true,
+    "streamable_http_json": true,
+    "sse": false,
+    "local_execution_and_closeout_via_desktop": true,
+    "third_party_host_interoperability_verified": false
+  },
+  "recovery_codes": {
+    "implemented": true,
+    "generated_codes": 10,
+    "random_bits_per_code": 160,
+    "valid_years": 2,
+    "digest_only_storage": true,
+    "display_once": true,
+    "current_password_required": true,
+    "concurrent_one_time_consumption": true,
+    "invalidates_old_sessions_and_grants": true,
+    "bypasses_device_or_email_verification": false
+  },
+  "host_installation": {
+    "supported": [
+      "codex",
+      "claude",
+      "cursor",
+      "qoder",
+      "workbuddy",
+      "codebuddy",
+      "trae"
+    ],
+    "custom_config_file_supported": true,
+    "preserves_other_configuration": true,
+    "seven_host_install_config_tests": true,
+    "installed_locally": [
+      "codex"
+    ],
+    "all_hosts_native_hooks_or_cli_verified": false,
+    "trae_actual_config_path_requires_host_confirmation": true
+  },
+  "update_trust": {
+    "root_rotation_implemented": true,
+    "old_and_new_thresholds": true,
+    "rollback_rejected": true,
+    "max_root_keys": 4,
+    "max_chain_transitions": 16,
+    "production_keys_rotated": false,
+    "certificate_store_authenticode_integration_implemented": true,
+    "authenticode_certificate_configured": false
+  },
+  "operations": {
+    "healthy": true,
+    "remaining_warnings": [
+      "offsite:continuous-copy",
+      "alerts:external-delivery"
+    ]
+  },
+  "secret_scan": {
+    "gitleaks_findings": 0,
+    "protected_local_values_checked": true
+  },
+  "business_pilot_performed": false,
+  "macos_performed": false
+}

@@ -28,6 +28,9 @@ function metadataTime(value) {
 // Artifact verification below also accepts historical releases for startup/recovery.
 // Freshness applies only to an online feed used to authorize normal project work.
 function verifyFreshness(release, previous, { time = Date.now(), checkedAt = 0 } = {}) {
+  if((release.root_version || 1)<(previous?.root_version || 1))throw new MetadataError('UPDATE_TRUST_ROLLBACK');
+  if(release.root_expires_at && (metadataTime(release.root_expires_at)<=time ||
+    metadataTime(release.root_issued_at)>time+clockSkewMs))throw new MetadataError('UPDATE_TRUST_EXPIRED');
   if (!Number.isSafeInteger(release.metadata_version) || release.metadata_version < 1) {
     throw new MetadataError('UPDATE_METADATA_INVALID');
   }
@@ -70,14 +73,11 @@ function releaseName(version) {
 
 function verifiedRelease(envelope, publicKey) {
   if (typeof envelope?.payload !== 'string' || envelope.payload.length > 4096 ||
-      typeof envelope.signature !== 'string' || envelope.signature.length > 128) {
+      envelope.signature!==undefined && (typeof envelope.signature !== 'string' || envelope.signature.length > 128)) {
     throw new Error('Invalid release envelope');
   }
   const payload = Buffer.from(envelope.payload, 'base64url');
-  const signature = Buffer.from(envelope.signature, 'base64url');
-  if (signature.length !== 64 || !crypto.verify(null, payload, publicKey, signature)) {
-    throw new Error('Invalid release signature');
-  }
+  const root=require('./update-trust.cjs').verifyEnvelope(envelope,publicKey,payload);
   const release = JSON.parse(payload.toString('utf8'));
   if (release.schema !== 1 || release.channel !== 'stable' || release.platform !== 'win-x64' ||
       !Number.isSafeInteger(release.bytes) || release.bytes <= 0 || release.bytes > maxArchiveBytes ||
@@ -86,6 +86,8 @@ function verifiedRelease(envelope, publicKey) {
     throw new Error('Invalid signed release fields');
   }
   releaseName(release.version);
+  Object.defineProperties(release,{root_version:{value:root.version,enumerable:false},
+    root_expires_at:{value:root.expires_at,enumerable:false},root_issued_at:{value:root.issued_at,enumerable:false}});
   return release;
 }
 
@@ -101,8 +103,8 @@ async function readSmallFile(file, maxBytes = 16384) {
   return fs.readFile(file);
 }
 
-async function readJson(file) {
-  return JSON.parse(await readSmallFile(file));
+async function readJson(file, maxBytes=16384) {
+  return JSON.parse(await readSmallFile(file,maxBytes));
 }
 
 async function writeJson(file, value) {

@@ -10,6 +10,16 @@ const { install, merge } = require('../core/host-install.cjs');
 
 const entry = { type: 'stdio', command: 'C:\\Program Files\\Agent Hub\\Agent Hub.exe',
   args: ['bridge.cjs', '--setup', '--connection-id', 'one'], env: { ELECTRON_RUN_AS_NODE: '1' } };
+
+test('explicit nonstandard config preserves other servers and is limited to one selected host',async t=>{
+  const f=await fixture(t),configFile=path.join(f.home,'custom-trae.json');
+  await fs.writeFile(configFile,JSON.stringify({mcpServers:{other:{command:'other.exe'}}}));
+  const first=await install({...f.options,hosts:['trae'],configFile});
+  assert.equal(first.targets[0].configuration,configFile);
+  assert.equal(JSON.parse(await fs.readFile(configFile,'utf8')).mcpServers.other.command,'other.exe');
+  assert.equal((await install({...f.options,hosts:['trae'],configFile})).changed,false);
+  await assert.rejects(install({...f.options,hosts:['trae','cursor'],configFile}));
+});
 async function fixture(t) {
   const base = await fs.realpath(os.tmpdir()), root = await fs.mkdtemp(path.join(base, 'agent-hub-install-'));
   const home = path.join(root, '用户 home'), directory = path.join(root, 'data');
@@ -101,4 +111,43 @@ test('junctions in configuration directories are rejected without writing throug
   await fs.symlink(outside, path.join(f.home, '.cursor'), process.platform === 'win32' ? 'junction' : 'dir');
   await assert.rejects(install({ ...f.options, hosts: ['cursor'] }), { code: 'CONFIGURATION_CONFLICT' });
   assert.deepEqual(await fs.readdir(outside), []);
+});
+
+test('seven hosts install both skills, keep shared ownership and repeat without changes', async t=>{
+  const f=await fixture(t),hosts=require('../core/host-install.cjs').hosts;
+  const options={...f.options,hosts,additionalSkills:[{name:'agent-hub-code-review',
+    directory:path.resolve(__dirname,'../../../skills/agent-hub-code-review')}]};
+  const installed=await install(options);
+  assert.equal(installed.targets.length,7);
+  assert.equal((await install(options)).changed,false);
+  for(const file of ['.qoder/settings.json','.workbuddy/mcp.json','.codebuddy/.mcp.json']) {
+    const content=jsonc.parse(await fs.readFile(path.join(f.home,file),'utf8'));
+    assert.equal(content.mcpServers['agent-hub-setup'].command,entry.command);
+  }
+  for(const directory of ['.qoder','.codebuddy','.agents']) {
+    await fs.access(path.join(f.home,directory,'skills/agent-hub/SKILL.md'));
+    await fs.access(path.join(f.home,directory,'skills/agent-hub-code-review/SKILL.md'));
+  }
+  // Both tools use .codebuddy/skills; a later upgrade must mutate those files once.
+  assert.equal((await install({...options,entry:{...entry,args:['next.cjs']}})).changed,true);
+});
+
+test('CodeBuddy respects first-existing legacy config without hiding other servers',async t=>{
+  const f=await fixture(t),legacy=path.join(f.home,'.codebuddy/mcp.json');
+  await fs.mkdir(path.dirname(legacy));
+  await fs.writeFile(legacy,'{ "mcpServers": { "existing": {"command":"keep.exe"} } }');
+  const result=await install({...f.options,hosts:['codebuddy']});
+  assert.equal(result.targets[0].configuration,legacy);
+  assert.equal(jsonc.parse(await fs.readFile(legacy,'utf8')).mcpServers.existing.command,'keep.exe');
+  await assert.rejects(fs.access(path.join(f.home,'.codebuddy/.mcp.json')),{code:'ENOENT'});
+});
+
+test('project installs for seven tools share their config safely and remove only owned entries',async t=>{
+  const f=await fixture(t),workspace=await fs.realpath(f.home),receiptDirectory=path.join(f.directory,'project');
+  const all=require('../core/host-install.cjs');
+  await install({...f.options,workspace,receiptDirectory,skillDirectory:null,hosts:all.hosts});
+  const result=await all.uninstallProject({workspace,receiptDirectories:[receiptDirectory],
+    hookDirectory:path.join(f.directory,'hooks'),name:f.options.name});
+  assert.equal(result.state,'complete');assert.equal(result.business_files_deleted,false);
+  assert.equal(jsonc.parse(await fs.readFile(path.join(workspace,'.mcp.json'),'utf8')).mcpServers?.[f.options.name],undefined);
 });

@@ -3,6 +3,7 @@
 param(
     [string[]]$Harness = @('auto'),
     [string]$ManifestPath = '',
+    [string]$McpConfigPath = '',
     [string]$UserDataDirectory = (Join-Path $env:APPDATA 'Agent Hub')
 )
 
@@ -43,10 +44,13 @@ function Get-AgentHubHosts([string[]]$Requested) {
         if ($env:CODEX_HOME -or (Test-Path -LiteralPath (Join-Path $env:USERPROFILE '.codex')) -or (Get-Command codex -ErrorAction SilentlyContinue)) { $detected += 'codex' }
         if ((Test-Path -LiteralPath (Join-Path $env:USERPROFILE '.claude')) -or (Get-Command claude -ErrorAction SilentlyContinue)) { $detected += 'claude' }
         if ((Test-Path -LiteralPath (Join-Path $env:USERPROFILE '.cursor')) -or (Get-Command cursor -ErrorAction SilentlyContinue)) { $detected += 'cursor' }
-        if ($detected.Count -ne 1) { throw '请使用 -Harness codex、claude 或 cursor 指明当前开发工具；可用逗号选择多个。' }
+        foreach ($hostName in @('qoder', 'workbuddy', 'codebuddy', 'trae')) {
+            if ((Test-Path -LiteralPath (Join-Path $env:USERPROFILE ('.' + $hostName))) -or (Get-Command $hostName -ErrorAction SilentlyContinue)) { $detected += $hostName }
+        }
+        if ($detected.Count -ne 1) { throw '请使用 -Harness 指明当前工具：codex、claude、cursor、qoder、workbuddy、codebuddy、trae；可用逗号选择多个。' }
         $selected = $detected
     }
-    if (-not $selected.Count -or @($selected | Where-Object { $_ -notin @('codex', 'claude', 'cursor') }).Count) { throw '自动安装目前支持 codex、claude、cursor。' }
+    if (-not $selected.Count -or @($selected | Where-Object { $_ -notin @('codex', 'claude', 'cursor', 'qoder', 'workbuddy', 'codebuddy', 'trae') }).Count) { throw '安装支持 codex、claude、cursor、qoder、workbuddy、codebuddy、trae。' }
     return $selected
 }
 
@@ -215,6 +219,7 @@ function Invoke-AgentHubSetupCore {
         $arguments = @((Join-Path $directory 'resources\app\core\setup-install.cjs'), '--data-dir', $dataDirectory,
             '--executable', $executable, '--hosts', ($selected -join ','), '--home', $env:USERPROFILE)
         if ($env:CODEX_HOME) { $arguments += @('--codex-home', $env:CODEX_HOME) }
+        if ($McpConfigPath) { $arguments += @('--config-file', (Assert-AgentHubPath $McpConfigPath)) }
         $result = & $executable @arguments 2>&1 | Out-String
         if ($LASTEXITCODE -ne 0) { throw ('Skill 或 MCP 配置未完成；原配置保留，可修复冲突后重试。' + [Environment]::NewLine + $result) }
         $installed = $result | ConvertFrom-Json

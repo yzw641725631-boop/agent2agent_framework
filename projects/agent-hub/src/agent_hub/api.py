@@ -265,6 +265,11 @@ def create_app(
     closeouts.install(app, hub, actor, token, proof, db_dependency)
     agent_dispatch.install(app, hub, actor, mutate, db_dependency)
     accounts.install(app, hub, actor, proof, mutate, db_dependency, security_sessions)
+    from . import offline_recovery
+    offline_recovery.install(app, hub, actor, proof, db_dependency, security_sessions)
+    from . import oauth, remote_mcp
+    oauth.install(app, hub, actor, mutate, db_dependency, security_sessions)
+    remote_mcp.install(app, hub, db_dependency, security_sessions)
     from . import insights
     insights.install(app, hub, actor, mutate, semantic_query, db_dependency, security_sessions)
     from . import guides

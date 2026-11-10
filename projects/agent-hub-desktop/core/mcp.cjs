@@ -79,7 +79,7 @@ const setupTools=[{
   name:'hub_connect_project',title:'接入本地项目',
   description:'按用户要求，将获准的平台项目绑定到已存在的本地工程目录，并合并该工程的 MCP 配置。每个生成的连接固定到该项目，不改变其他对话的项目。之后需要重新加载开发工具并完成其项目信任确认。不会克隆代码。',
   inputSchema:{type:'object',properties:{project_id:{type:'string',format:'uuid'},repository_id:{type:'string',format:'uuid'},workspace:{type:'string',description:'用户指定的现有工程目录，必须为绝对路径'},
-    harness:{type:'string',enum:['codex','claude','cursor']}},required:['project_id','workspace','harness'],additionalProperties:false},
+    harness:{type:'string',enum:['codex','claude','cursor','qoder','workbuddy','codebuddy','trae']}},required:['project_id','workspace','harness'],additionalProperties:false},
   annotations:{readOnlyHint:false,destructiveHint:false,idempotentHint:true},
 }];
 function object(value){return value && typeof value==='object' && !Array.isArray(value);}

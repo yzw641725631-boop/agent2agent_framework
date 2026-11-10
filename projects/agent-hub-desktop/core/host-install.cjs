@@ -8,7 +8,8 @@ const toml = require('smol-toml');
 const jsonc = require('jsonc-parser');
 const { HubError } = require('./remote.cjs');
 
-const hosts = ['codex', 'claude', 'cursor'];
+const os = require('node:os');
+const hosts = ['codex', 'claude', 'cursor', 'qoder', 'workbuddy', 'codebuddy', 'trae'];
 const digest = value => crypto.createHash('sha256').update(value).digest('hex');
 const same = (left, right) => left === null && right === null || Buffer.isBuffer(left) && Buffer.isBuffer(right) && left.equals(right);
 function plain(value) {
@@ -110,9 +111,32 @@ function merge(text, host, name, rawEntry, receipt = {}) {
 function targetFor(host, { home, codexHome, workspace }) {
   if (!hosts.includes(host)) throw new HubError('UNSUPPORTED_HARNESS');
   if (workspace) return path.join(workspace, ...({ codex: ['.codex', 'config.toml'],
-    claude: ['.mcp.json'], cursor: ['.cursor', 'mcp.json'] })[host]);
-  return host === 'codex' ? path.join(codexHome || path.join(home, '.codex'), 'config.toml') :
-    host === 'claude' ? path.join(home, '.claude.json') : path.join(home, '.cursor', 'mcp.json');
+    claude: ['.mcp.json'], cursor: ['.cursor', 'mcp.json'], qoder: ['.qoder', 'settings.local.json'],
+    workbuddy: ['.workbuddy', 'mcp.json'], codebuddy: ['.mcp.json'], trae: ['.trae', 'mcp.json'] })[host]);
+  if(host==='codex')return path.join(codexHome || path.join(home, '.codex'), 'config.toml');
+  if(host==='claude')return path.join(home,'.claude.json');
+  if(host==='qoder')return path.join(home,'.qoder','settings.json');
+  if(host==='codebuddy')return path.join(home,'.codebuddy','.mcp.json');
+  if(host==='trae') {
+    // TRAE's manual editor is authoritative for nonstandard installations. Do not
+    // alter any enable/trust flags; the host still asks the user to trust the server.
+    const appData=path.resolve(home)===path.resolve(os.homedir()) && process.env.APPDATA ||
+      path.join(home,'AppData','Roaming');
+    return process.platform==='win32'?path.join(appData,'Trae','User','mcp.json'):
+      process.platform==='darwin'?path.join(home,'Library','Application Support','Trae','User','mcp.json'):
+      path.join(home,'.config','Trae','User','mcp.json');
+  }
+  return path.join(home,host==='workbuddy'?'.workbuddy':'.cursor','mcp.json');
+}
+
+async function resolvedTarget(host, options) {
+  const primary=targetFor(host,options);
+  if(host!=='codebuddy')return primary;
+  // CodeBuddy reads the first existing config, it does not merge legacy files.
+  const candidates=options.workspace?[primary,path.join(options.workspace,'mcp.json')]:
+    [primary,path.join(options.home,'.codebuddy','mcp.json'),path.join(options.home,'.codebuddy.json')];
+  for(const candidate of candidates)if(await snapshot(candidate))return candidate;
+  return primary;
 }
 
 async function readReceipt(file) {
@@ -144,9 +168,9 @@ async function skillFiles(directory) {
   return files;
 }
 
-async function planHost({ host, home, codexHome, workspace, receiptDirectory, skillDirectory, additionalSkills=[], name, entry }) {
+async function planHost({ host, home, codexHome, workspace, configFile, receiptDirectory, skillDirectory, additionalSkills=[], name, entry }) {
   if (!/^[a-z][a-z0-9-]{2,79}$/.test(name) || !path.isAbsolute(receiptDirectory)) throw conflict();
-  const target = targetFor(host, { home, codexHome, workspace });
+  const target = configFile || await resolvedTarget(host, { home, codexHome, workspace });
   if (!path.isAbsolute(target)) throw conflict();
   const receiptFile = path.join(receiptDirectory, host + '.json');
   const receipt = await readReceipt(receiptFile);
@@ -161,12 +185,18 @@ async function planHost({ host, home, codexHome, workspace, receiptDirectory, sk
   for (const skill of skills) {
     if(!/^[a-z][a-z0-9-]{2,63}$/.test(skill.name) || !path.isAbsolute(skill.directory))throw conflict();
     const targetSkill = host === 'codex' ? path.join(codexHome || path.join(home, '.agents'), 'skills', skill.name) :
-      path.join(home, host === 'claude' ? '.claude' : '.cursor', 'skills', skill.name);
+      path.join(home,({claude:'.claude',cursor:'.cursor',qoder:'.qoder',workbuddy:'.codebuddy',
+        codebuddy:'.codebuddy',trae:'.agents'})[host], 'skills', skill.name);
     if(skill.name==='agent-hub')installedSkill=targetSkill;
     for (const source of await skillFiles(skill.directory)) {
       const file = path.join(targetSkill, ...source.name.split('/'));
       const before = await snapshot(file);
-      if (before && !before.equals(source.bytes) && digest(before) !== receipt.data.files[file]) throw conflict();
+      let ownedHash=receipt.data.files?.[file];
+      if(!ownedHash && ['codebuddy','workbuddy'].includes(host)) {
+        const sibling=await readReceipt(path.join(receiptDirectory,(host==='codebuddy'?'workbuddy':'codebuddy')+'.json'));
+        ownedHash=sibling.data.files?.[file];
+      }
+      if (before && !before.equals(source.bytes) && digest(before) !== ownedHash) throw conflict();
       changes.push({ file, previous: before, next: source.bytes });
       files[file] = digest(source.bytes);
     }
@@ -224,8 +254,21 @@ async function applyPlans(plans, guard = () => {}, { backupDirectory = null } = 
 async function install(options) {
   const selected = [...new Set(options.hosts)];
   if (!selected.length || selected.some(host => !hosts.includes(host))) throw new HubError('UNSUPPORTED_HARNESS');
+  if(options.configFile && (selected.length!==1 || !path.isAbsolute(options.configFile) ||
+      path.extname(options.configFile).toLowerCase()!==(selected[0]==='codex'?'.toml':'.json')))throw conflict();
   const plans = [];
   for (const host of selected) plans.push(await planHost({ ...options, host }));
+  // Shared Skill directories and project .mcp.json must be written once. Every
+  // host keeps its own ownership receipt; conflicting plans abort before mutation.
+  const changes=new Map();
+  for(const plan of plans)plan.changes=plan.changes.filter(change=>{
+    const key=path.resolve(change.file), prior=changes.get(key);
+    if(prior) {
+      if(!same(prior.previous,change.previous) || !same(prior.next,change.next))throw conflict();
+      return false;
+    }
+    changes.set(key,change);return true;
+  });
   return applyPlans(plans, options.guard);
 }
 
@@ -309,7 +352,7 @@ async function uninstallProject({ workspace, receiptDirectories, hookDirectory, 
       try {
         const { data, previous } = await readReceipt(path.join(directory, host + '.json'));
         if (!previous) continue;
-        if (data.host !== host || data.name !== name || data.target !== targetFor(host, { workspace }) ||
+        if (data.host !== host || data.name !== name || data.target !== await resolvedTarget(host, { workspace }) ||
             Object.keys(data.files).length || data.skill) throw conflict();
         receipts.push(data);
       } catch (error) { result.conflicts.push({ component: host, code: error.code || 'INVALID_INSTALL_RECEIPT' }); }
@@ -360,7 +403,7 @@ async function ownedProjectPaths({workspace,receiptDirectories,hookDirectory,nam
     for(const host of hosts) {
       const {data,previous} = await readReceipt(path.join(directory,host+'.json'));
       if(previous) {
-        if(data.host!==host || data.name!==name || data.target!==targetFor(host,{workspace}))throw conflict();
+        if(data.host!==host || data.name!==name || data.target!==await resolvedTarget(host,{workspace}))throw conflict();
         paths.add(path.relative(workspace,data.target).split(path.sep).join('/'));
       }
     }

@@ -201,7 +201,7 @@ class Console {
       } else this.pendingDevice();
     })));
     content.append(h('section',{class:'card'},form),h('div',{class:'actions'},
-      button('忘记密码',() => this.recoverAccount('reset')),button('领取邮箱邀请',() => this.recoverAccount('invitation'))),
+      button('忘记密码',() => this.recoverAccount('reset')),button('使用离线恢复码',() => this.offlineRecovery()),button('领取邮箱邀请',() => this.recoverAccount('invitation'))),
       h('p',{class:'footer-note'},'浏览器保存本设备的签名密钥。访问凭证仅保留在当前页面内存中。'));
     this.authLayout(content);
   }
@@ -234,6 +234,89 @@ class Console {
     dialog('修改密码','保留当前页面的会话，其他旧会话将退出。',form,'修改密码',async data => {
       await this.api('POST','/api/me/password',data); form.reset();
     });
+  }
+  offlineRecovery() {
+    this.client.clear();
+    const form=h('form',{},field('login','登录名',{...loginOptions}),
+      field('recovery_code','离线恢复码',{type:'password',required:true,autocomplete:'off',maxlength:100}),
+      field('new_password','新密码',{type:'password',required:true,minlength:12,maxlength:256,autocomplete:'new-password'}));
+    form.append(submit(form,'重设密码',async data=>{
+      await this.api('POST','/api/auth/offline-recovery',data);form.reset();
+      this.login('密码已重设，旧会话和恢复码已失效。请重新登录，完成邮箱验证、设备及项目授权。');
+    }));
+    this.authLayout(h('div',{class:'auth-form narrow'},h('h1',{},'使用离线恢复码'),
+      h('p',{},'填写之前单独保存的一次性恢复码。恢复后整批旧码失效，邮箱验证及审批仍按原规则执行。'),
+      h('section',{class:'card'},form),button('返回登录',()=>this.login())));
+  }
+  async recoveryCodes() {
+    const status=await this.api('GET','/api/me/recovery-codes');
+    const form=h('form',{},field('current_password','当前密码',{type:'password',required:true,maxlength:256,autocomplete:'current-password'}));
+    form.append(submit(form,'生成新码',async data=>{
+      const result=await this.api('POST','/api/me/recovery-codes',data);form.reset();
+      const box=h('textarea',{readonly:true,rows:12,'aria-label':'一次性恢复码'},result.codes.join('\n'));
+      const clear=()=>{box.value='';box.textContent='';result.codes=[];if(modal.contains(box))modal.replaceChildren(h('div',{id:'modal-body'}));};
+      modal.addEventListener('close',clear,{once:true});
+      modal.querySelector('#modal-body').replaceChildren(h('h2',{},'请单独保存恢复码'),
+        h('p',{},'只显示一次；关闭后无法再查看。有效期至 '+date(result.expires_at)+'。'),box,button('我已保存',()=>{clear();modal.removeEventListener('close',clear);modal.close();},'primary'));
+    }),button('取消',()=>modal.close()));
+    modal.replaceChildren(h('div',{id:'modal-body'},h('h2',{},'离线恢复码'),
+      h('p',{},`现有可用恢复码 ${status.remaining} 个。生成后旧码立即失效；一次恢复后整批失效。`),form));modal.showModal();
+  }
+  async oauthConsent() {
+    const id=new URL(location.href).searchParams.get('oauth_request');
+    if(!id || !/^[a-f0-9-]{36}$/i.test(id))return;
+    const request=await this.api('GET',`/api/me/oauth/requests/${id}`);
+    if(request.required_grant_id && this.client.session.grant_id!==request.required_grant_id){
+      this.client.setSession(await this.api('POST','/api/auth/select-project',{grant_id:request.required_grant_id}));
+    }
+    const decide=async approve=>{
+      const result=await this.api('POST',`/api/me/oauth/requests/${id}`,{approve});
+      history.replaceState(null,'',location.pathname);modal.close();location.assign(result.redirect_uri);
+    };
+    const form=h('form',{},h('p',{},'连接名称：',h('strong',{},request.name)),
+      h('p',{class:'mono'},request.resource),h('p',{},request.scopes.includes('mcp:coordinate')?'允许读取资料并提交进展通告。':'仅允许读取获准资料。'),
+      h('p',{},'回调：',h('span',{class:'mono'},request.redirect_uri)),
+      h('p',{},'有效期至 '+date(request.expires_at)+'。该连接不能启动本机代码或获得其他仓库权限。'),
+      h('div',{class:'actions'},button('拒绝',()=>decide(false)),button('同意此次连接',()=>decide(true),'primary')));
+    modal.querySelector('#modal-body').replaceChildren(h('h2',{},'确认远程 MCP 连接'),form);modal.showModal();
+  }
+  async oauthConnections() {
+    const own=await this.api('GET','/api/me/oauth/sessions');
+    const rows=own.items.map(item=>[textPair(item.name,item.resource),item.scopes.join(' · '),date(item.expires_at),
+      button('断开',async()=>{await this.api('POST',`/api/me/oauth/sessions/${item.id}/revoke`,{});await this.renderView();},'danger small')]);
+    const content=[this.heading('远程 MCP 连接','超管预先批准具体账号、设备与仓库；本人登录后台确认后才能连接。此入口用于资料读取与进展协调。'),
+      h('section',{class:'card'},h('h2',{},'当前浏览器设备'),h('p',{class:'mono'},this.device),
+        h('p',{},'注册连接时选择这台已批准的浏览器设备，再在同一浏览器完成授权。桌面端与浏览器是不同设备身份。')),
+      table('本人已授权连接',['连接 / 固定仓库','范围','到期时间','操作'],rows)];
+    if(!this.isRoot)return content;
+    const registered=(await this.api('GET','/api/admin/oauth/clients')).items;
+    const create=async()=>{
+      if(!this.project)throw new Error('请先选择项目组。');
+      const projectId=this.project.id;
+      const [repos,devices,grants]=await Promise.all([
+        this.api('GET',`/api/projects/${projectId}/repositories`),this.api('GET','/api/admin/devices?limit=100'),
+        this.api('GET',`/api/projects/${projectId}/grants`)]);
+      const approved=devices.items.filter(d=>d.status==='approved');
+      const form=h('form',{},field('name','连接名称',{required:true,maxlength:200}),
+        field('device_id','本人完成授权的浏览器设备',{items:approved.map(d=>[d.id,`${d.login || short(d.user_id)} · ${d.name} · ${short(d.id)}`])}),
+        field('repository_id','固定仓库',{items:repos.items.map(r=>[r.id,r.name])}),
+        field('grant_id','已批准的项目授权',{items:[['','超级管理员无需项目授权'],...grants.items.filter(g=>g.status==='active').map(g=>[g.id,`${short(g.user_id)} · 设备 ${short(g.device_id)} · ${short(g.id)}`])]}),
+        field('redirects','工具提供的完整回调地址',{required:true,multiline:true,maxlength:10000,hint:'每行一个，须与工具发起登录时的地址完全相同。支持 HTTPS 或本机回调 HTTP。'}),
+        field('coordinate','操作范围',{items:[['no','只读资料'],['yes','读取资料和提交进展通告']]}),
+        field('reason','批准原因',{required:true,minlength:10,maxlength:2000,multiline:true}));
+      dialog('批准远程连接','此批准不替代设备审批或仓库授权。普通成员必须选择属于该人员及设备的有效项目授权。',form,'创建连接',async data=>{
+        const device=approved.find(d=>d.id===data.device_id);if(!device)throw new Error('请选择已批准的设备。');
+        await this.api('POST','/api/admin/oauth/clients',{name:data.name,user_id:device.user_id,device_id:device.id,
+          project_id:projectId,repository_id:data.repository_id,grant_id:data.grant_id || null,
+          redirect_uris:data.redirects.split(/\r?\n/).map(s=>s.trim()).filter(Boolean),
+          scopes:data.coordinate==='yes'?['mcp:read','mcp:coordinate']:['mcp:read'],reason:data.reason});
+      });
+    };
+    content.push(table('超管预先批准的连接',['名称 / Client ID','固定入口','状态 / 操作'],registered.map(item=>[
+      textPair(item.name,item.client_id),h('div',{},h('p',{class:'mono'},item.resource),h('small',{},item.redirect_uris.join('；'))),
+      h('div',{},pill(item.status),item.status==='active'?button('撤销',async()=>{
+        await this.api('POST',`/api/admin/oauth/clients/${item.id}/revoke`,{});await this.renderView();},'danger small'):null)]),[button('批准新连接',create,'primary')]));
+    return content;
   }
   inviteByEmail(administrator = false) {
     const projectId = this.project?.id;
@@ -297,12 +380,12 @@ class Console {
     }
     this.projects = (await this.api('GET','/api/projects')).items;
     this.project = this.projects.find(p => p.id === this.project?.id) || this.projects[0] || null;
-    this.currentView = 'overview'; this.shell(); await this.renderView();
+    this.currentView = 'overview'; this.shell(); await this.renderView(); await this.oauthConsent();
   }
   shell() {
     modal.close();
     const navigation = [['overview','工作台'],['projects','项目组与成员'],['repositories','仓库与资料'],['tasks','任务与日志'],['guides','功能操作说明'],['documents','项目文档'],['memory','共享记忆'],['usage','用量与预算'],
-      ...(this.can('members:manage')?[['closeouts','撤权交接']]:[]),...(this.isRoot ? [['users','人员管理'],['devices','设备管理'],['approvals','授权审批'],['settings','系统设置']] : [['devices','我的设备']]),['audit','操作记录']];
+      ...(this.can('members:manage')?[['closeouts','撤权交接']]:[]),['oauthConnections','远程 MCP 连接'],...(this.isRoot ? [['users','人员管理'],['devices','设备管理'],['approvals','授权审批'],['settings','系统设置']] : [['devices','我的设备']]),['audit','操作记录']];
     const nav = h('nav',{class:'nav','aria-label':'主要导航'},navigation.map(([key,label]) => button(label,async () => {
       this.currentView = key; this.offset = 0; await this.renderView();
     })));
@@ -327,7 +410,7 @@ class Console {
       h('div',{},h('div',{class:'nav-label'},'工作空间'),nav),
       h('div',{class:'sidebar-bottom'},h('strong',{},this.isRoot ? '超级管理员' : this.user.admin_eligible ? '项目管理员' : '项目成员'),h('br'),this.user.login,h('br'),'每次操作都会校验当前授权。')),
       h('section',{class:'workspace'},h('header',{class:'topbar'},h('span',{class:'muted'},'项目协作 / 管理控制台'),h('div',{class:'topbar-right'},picker,
-        h('span',{class:'badge'},this.user.login.slice(0,2).toUpperCase()),button('修改密码',() => this.changePassword(),'quiet small'),button('退出',async () => {
+        h('span',{class:'badge'},this.user.login.slice(0,2).toUpperCase()),button('修改密码',() => this.changePassword(),'quiet small'),button('离线恢复码',() => this.recoveryCodes(),'quiet small'),button('退出',async () => {
           await this.api('POST','/api/auth/logout',{}); clearTimeout(this.viewTimer); this.renderVersion++; modal.close();
           this.client.clear(); this.user = null; this.project = null; this.login();
         },'quiet small'))),this.body)));
@@ -761,10 +844,12 @@ class Console {
     const base=`/api/projects/${projectId}/code-audits/${jobId}`,data=await this.api('GET',base);
     if(this.project?.id!==projectId || this.currentView!=='tasks' || this.renderVersion!==revision || this.auditDialogVersion!==ticket)return;
     const content=h('div',{id:'modal-body'},h('h2',{},'审计报告与复审记录'),h('p',{class:'mono'},data.git_commit),
+      data.generation?.execution==='server-background' && h('p',{},'由服务端后台执行 · 模型 '+data.generation.model+' · CI另行核验'),
       data.self_review && h('p',{class:'danger-note'},'超管自审：'+data.override_reason),
       !data.current && h('p',{class:'danger-note'},'来源已经变化，这些报告不能用于当前验收。'),
       ...data.reports.map(r=>h('section',{class:'card'},h('h3',{},`第 ${r.lease_epoch} 次 · ${r.passed?'审查通过（CI另行核验）':r.content.conclusion==='incomplete'?'未完成覆盖':'审查未通过'}`),
         h('p',{},r.content.summary),h('p',{},'审查人：'+r.author_id+' · '+date(r.created_at)),
+        h('p',{},'代码来源：'+(({exact_checkout:'确切提交的工作目录',exact_git_objects:'固定提交与Git对象核验',archived_worktree:'工作树归档，不能独立证明远程提交'})[r.content.source_basis] || '待核验')),
         h('p',{},'逐规则结果：'+Object.entries(r.content.rule_checks).map(([k,v])=>k+' '+v).join('；')),
         ...r.content.findings.map(f=>h('details',{},h('summary',{},`${f.severity} · ${f.title} · ${f.path}:${f.line}`),h('p',{},f.evidence),h('p',{},'建议：'+f.recommendation))),
         ...r.content.gaps.map(g=>h('p',{class:'danger-note'},'未覆盖：'+g)),h('p',{},r.content.verification),
@@ -1359,7 +1444,8 @@ class Console {
   }
   async openGenerationPolicy(projectId,repo) {
     const base=`/api/projects/${projectId}/repositories/${repo.id}/generation`;
-    const [config,calls]=await Promise.all([this.api('GET',base),this.api('GET',`/api/projects/${projectId}/generation-calls?repository_id=${repo.id}&limit=20`)]);
+    const [config,calls,devices]=await Promise.all([this.api('GET',base),this.api('GET',`/api/projects/${projectId}/generation-calls?repository_id=${repo.id}&limit=20`),this.allPages('/api/admin/devices')]);
+    const approved=devices.filter(d=>d.status==='approved');
     const states={reserved:'已预留，待调用',calling:'正在调用',ready:'结果已保存，待提交',shared:'已提交待审核',uncertain:'结果未知，等待处理',blocked:'结果被拦截，等待处理',abandoned:'已批准重新调用'};
     const retry=call=>{
       const form=h('form',{},field('mode','恢复方式',{items:call.has_saved_result?[['saved','使用已保存结果，不再次付费调用'],['new','批准新调用，可能重复计费']]:[['new','批准新调用，可能重复计费']]}),
@@ -1370,13 +1456,17 @@ class Console {
     const form=h('form',{},field('enabled','服务端处理',{items:[['no','关闭'],['yes','开启']],value:config.enabled?'yes':'no'}),
       field('distillation','记忆提炼',{items:[['yes','处理已准备的资料批次'],['no','不处理']],value:config.distillation?'yes':'no'}),
       field('guides','操作说明草稿',{items:[['no','不处理'],['yes','处理本仓库冻结的说明待办']],value:config.guides?'yes':'no'}),
+      field('code_audit','后台代码审查',{items:[['no','关闭'],['yes','允许把当前任务代码发送给模型审查']],value:config.code_audit?'yes':'no'}),
+      field('reviewer_device_id','独立审查账号与已批准设备',{items:[['','请选择审查者设备'],...approved.map(d=>[d.id,`${d.login || short(d.user_id)} · ${d.name} · ${short(d.id)}`])],value:config.reviewer_device_id || ''}),
       field('reason','授权原因',{required:true,minlength:10,maxlength:2000,multiline:true}),
-      h('p',{},'开启后，本仓库获准的资料会发送给超管配置的模型服务，服务器在电脑关闭后仍可运行。不会修改代码或自动审核结果。撤销开启设备或更新设置会停止旧授权结果提交。'),
-      table('最近服务端调用',['类型','状态','输入 / 输出 Token','保守预留','处理'],calls.items.map(c=>[
-        c.kind==='guide'?'说明草稿':'记忆提炼',h('span',{title:c.error_code || ''},states[c.state] || '等待处理'),`${c.input_tokens??'未知'} / ${c.output_tokens??'未知'}`,String(c.reserved_tokens),
+      h('p',{},'开启后，本仓库获准的资料会发送给超管配置的模型服务，电脑关闭后仍可处理。代码审查须单独开启，审查账号需要任务评审、共享日志及本仓库只读权限，不能参与该任务开发。缺少完整代码或依赖会留下缺口，CI另行核验。撤销设备或授权会拦截旧结果。'),
+      table('最近服务端调用',['类型','状态','输入 / 输出 Token','保守预留','来源','处理'],calls.items.map(c=>[
+        c.kind==='code_audit'?'代码审查':c.kind==='guide'?'说明草稿':'记忆提炼',h('span',{title:c.error_code || ''},states[c.state] || '等待处理'),`${c.input_tokens??'未知'} / ${c.output_tokens??'未知'}`,String(c.reserved_tokens),
+        c.source_receipt?h('details',{},h('summary',{},`${c.source_receipt.changed_paths.length} 个变更路径`),h('p',{class:'mono'},'基线 '+c.source_receipt.base_commit+' → '+c.source_receipt.git_commit),h('p',{class:'mono'},'核验摘要 '+c.source_receipt.manifest_hash),...c.source_receipt.gaps.map(g=>h('p',{class:'danger-note'},g))):'—',
         c.retry?.state==='pending'?'已审批，等待恢复':['blocked','uncertain'].includes(c.state)?button(c.retry?.state==='rejected'?'恢复未通过，重新处理':'处理',()=>retry(c),'small'):'—'])));
     dialog('服务端 AI · '+repo.name,'仅超级管理员可开启。调用中断时保留预算与状态，不自动重复付费请求。',form,'保存授权',async data=>{
-      await this.api('PUT',base,{expected_version:config.version,enabled:data.enabled==='yes',distillation:data.distillation==='yes',guides:data.guides==='yes',reason:data.reason});
+      const reviewer=approved.find(d=>d.id===data.reviewer_device_id);
+      await this.api('PUT',base,{expected_version:config.version,enabled:data.enabled==='yes',distillation:data.distillation==='yes',guides:data.guides==='yes',code_audit:data.code_audit==='yes',reviewer_user_id:reviewer?.user_id || null,reviewer_device_id:reviewer?.id || null,reason:data.reason});
     });
   }
   async generationSettings() {

@@ -27,6 +27,7 @@ class GenerationReceipt(Identity, Base):
     repository_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("project_repositories.id"))
     distillation_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("distillation_jobs.id"))
     guide_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("guide_jobs.id"))
+    code_audit_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("code_audits.id"))
     lease_epoch: Mapped[int] = mapped_column(Integer)
     author_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id"))
     device_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("devices.id"))
@@ -48,6 +49,7 @@ def record(db, identity, row, report, kind):
             repository_id=row.repository_id,
             distillation_id=row.id if kind == "distillation" else None,
             guide_id=row.id if kind == "guide" else None,
+            code_audit_id=row.id if kind == "code_audit" else None,
             lease_epoch=row.lease_epoch,
             author_id=identity.user.id,
             device_id=identity.device.id,
@@ -58,7 +60,8 @@ def record(db, identity, row, report, kind):
 
 
 def view(db, row, kind):
-    key = GenerationReceipt.distillation_id if kind == "distillation" else GenerationReceipt.guide_id
+    key = {"distillation": GenerationReceipt.distillation_id, "guide": GenerationReceipt.guide_id,
+           "code_audit": GenerationReceipt.code_audit_id}[kind]
     receipt = db.scalar(
         select(GenerationReceipt)
         .where(key == row.id)
@@ -88,7 +91,7 @@ def policy_hint(db, repository_id, kind):
         "server_enabled": bool(
             policy
             and policy.content["enabled"]
-            and policy.content.get("guides" if kind == "guide" else "distillation")
+            and policy.content.get("guides" if kind == "guide" else kind)
         ),
         "policy_version": policy.version if policy else 0,
     }
