@@ -5,6 +5,20 @@ const encode = value => btoa(String.fromCharCode(...new Uint8Array(value)))
 const json = value => encode(encoder.encode(JSON.stringify(value)));
 
 export const messages = {
+  GENERATION_ENDPOINT_INVALID:'模型接口必须为公网 HTTPS 完整地址，使用 443 端口并以 /chat/completions 结尾。',
+  GENERATION_NEW_ENDPOINT_KEY_REQUIRED:'更换模型地址时请重新填写该服务的密钥。',
+  GENERATION_CONFIGURATION_VERSION_CONFLICT:'模型设置已更新，请刷新后重新保存。',
+  GENERATION_POLICY_VERSION_CONFLICT:'本仓库的服务端 AI 授权已变化，请刷新。',
+  GENERATION_NOT_CONFIGURED:'请先在系统设置中配置服务端 AI 接口、模型和密钥。',
+  GENERATION_PAID_RETRY_APPROVAL_REQUIRED:'上次调用结果未知。若需要再次调用，请明确批准可能的重复计费。',
+  GENERATION_CALL_NOT_RETRYABLE:'该调用已在处理或已结束，请刷新状态。',
+  GENERATION_RETRY_ALREADY_PENDING:'恢复审批已经保存，请等待服务端处理。',
+  GUIDE_PUBLICATION_VERSION_CONFLICT:'说明目录已经有新版本，请重新打开当前正文再操作。',
+  GUIDE_ARCHIVED:'说明已经归档，请先恢复后再提交修订。',
+  GUIDE_NOT_ARCHIVED:'说明当前未归档，不能执行恢复。',
+  GUIDE_NOT_PUBLISHED:'此说明尚未随功能发布，请先完成原说明的核对流程。',
+  GUIDE_AMENDMENT_NOT_ACCESSIBLE:'修订不存在、尚未发布，或当前无权读取。',
+  GUIDE_FEEDBACK_NOT_ACCESSIBLE:'反馈不存在，或当前没有处理权限。',
   DISTILLATION_NOT_ACCESSIBLE:'该批次或其中部分来源当前不可读取。',DISTILLATION_POLICY_VERSION_CONFLICT:'记忆整理设置已变化，请刷新。',
   DISTILLATION_VERSION_CONFLICT:'提炼批次已被其他实例处理，请刷新。',DISTILLATION_NOT_CLAIMABLE:'该批次尚有有效认领，或已结束，请查看当前状态。',
   DISTILLATION_LEASE_STALE:'提炼认领已过期或属于其他实例，请重新核验。',DISTILLATION_SOURCE_CHANGED:'来源或整理设置已变化，旧批次不能继续提交，请读取新批次。',

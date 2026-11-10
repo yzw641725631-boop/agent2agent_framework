@@ -1,0 +1,360 @@
+{
+  "schema": 1,
+  "date": "2026-11-10",
+  "scope": "server-generation-and-published-guide-lifecycle",
+  "backend": "0.16.0",
+  "desktop": "0.18.0",
+  "database_schema": "0026",
+  "backend_tests_passed": 339,
+  "backend_tests_failed": 0,
+  "desktop_tests_passed": 162,
+  "desktop_tests_failed": 0,
+  "previous_0151_on_0026_tests_passed": 303,
+  "rollback_runtime": {
+    "image_id": "sha256:2f954e363a327a5ae47bb656fb2d57947400ce352732733f691c3deefaceddeb",
+    "schema_adaptation": "0.15.1-business-code-with-explicit-0026-declaration",
+    "unmodified_previous_image_cannot_start_on_new_schema": true
+  },
+  "test_log_sha256": {
+    "backend": "32eeac22b373da0065363467d07cefe0870e975a90f9d64c40eb9b7ff01557c1",
+    "previous_runtime": "57103c596dbd46d1b564f158447b403b9696d859e38efc31bf597d321bb493eb",
+    "desktop": "0d0a1dadc8dc78f1f83f10f7b62b1f305a705b12bf818fd1c282148be20b8651"
+  },
+  "production_upgrade": {
+    "business_contents_disclosed": false,
+    "database_schema": "0026",
+    "mode": "upgrade",
+    "passed": true,
+    "structure_verified": false,
+    "verified_rows": 61,
+    "verified_tables": 60,
+    "schema": 1,
+    "application_version": "0.16.0",
+    "previous_application_version": "0.15.1",
+    "previous_database_schema": "0024",
+    "image_id": "sha256:bb06972ca281cc114654719ceb3bb235d1a6c66ad26bfe7d525e647f9d33f2d7",
+    "created_at": "2026-11-10T03:49:35.651638+00:00",
+    "production_volume_preserved": true,
+    "business_pilot_performed": false
+  },
+  "image_id": "sha256:bb06972ca281cc114654719ceb3bb235d1a6c66ad26bfe7d525e647f9d33f2d7",
+  "source_archive_sha256": "c4346258ccac95c61bf1052aab88ce237c5a73825cf5e9d460e3db04396aa9b6",
+  "runtime_modules_verified": 50,
+  "fresh_schema": {
+    "passed": true,
+    "database_schema": "0026",
+    "tables": 71,
+    "fresh_and_upgraded_structure_equal": true,
+    "database_and_docker_only_on_server": true,
+    "bytes": 184828,
+    "sha256": "74d4cc779fc776dd570a12b8884b6443f0c63c5a61214775bf181a14544726d2",
+    "not_run_on_existing_production_volume": true
+  },
+  "nonempty_upgrade": {
+    "business_contents_disclosed": false,
+    "database_schema": "0026",
+    "mode": "upgrade",
+    "passed": true,
+    "structure_verified": false,
+    "verified_rows": 211,
+    "verified_tables": 60
+  },
+  "exact_restore": {
+    "business_contents_disclosed": false,
+    "database_schema": "0026",
+    "mode": "exact",
+    "passed": true,
+    "structure_verified": true,
+    "verified_rows": 212,
+    "verified_tables": 71
+  },
+  "synthetic_upgrade_audit": {
+    "passed": true,
+    "synthetic_only": true,
+    "counts": {
+      "database_schema": "0026",
+      "worklogs": 2
+    },
+    "verified_archives": 1,
+    "memory": {
+      "documents": 1,
+      "exact_originals": 1,
+      "cards": 3,
+      "knowledge_facts": 1,
+      "knowledge_events": 2,
+      "semantic_vectors": 4,
+      "errors": [],
+      "healthy": true
+    }
+  },
+  "synthetic_restore_audit": {
+    "passed": true,
+    "synthetic_only": true,
+    "counts": {
+      "database_schema": "0026",
+      "worklogs": 2
+    },
+    "verified_archives": 1,
+    "memory": {
+      "documents": 1,
+      "exact_originals": 1,
+      "cards": 3,
+      "knowledge_facts": 1,
+      "knowledge_events": 2,
+      "semantic_vectors": 4,
+      "errors": [],
+      "healthy": true
+    }
+  },
+  "production_backup": {
+    "schema": 1,
+    "snapshot_id": "4ad2c081fbf7bb6354e9f981d9d8acecadbd7e333698ecab5fcea00324d3535f",
+    "created_at": "2026-11-10T03:50:06.981098+00:00",
+    "full_repository_check": true,
+    "offsite_confirmed": false
+  },
+  "production_restore": {
+    "restored_database": "hub_restore_20261110T035007Z",
+    "snapshot_id": "4ad2c081fbf7bb6354e9f981d9d8acecadbd7e333698ecab5fcea00324d3535f",
+    "database_schema": "0026",
+    "role_bindings_verified": true,
+    "verified_archives": 0,
+    "memory": {
+      "documents": 0,
+      "exact_originals": 0,
+      "cards": 0,
+      "knowledge_facts": 0,
+      "knowledge_events": 0,
+      "semantic_vectors": 0,
+      "errors": [],
+      "healthy": true
+    },
+    "passed": true,
+    "created_at": "2026-11-10T03:50:21.795926+00:00",
+    "application_version": "0.16.0",
+    "database_inventory_verified": true,
+    "verified_tables": 71,
+    "verified_rows": 62,
+    "structure_verified": true
+  },
+  "post_release_archive_audit": {
+    "schema": 1,
+    "recorded": 0,
+    "verified": 0,
+    "storage_bytes": 0,
+    "failed_snapshot_ids": [],
+    "orphans": 0,
+    "stale_uploads": 0,
+    "quarantined": 0,
+    "unexpected_entries": 0,
+    "free_bytes": 15626743808,
+    "total_quota_bytes": 4294967296,
+    "disaster_redundant": false,
+    "healthy": true,
+    "created_at": "2026-11-10T03:50:26.613818+00:00"
+  },
+  "post_release_operator_check": {
+    "schema": 1,
+    "created_at": "2026-11-10T03:57:51.807974+00:00",
+    "checks": [
+      {
+        "id": "container:agent-hub-postgres",
+        "state": "ok"
+      },
+      {
+        "id": "container:agent-hub-app-api-1",
+        "state": "ok"
+      },
+      {
+        "id": "container:agent-hub-app-document-worker-1",
+        "state": "ok"
+      },
+      {
+        "id": "container:agent-hub-app-memory-worker-1",
+        "state": "ok"
+      },
+      {
+        "id": "container:agent-hub-app-embedding-1",
+        "state": "ok"
+      },
+      {
+        "id": "container:agent-hub-app-embedding-worker-1",
+        "state": "ok"
+      },
+      {
+        "id": "container:agent-hub-app-generation-worker-1",
+        "state": "ok"
+      },
+      {
+        "id": "container:agent-hub-edge",
+        "state": "ok"
+      },
+      {
+        "id": "database:query",
+        "state": "ok"
+      },
+      {
+        "id": "memory:queue",
+        "state": "ok"
+      },
+      {
+        "id": "semantic:queue",
+        "state": "ok"
+      },
+      {
+        "id": "generation:manual-recovery",
+        "state": "ok",
+        "needs_attention": 0
+      },
+      {
+        "id": "public:https",
+        "state": "ok",
+        "version": "0.16.0"
+      },
+      {
+        "id": "desktop:signed-feed",
+        "state": "ok",
+        "version": "0.18.0",
+        "remaining_hours": 719
+      },
+      {
+        "id": "disk:capacity",
+        "state": "ok",
+        "free_bytes": 15625936896
+      },
+      {
+        "id": "agent-hub-backup",
+        "state": "ok",
+        "age_hours": 0.13,
+        "maximum_hours": 36
+      },
+      {
+        "id": "agent-hub-archive-audit",
+        "state": "ok",
+        "age_hours": 0.12,
+        "maximum_hours": 36
+      },
+      {
+        "id": "agent-hub-restore-drill",
+        "state": "ok",
+        "age_hours": 0.13,
+        "maximum_hours": 1080
+      },
+      {
+        "id": "offsite:continuous-copy",
+        "state": "warning",
+        "configured": false
+      },
+      {
+        "id": "alerts:external-delivery",
+        "state": "warning",
+        "configured": false
+      }
+    ],
+    "healthy": true,
+    "has_warnings": true,
+    "scope": "local-operator-checks-only"
+  },
+  "isolated_test_cleanup": {
+    "passed": true,
+    "test_containers_stopped": [
+      "agent-hub-complete-test-model",
+      "agent-hub-complete-test-db"
+    ],
+    "test_data_retained": true,
+    "production_volume": "agent-hub-postgres-data",
+    "production_volume_preserved": true,
+    "production_api_healthy": true,
+    "production_generation_worker_running": true
+  },
+  "web_ui": {
+    "passed": true,
+    "realElectronWebUI": true,
+    "backend": "synthetic-fixture",
+    "providerKeyNeverReturned": true,
+    "configSaves": 1,
+    "retryReusesSaved": true,
+    "feedbackResolved": 1,
+    "revisionReviews": 2,
+    "publicationArchiveRestoreVersions": 3,
+    "historicalOriginalReadable": true,
+    "horizontalOverflow": false
+  },
+  "desktop_release": {
+    "metadata_version": 19,
+    "signed_feed_sha256": "2ae023d8ca8310fce837b9a9937d3cb7e1044f1e6c15034a7d922c8f5dc5f502",
+    "expires_at": "2026-12-10T03:31:05.657Z",
+    "signature_algorithm": "Ed25519",
+    "authenticode_signed": false,
+    "installer": {
+      "url": "https://47.109.23.86:18180/desktop-updates/win-x64/AgentHub-Setup-0.18.0.exe",
+      "bytes": 123217182,
+      "sha256": "54c43fdc435b3b2ec86c6126d76ee41e3b60de3c8b882ea70e9d7748a7ed467c"
+    },
+    "zip": {
+      "bytes": 160055946,
+      "sha256": "b86316c3065837a3de60267052a5347c61b743b8406bcc460b0a717f8f4a78c5",
+      "files_sha256": "d97a437395ba612fc01511b4b0cb1c95c19fdcff376ec24c70c4ebf2cdf29d6e"
+    },
+    "installed": {
+      "passed": true,
+      "version": "0.18.0",
+      "installerBytesVerified": true,
+      "installerSource": "local-build-matched-published-sha256",
+      "installerSha256": "54c43fdc435b3b2ec86c6126d76ee41e3b60de3c8b882ea70e9d7748a7ed467c",
+      "installedManifestMatchesSignedRelease": true,
+      "installedFilesVerified": 183,
+      "unlistedApplicationResourcesAbsent": true,
+      "managedSkillMatchesPackagedVersion": true,
+      "managedSkillFilesVerified": 16,
+      "codexConfigurationUpdated": true,
+      "loginPerformedByAgent": false,
+      "authenticodeSigned": false
+    },
+    "stdio_mcp": {
+      "passed": true,
+      "installedVersion": "0.18.0",
+      "realStdioMcp": true,
+      "configurationFromInstalledCodex": true,
+      "signedFeedVerified": true,
+      "loginState": "LOGIN_REQUIRED",
+      "authenticationNotBypassed": true
+    },
+    "online_update": {
+      "passed": true,
+      "old_version": "0.17.0",
+      "new_version": "0.18.0",
+      "clicked_from_signed_out_client": true,
+      "signed_release_activated": true,
+      "native_restart_completed": true,
+      "publicDownload": true,
+      "profileIsolated": true
+    },
+    "existing_user_data_preserved": true
+  },
+  "server_model_configured": false,
+  "real_model_provider_called": false,
+  "isolated_provider_verification": {
+    "database": "real-postgresql-on-server",
+    "transport": "mock-and-real-isolated-http",
+    "revocation_during_call_tested": true,
+    "member_contributor_tested": true,
+    "duplicate_payment_prevented": true,
+    "uncertain_result_requires_explicit_retry": true,
+    "saved_result_reuse_tested": true,
+    "bounded_request_tested": true
+  },
+  "business_pilot_performed": false,
+  "all_production_acceptance_complete": false,
+  "remaining": [
+    "real-model-provider-configuration-and-compatibility",
+    "seven-host-real-activation-and-remaining-adapters",
+    "windows-authenticode-certificate",
+    "real-business-and-long-term-scale-validation",
+    "multiple-physical-device-acceptance",
+    "offsite-storage-external-alert-and-target-migration-resources"
+  ],
+  "macos_deferred_by_user": true,
+  "database_and_docker_only_on_server": true,
+  "credentials_private_keys_and_original_business_contents_disclosed": false
+}

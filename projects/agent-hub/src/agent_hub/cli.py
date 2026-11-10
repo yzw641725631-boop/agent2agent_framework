@@ -50,6 +50,14 @@ def memory_worker():
     MemoryWorker(get_settings()).serve()
 
 
+@app.command("generation-worker")
+def generation_worker():
+    """Generate reviewed candidates and guide drafts centrally under hub_generation."""
+    from .generation_worker import GenerationWorker
+
+    GenerationWorker(get_settings()).serve()
+
+
 @app.command("embedding-worker")
 def embedding_worker():
     """Index source-bound cards and reviewed facts with the private CPU model."""

@@ -4,7 +4,7 @@ const id={type:'string',format:'uuid'};
 const string=(minLength,maxLength)=>({type:'string',minLength,maxLength});
 const query={repository_id:id,query:string(0,200),search_mode:{type:'string',enum:['hybrid','keyword']},include_history:{type:'boolean'},
   offset:{type:'integer',minimum:0,maximum:100000},limit:{type:'integer',minimum:1,maximum:50}};
-const generation={type:'object',properties:{method:{type:'string',enum:['local-agent','human']},
+const generation={type:'object',properties:{method:{type:'string',enum:['local-agent','human','server-model']},
   harness:{type:'string',enum:['human','claude-code','codex','cursor','qoder','workbuddy','codebuddy','trae']},
   model_reported:string(0,120),prompt_version:string(1,80),
   input_tokens_reported:{type:'integer',minimum:0,maximum:10000000},

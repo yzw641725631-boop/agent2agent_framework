@@ -10,7 +10,7 @@ from sqlalchemy import DateTime, ForeignKey, Integer, String, func, select
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
-from . import knowledge, memory, repositories
+from . import generation, knowledge, memory, repositories
 from . import schemas as S
 from .models import Base, Identity, MemoryFact, ProjectProgress
 from .security import HubError, now
@@ -169,7 +169,8 @@ def get(db, project_id, job_id, repository_id=None):
     return row
 
 
-def view(row):
+def view(row, db=None):
+    receipt = generation.view(db, row, "distillation") if db is not None else None
     return {
         "id": str(row.id),
         "repository_id": str(row.repository_id),
@@ -187,8 +188,12 @@ def view(row):
         "reason": row.reason,
         "created_at": row.created_at.isoformat(),
         "generation_reported": row.state == "succeeded",
-        "generation_trust": "claimant-reported",
-        "automatic_model_execution": False,
+        "generation_trust": receipt["trust"] if receipt else "claimant-reported",
+        "automatic_model_execution": bool(receipt),
+        "generation": receipt,
+        "execution_policy": (
+            generation.policy_hint(db, row.repository_id, "distillation") if db is not None else None
+        ),
         "requires_independent_review": True,
     }
 
@@ -342,7 +347,7 @@ def live(hub, db, identity, project_id, row, body):
     return sources(db, row)
 
 
-def complete(hub, db, identity, project_id, row, body, request_id):
+def complete(hub, db, identity, project_id, row, body, request_id, *, generation_report=None):
     config, selected = live(hub, db, identity, project_id, row, body)
     if body.source_hash != row.fingerprint or len(body.candidates) > config["max_candidates"]:
         raise HubError("DISTILLATION_SOURCE_CHANGED", 409)
@@ -367,6 +372,7 @@ def complete(hub, db, identity, project_id, row, body, request_id):
         None,
     )
     event(db, row, identity, body.reason)
+    generation.record(db, identity, row, generation_report, "distillation")
     hub.audit(
         db,
         identity.user.id,
@@ -390,7 +396,7 @@ def complete(hub, db, identity, project_id, row, body, request_id):
             detail="",
         )
     )
-    return {"job": view(row), "candidates": results, "review_required": True}
+    return {"job": view(row, db), "candidates": results, "review_required": True}
 
 
 def retry(hub, db, identity, project_id, row, body, request_id):
@@ -459,10 +465,13 @@ def install(app, hub, actor, mutate, dependency):
             )
         )
         return {
-            "items": [view(row) for row in rows[:limit]],
+            "items": [view(row, db) for row in rows[:limit]],
             "has_more": len(rows) > limit,
             "next_offset": offset + min(len(rows), limit),
-            "automatic_model_execution": False,
+            "execution_modes": ["local-agent", "server-background-when-authorized"],
+            "automatic_model_execution": any(
+                generation.view(db, row, "distillation") for row in rows[:limit]
+            ),
         }
 
     @app.get("/api/projects/{project_id}/distillations/{job_id}/input")

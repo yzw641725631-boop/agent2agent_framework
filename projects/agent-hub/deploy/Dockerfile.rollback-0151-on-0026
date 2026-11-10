@@ -1,0 +1,6 @@
+# Tested rollback for the 0.16.0 upgrade. Old business code, explicit schema 0026 declaration.
+# This does not make an unmodified 0.15.1 image compatible with schema 0026.
+FROM agent-hub:0.15.1
+USER root
+RUN python -c 'from pathlib import Path; import agent_hub; p=Path(agent_hub.__file__); s=p.read_text(); assert agent_hub.__version__=="0.15.1" and agent_hub.SCHEMA_REVISION=="0024"; old="SCHEMA_REVISION = \"0024\""; assert s.count(old)==1; p.write_text(s.replace(old,"SCHEMA_REVISION = \"0026\""))'
+USER 10001

@@ -1,0 +1,10 @@
+# Combine with the verified 0.15.1 compose file only after migration to schema 0026.
+services:
+  api:
+    image: agent-hub:0.15.1-schema0026
+  document-worker:
+    image: agent-hub:0.15.1-schema0026
+  memory-worker:
+    image: agent-hub:0.15.1-schema0026
+  embedding-worker:
+    image: agent-hub:0.15.1-schema0026

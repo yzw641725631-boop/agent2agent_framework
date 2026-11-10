@@ -491,13 +491,14 @@ class Console {
     if (!this.project) return [heading,h('section',{class:'card empty'},'请先选择项目。')];
     const projectId=this.project.id,base=`/api/projects/${projectId}/guides`,version=this.renderVersion;
     const query=this.guideQuery || '';
-    const data=await this.api('GET',`${base}?offset=${this.offset}&limit=100&query=${encodeURIComponent(query)}`);
+    const data=await this.api('GET',`${base}?offset=${this.offset}&limit=100&include_archived=${!!this.guideArchived}&query=${encodeURIComponent(query)}`);
     if(this.project?.id!==projectId || this.renderVersion!==version)return [heading];
     const names={queued:'待生成 / 待重试',running:'正在生成',review:'待核对',approved:'已核对，待功能发布',published:'已发布'};
-    const form=h('form',{},field('query','查找功能或正文',{value:query,maxlength:200}));
-    form.append(submit(form,'查找',async values=>{this.guideQuery=values.query;this.offset=0;await this.renderView();}));
+    const form=h('form',{},field('query','查找功能或正文',{value:query,maxlength:200}),
+      field('archived','显示范围',{items:[['no','当前有效说明'],['yes','包含已归档说明']],value:this.guideArchived?'yes':'no'}));
+    form.append(submit(form,'查找',async values=>{this.guideQuery=values.query;this.guideArchived=values.archived==='yes';this.offset=0;await this.renderView();}));
     const listing=table('说明目录与生成进度',['功能','适用版本','状态','负责实例','操作'],data.items.map(item=>[
-      item.title,item.product_version || '待生成',names[item.state] || item.state,item.instance_id ? short(item.instance_id) : '—',
+      item.title,item.product_version || '待生成',item.archived?'已归档':names[item.state] || item.state,item.instance_id ? short(item.instance_id) : '—',
       button('查看',() => this.openGuide(projectId,item.id),'small')]));
     if(data.has_more || this.offset)listing.append(this.pagination(data.has_more?100:0));
     return [heading,form,listing];
@@ -528,9 +529,103 @@ class Console {
       if(this.can('tasks:publish'))controls.append(button('产品核对',()=>decide('product')));
       if(this.can('tasks:test'))controls.append(button('测试核对',()=>decide('test')));
     }
+    if(item.state==='published'){
+      content.prepend(h('p',{class:'hint'},`目录版本 ${item.catalog_version} · ${item.archived?'已归档，保留历史':'当前发布正文'}`));
+      controls.append(button('反馈问题',()=>this.sendGuideFeedback(projectId,item)),
+        button('反馈处理',()=>this.openGuideFeedback(projectId,item)),
+        button('发布历史',()=>this.openGuideHistory(projectId,item)));
+      if(item.source_worklog_id){
+        controls.append(button('修订与核对',()=>this.openGuideAmendments(projectId,item)));
+        if(this.can('tasks:write') && !item.archived)controls.append(button('提交修订',()=>this.amendGuide(projectId,item)));
+        if(this.can('tasks:publish'))controls.append(button(item.archived?'恢复说明':'归档说明',()=>{
+          const form=h('form',{},field('reason','原因',{required:true,minlength:10,maxlength:2000,multiline:true}));
+          dialog(item.archived?'恢复说明':'归档说明','正文和来源历史都会保留。归档后默认目录不再展示。',form,'确认',
+            data=>this.api('POST',base+'/publications',{expected_version:item.catalog_version,action:item.archived?'restored':'archived',reason:data.reason}));
+        }));
+      }
+    }
     if(!modal.querySelector('#modal-body'))modal.replaceChildren(h('div',{id:'modal-body'}));
     modal.querySelector('#modal-body').replaceChildren(h('h2',{},item.title),h('p',{},item.product_version || '待生成'),content,controls);
     if(!modal.open)modal.showModal();
+  }
+  guideModal(title,content) {
+    modal.replaceChildren(h('div',{id:'modal-body'},h('h2',{},title),content,button('关闭',()=>modal.close())));
+    if(!modal.open)modal.showModal();
+  }
+  sendGuideFeedback(projectId,item) {
+    const form=h('form',{},field('kind','反馈类型',{items:[['issue','操作遇到问题'],['suggestion','改进建议'],['outdated','说明已经过时']]}),
+      field('body','具体情况（不要填写密码或密钥）',{required:true,minlength:10,maxlength:4000,multiline:true}));
+    dialog('反馈说明问题','反馈关联你正在阅读的目录版本，管理员处理后可在反馈记录中查看。',form,'发送反馈',
+      data=>this.api('POST',`/api/projects/${projectId}/guides/${item.id}/feedback`,{...data,publication_version:item.catalog_version}));
+  }
+  async openGuideFeedback(projectId,item,offset=0) {
+    const base=`/api/projects/${projectId}/guides/${item.id}/feedback`,data=await this.api('GET',`${base}?offset=${offset}&limit=20`);
+    if(this.project?.id!==projectId)return;
+    const states={open:'待处理',resolved:'已解决',rejected:'未采纳'},kinds={issue:'问题',suggestion:'建议',outdated:'过时'};
+    const list=table('反馈记录',['版本','类型','反馈','处理状态','处理意见','操作'],data.items.map(row=>[
+      String(row.publication_version),kinds[row.kind],row.body,states[row.state],row.resolution || '—',
+      item.source_worklog_id && this.can('tasks:publish')?button('记录处理',()=>{
+        const form=h('form',{},field('state','处理结果',{items:[['resolved','已解决'],['rejected','未采纳'],['open','重新打开']]}),
+          field('reason','处理说明（反馈人可见）',{required:true,minlength:10,maxlength:2000,multiline:true}));
+        dialog('处理反馈','原反馈与每次处理记录保留。',form,'保存',values=>this.api('POST',`${base}/${row.id}/resolutions`,values));
+      },'small'):'—']));
+    const controls=h('div',{class:'row-actions'});
+    if(offset)controls.append(button('上一页',()=>this.openGuideFeedback(projectId,item,Math.max(0,offset-20))));
+    if(data.has_more)controls.append(button('下一页',()=>this.openGuideFeedback(projectId,item,offset+20)));
+    this.guideModal('说明反馈 · '+item.title,h('div',{},h('p',{},'读者仅查看自己的反馈；有来源权限的发布管理者可以处理全部反馈。'),list,controls));
+  }
+  async openGuideHistory(projectId,item,offset=0) {
+    const base=`/api/projects/${projectId}/guides/${item.id}/publications`,data=await this.api('GET',`${base}?offset=${offset}&limit=20`);
+    if(this.project?.id!==projectId)return;
+    const show=async version=>{
+      const value=await this.api('GET',base+'/'+version);
+      const block=h('div',{},h('p',{},'目录版本 '+version));
+      for(const [key,body] of Object.entries(value.content))block.append(h('p',{class:'prewrap'},Array.isArray(body)?body.join('\n'):body));
+      this.guideModal(value.content.title,block);
+    };
+    const states={published:'发布修订',archived:'归档',restored:'恢复'};
+    const list=table('发布记录',['目录版本','动作','时间','查看'],data.items.map(row=>[String(row.version),states[row.action],date(row.created_at),button('查看正文',()=>show(row.version),'small')]));
+    const controls=h('div',{class:'row-actions'},button('最初发布正文',()=>show(0)));
+    if(offset)controls.append(button('上一页',()=>this.openGuideHistory(projectId,item,Math.max(0,offset-20))));
+    if(data.has_more)controls.append(button('下一页',()=>this.openGuideHistory(projectId,item,offset+20)));
+    this.guideModal('说明发布历史',h('div',{},list,controls));
+  }
+  amendGuide(projectId,item) {
+    const labels={title:'说明标题',product_version:'适用产品版本',user_roles:'适用角色（每行一个）',purpose:'用途',prerequisites:'使用前提',entry:'功能入口',steps:'操作步骤（每行一步）',
+      inputs:'输入与校验',results:'操作结果',recovery:'异常与恢复',cautions:'操作提示',examples:'完整示例',changes:'版本变化',limitations:'限制与反馈',verification:'核验依据'};
+    const form=h('form',{},...Object.entries(labels).map(([key,label])=>field(key,label,{required:true,value:Array.isArray(item.content[key])?item.content[key].join('\n'):item.content[key],multiline:!['title','product_version'].includes(key)})),
+      field('reason','本次修订原因',{required:true,minlength:10,maxlength:2000,multiline:true}));
+    dialog('提交说明修订','审核期间目录继续展示旧正文。修订须经过产品与测试核对，再由发布负责人替换。',form,'保存修订',async values=>{
+      const {reason,...content}=values;
+      for(const key of ['user_roles','steps'])content[key]=content[key].split(/\r?\n/).map(s=>s.trim()).filter(Boolean);
+      return this.api('POST',`/api/projects/${projectId}/guides/${item.id}/amendments`,{base_version:item.catalog_version,content,reason});
+    });
+  }
+  async openGuideAmendments(projectId,item,offset=0) {
+    const base=`/api/projects/${projectId}/guides/${item.id}`,data=await this.api('GET',`${base}/amendments?offset=${offset}&limit=20`);
+    if(this.project?.id!==projectId)return;
+    const review=(row,gate)=>{
+      const form=h('form',{},field('approved','核对结果',{items:[['yes','通过'],['no','退回（须新建修订）']]}),
+        field('reason','核对依据',{required:true,minlength:10,maxlength:2000,multiline:true}),field('override_reason','超管自审例外原因（独立核对留空）',{maxlength:2000}));
+      dialog('修订'+(gate==='test'?'测试':'产品')+'核对','请先展开修订正文并核对。审核只对当前目录版本有效。',form,'提交',values=>this.api('POST',`${base}/amendments/${row.id}/decisions`,{...values,approved:values.approved==='yes',gate}));
+    };
+    const sections=data.items.map(row=>{
+      const reviews=row.reviews || [],current=row.base_version===item.catalog_version && !item.archived;
+      const controls=h('div',{class:'row-actions'});
+      for(const gate of ['product','test'])if(current && !reviews.some(r=>r.gate===gate) && this.can(gate==='test'?'tasks:test':'tasks:publish'))
+        controls.append(button(gate==='test'?'测试核对':'产品核对',()=>review(row,gate)));
+      if(current && reviews.filter(r=>r.approved).length===2 && this.can('tasks:publish'))controls.append(button('发布此修订',()=>{
+        dialog('发布说明修订','更新目录正文，旧发布版本保留。',h('form',{},field('reason','发布原因',{required:true,minlength:10,maxlength:2000})),
+          '发布',values=>this.api('POST',base+'/publications',{...values,expected_version:item.catalog_version,action:'published',amendment_id:row.id}));
+      }));
+      return h('section',{class:'card'},h('h3',{},row.content.title),h('p',{},`基于目录版本 ${row.base_version} · ${current?'待核对或发布':'历史修订'}`),
+        h('p',{},row.reason || ''),h('details',{},h('summary',{},'展开修订正文'),...Object.values(row.content).map(value=>h('p',{class:'prewrap'},Array.isArray(value)?value.join('\n'):value))),
+        ...reviews.map(r=>h('p',{},`${r.gate==='test'?'测试':'产品'}：${r.approved?'通过':'退回'} · ${r.reason}`)),controls);
+    });
+    const controls=h('div',{class:'row-actions'});
+    if(offset)controls.append(button('上一页',()=>this.openGuideAmendments(projectId,item,Math.max(0,offset-20))));
+    if(data.has_more)controls.append(button('下一页',()=>this.openGuideAmendments(projectId,item,offset+20)));
+    this.guideModal('说明修订与核对',h('div',{},...sections,controls));
   }
   async repositories() {
     const title = this.heading('仓库与资料','一个项目组可以接入 Web、PC、API 和共享资料等独立仓库。成员只获得明确批准的资源。');
@@ -544,6 +639,7 @@ class Console {
       repo.status === 'active' ? '可用' : '已归档',h('div',{class:'row-actions'},
       repo.status === 'active' && repo.capabilities.includes('code:read') && button('交付要求',()=>this.openDeliveryPolicy(projectId,repo),'small'),
       repo.status === 'active' && repo.capabilities.includes('code:read') && button('记忆整理设置',()=>this.openDistillationPolicy(projectId,repo),'small'),
+      this.isRoot && repo.status === 'active' && button('服务端 AI',()=>this.openGenerationPolicy(projectId,repo),'small'),
       this.isRoot && button(repo.status === 'active' ? '归档' : '恢复',() => {
         const status = repo.status === 'active' ? 'archived' : 'active';
         dialog(status === 'archived' ? '归档仓库' : '恢复仓库','归档会停止本平台的仓库访问。恢复后仍在有效期内的原授权可以再次使用。',h('form'),
@@ -593,8 +689,8 @@ class Console {
     const config=await this.api('GET',base);
     if(this.project?.id!==projectId || this.renderVersion!==revision)return;
     const content=h('div',{id:'modal-body'},h('h2',{},'记忆整理设置 · '+repo.name),
-      h('p',{},'服务器准备有上限的来源批次，由当前开发对话中的 Agent 提炼。候选需独立审核，原始记录继续保留。'),
-      h('p',{class:'hint'},'整理资料不调用模型。开启后不会自动启动外部 Agent，也不产生后台模型调用。调整设置使旧批次停止提交。'));
+      h('p',{},'服务器准备有上限的来源批次，由已授权的服务端模型或当前开发对话提炼。候选需独立审核，原始记录继续保留。'),
+      h('p',{class:'hint'},'资料准备本身不调用模型。超管另行开启服务端 AI 后，后台才会调用配置的模型；否则由获准开发工具处理。调整设置使旧批次停止提交。'));
     if(this.can('tasks:publish')){
       const form=h('form',{},h('div',{class:'fields'},
         field('enabled','自动准备提炼资料',{items:[['no','关闭'],['yes','开启']],value:config.enabled?'yes':'no'}),
@@ -603,7 +699,7 @@ class Console {
         field('input_budget_bytes','每批输入上限（字节）',{type:'number',min:10000,max:24000,required:true,value:config.input_budget_bytes}),
         field('max_candidates','每批最多多少条候选',{type:'number',min:1,max:3,required:true,value:config.max_candidates}),
         field('reason','设置或调整原因',{required:true,minlength:10,maxlength:1000,full:true})));
-      form.append(h('p',{class:'hint'},'较小的输入上限可能容不下多份较长摘录，可降低最低份数。实际计费 Token 由开发工具报告，不能从字节数精确换算。'),
+      form.append(h('p',{class:'hint'},'较小的输入上限可能容不下多份较长摘录，可降低最低份数。用量按执行方式记录开发工具或模型服务的响应，不能从字节数精确换算，也不代表账单已核对。'),
         h('div',{class:'actions end'},button('取消',()=>modal.close()),submit(form,'保存整理设置',async values=>{
           await this.api('PUT',base,{expected_version:config.version,enabled:values.enabled==='yes',
             min_sources:Number(values.min_sources),max_sources:Number(values.max_sources),
@@ -941,11 +1037,16 @@ class Console {
       h('h3',{},'项目额度'),h('p',{},`${data.budget.mode==='observe'?'只观察':'达到额度暂停受管开发'} · 月度上报 Token 额度：${data.budget.monthly_reported_token_limit || '未设上限'}`),
       h('p',{},data.budget.managed_work_available?'当前允许开始受管工作':'已暂停新的受管修改；可以继续保存日志、上传检查点和交接。'),
       h('p',{class:'hint'},'额度基于已收到的全项目报告判断，不能拦截独立外部程序或未上报的调用。上方用量只展示你有权查看的记录。'));
+    if(data.server_generation){
+      const central=data.server_generation;
+      content.append(h('h3',{},'服务端 AI 调用'),h('p',{},`共 ${central.calls} 次 · 提供方返回输入 ${central.provider_input_tokens} / 输出 ${central.provider_output_tokens} Token · 用量未知 ${central.unknown_usage_calls} 次`),
+        h('p',{class:'hint'},`保守预留 ${central.conservative_reserved_units} 单位（请求字节数加输出上限，失败也保留）。预留不是账单；实际用量尚未与账单独立核对。服务端新调用另按项目额度检查宿主上报与服务端预留的合计。`));
+    }
     if(this.can('tasks:publish'))content.append(button('调整额度',()=>{
       const form=h('form',{},field('mode','达到额度时',{value:data.budget.mode,items:[['observe','只观察'],['pause-managed-work','暂停受管开发']]}),
         field('limit','月度上报 Token 额度（0 表示不设上限）',{type:'number',min:0,max:1000000000000,value:data.budget.monthly_reported_token_limit,required:true}),
         field('change_reason','调整原因',{required:true,minlength:10,maxlength:1000}));
-      dialog('调整项目额度','额度只对平台收到的宿主用量报告生效，日志和交接继续可用。',form,'保存额度',values=>this.api('PUT',base+'/budget',{
+      dialog('调整项目额度','受管开发依据宿主上报判断；服务端新调用还会合计服务端保守预留。日志和交接继续可用。',form,'保存额度',values=>this.api('PUT',base+'/budget',{
         expected_version:data.budget.version,mode:values.mode,monthly_reported_token_limit:Number(values.limit),change_reason:values.change_reason}));
     }));
     return [title,content];
@@ -965,8 +1066,8 @@ class Console {
       this.memoryFilter={...filter,...values,batch_offset:0};await this.renderView();
     }));
     const selected=registry.items.find(r=>r.id===filter.repository_id);
-    const controls=h('section',{class:'card'},h('h2',{},'自动准备资料，由当前 Agent 提炼'),
-      h('p',{},'回到本仓库开发对话说：“整理本仓库待提炼记忆。”每批来源固定，结论仍需独立审核后进入开工记忆。'),
+    const controls=h('section',{class:'card'},h('h2',{},'有界资料批次与提炼进度'),
+      h('p',{},'超管在仓库中开启“服务端 AI”后，服务器会后台处理待办；也可在本仓库开发对话说：“整理本仓库待提炼记忆。”每批来源固定，结论仍需独立审核后进入开工记忆。'),
       h('p',{class:'hint'},'资料整理和认领不表示模型已执行。每批有输入上限；没有新增结论也要明确记录。不会删除原始日志或改写禁改规则。'),
       selected?.capabilities.includes('code:read')?button('记忆整理设置',()=>this.openDistillationPolicy(projectId,selected),'small'):h('p',{class:'hint'},'选择一个获准仓库后，可以查看该仓库的整理设置。'),form);
     const labels={queued:'等待 Agent 处理',running:'已认领，尚未确认提炼结果',succeeded:'已提交结果',obsolete:'来源或设置已变化'};
@@ -1185,6 +1286,48 @@ class Console {
           toast('申请已拒绝'); await this.renderView();
         },'danger')))),!items.length && h('section',{class:'card empty'},'当前没有待审批申请。')];
   }
+  async openGenerationPolicy(projectId,repo) {
+    const base=`/api/projects/${projectId}/repositories/${repo.id}/generation`;
+    const [config,calls]=await Promise.all([this.api('GET',base),this.api('GET',`/api/projects/${projectId}/generation-calls?repository_id=${repo.id}&limit=20`)]);
+    const states={reserved:'已预留，待调用',calling:'正在调用',ready:'结果已保存，待提交',shared:'已提交待审核',uncertain:'结果未知，等待处理',blocked:'结果被拦截，等待处理',abandoned:'已批准重新调用'};
+    const retry=call=>{
+      const form=h('form',{},field('mode','恢复方式',{items:call.has_saved_result?[['saved','使用已保存结果，不再次付费调用'],['new','批准新调用，可能重复计费']]:[['new','批准新调用，可能重复计费']]}),
+        field('reason','审批原因',{required:true,minlength:10,maxlength:2000,multiline:true}));
+      dialog('恢复服务端任务','重新检查当前人员、设备、来源及仓库授权。新调用会等待原租约结束并再次检查额度；原调用和预留保留。',form,'确认审批',
+        data=>this.api('POST',`/api/projects/${projectId}/generation-calls/${call.id}/retry`,{allow_new_provider_call:data.mode==='new',reason:data.reason}));
+    };
+    const form=h('form',{},field('enabled','服务端处理',{items:[['no','关闭'],['yes','开启']],value:config.enabled?'yes':'no'}),
+      field('distillation','记忆提炼',{items:[['yes','处理已准备的资料批次'],['no','不处理']],value:config.distillation?'yes':'no'}),
+      field('guides','操作说明草稿',{items:[['no','不处理'],['yes','处理本仓库冻结的说明待办']],value:config.guides?'yes':'no'}),
+      field('reason','授权原因',{required:true,minlength:10,maxlength:2000,multiline:true}),
+      h('p',{},'开启后，本仓库获准的资料会发送给超管配置的模型服务，服务器在电脑关闭后仍可运行。不会修改代码或自动审核结果。撤销开启设备或更新设置会停止旧授权结果提交。'),
+      table('最近服务端调用',['类型','状态','输入 / 输出 Token','保守预留','处理'],calls.items.map(c=>[
+        c.kind==='guide'?'说明草稿':'记忆提炼',h('span',{title:c.error_code || ''},states[c.state] || '等待处理'),`${c.input_tokens??'未知'} / ${c.output_tokens??'未知'}`,String(c.reserved_tokens),
+        c.retry?.state==='pending'?'已审批，等待恢复':['blocked','uncertain'].includes(c.state)?button(c.retry?.state==='rejected'?'恢复未通过，重新处理':'处理',()=>retry(c),'small'):'—'])));
+    dialog('服务端 AI · '+repo.name,'仅超级管理员可开启。调用中断时保留预算与状态，不自动重复付费请求。',form,'保存授权',async data=>{
+      await this.api('PUT',base,{expected_version:config.version,enabled:data.enabled==='yes',distillation:data.distillation==='yes',guides:data.guides==='yes',reason:data.reason});
+    });
+  }
+  async generationSettings() {
+    const data=await this.api('GET','/api/admin/generation');
+    const form=h('form',{},field('endpoint','模型接口完整地址',{type:'url',required:true,value:data.endpoint || '',placeholder:'https://你的服务/v1/chat/completions',full:true}),
+      field('model','模型名称',{required:true,value:data.model || '',maxlength:120}),
+      field('api_key','API 密钥',{type:'password',autocomplete:'new-password',placeholder:data.api_key_set?'已保存；同地址留空保留':'请输入密钥'}),
+      field('token_parameter','输出上限参数',{items:[['max_completion_tokens','max_completion_tokens'],['max_tokens','max_tokens（部分兼容服务）']],value:data.token_parameter || 'max_completion_tokens'}),
+      field('max_input_bytes','每次请求字节上限',{type:'number',min:16000,max:65536,value:data.max_input_bytes || 48000}),
+      field('max_output_tokens','每次输出 Token 上限',{type:'number',min:256,max:8192,value:data.max_output_tokens || 3000}),
+      field('daily_token_limit','每日保守用量上限',{type:'number',min:1000,max:10000000,value:data.daily_token_limit || 100000}),
+      field('daily_call_limit','每日调用次数上限',{type:'number',min:1,max:1000,value:data.daily_call_limit || 10}),
+      field('timeout_seconds','请求最长秒数',{type:'number',min:5,max:120,value:data.timeout_seconds || 60}),
+      field('reason','配置原因',{required:true,minlength:10,maxlength:2000,multiline:true}));
+    form.append(h('p',{},'密钥仅加密保存于服务端，不回显给网页或 MCP。兼容服务须支持 JSON 对象输出。每日按请求 UTF-8 字节数加输出上限预留，属于保守限制，不是实际账单；失败或未知结果也保留预留。保存后还须逐仓库开启。'),
+      submit(form,'保存服务端模型设置',async values=>{
+        const body={...values,expected_version:data.version,api_key:values.api_key || null};
+        for(const key of ['max_input_bytes','max_output_tokens','daily_token_limit','daily_call_limit','timeout_seconds'])body[key]=Number(body[key]);
+        await this.api('PUT','/api/admin/generation',body);toast('服务端模型配置已加密保存');await this.renderView();
+      }));
+    return h('section',{class:'card'},h('h2',{},'服务端 AI 调用'),form);
+  }
   async settings() {
     const data = await this.api('GET','/api/admin/settings');
     const form = h('form',{},this.configFields(data));
@@ -1195,7 +1338,7 @@ class Console {
     })));
     return [this.heading('系统设置','维护服务地址和发信服务。仅超级管理员可以查看或修改。',
       [button('更换超管邮箱',() => this.changeEmail())]),
-      h('section',{class:'card'},h('h2',{},'发信与服务地址'),form),h('div',{class:'help-block'},
+      h('section',{class:'card'},h('h2',{},'发信与服务地址'),form),await this.generationSettings(),h('div',{class:'help-block'},
         h('strong',{},'服务地址状态：'),data.public_url || '尚未填写',h('br'),'当前接入地址：',data.active_origin,
         h('br'),'服务地址保存后，需在部署端完成 DNS 与 HTTPS 入口启用。发信设置保存后立即用于验证码邮件。')];
   }

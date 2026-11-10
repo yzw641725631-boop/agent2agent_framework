@@ -10,7 +10,7 @@ from sqlalchemy import DateTime, ForeignKey, Integer, String, func, select
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
-from . import repositories, tasks
+from . import generation, repositories, tasks
 from . import schemas as S
 from .models import Base, Identity, ProjectProgress, TaskRun, Worklog
 from .security import HubError, now
@@ -148,17 +148,24 @@ def scoped_get(db, project_id, job_id, request, **kwargs):
 
 
 def view(db, row, *, content=False):
+    from . import guide_lifecycle
+
     revision = db.get(GuideRevision, (row.id, row.draft_version)) if row.draft_version else None
+    publication, amendment = guide_lifecycle.overlay(db, row)
+    visible = amendment or revision
     value = {
         "id": str(row.id),
         "state": row.state,
         "version": row.version,
         "draft_version": row.draft_version,
         "audience": row.audience,
-        "title": revision.content["title"] if revision else row.plan.get("module", ""),
-        "product_version": revision.content["product_version"] if revision else None,
+        "title": visible.content["title"] if visible else row.plan.get("module", ""),
+        "product_version": visible.content["product_version"] if visible else None,
         "published_at": row.published_at.isoformat() if row.published_at else None,
-        "content_hash": revision.content_hash if revision else None,
+        "content_hash": visible.content_hash if visible else None,
+        "catalog_version": publication.version if publication else 0,
+        "archived": bool(publication and publication.action == "archived"),
+        "amendment_id": str(amendment.id) if amendment else None,
         "content_trust": "reviewed-project-data" if row.state == "published" else "untrusted-project-data",
     }
     if private(db, row):
@@ -180,8 +187,11 @@ def view(db, row, *, content=False):
             lease_until=row.lease_until.isoformat() if row.lease_until else None,
             reason=row.reason,
         )
-    if content and revision:
-        value["content"] = revision.content
+    if content and visible:
+        value["content"] = visible.content
+    if private(db, row):
+        value["generation"] = generation.view(db, row, "guide")
+        value["execution_policy"] = generation.policy_hint(db, row.repository_id, "guide")
     return value
 
 
@@ -261,7 +271,7 @@ def live(hub, db, identity, row, body):
         raise HubError("GUIDE_LEASE_EXPIRED", 409)
 
 
-def complete(hub, db, identity, row, body, request_id):
+def complete(hub, db, identity, row, body, request_id, *, generation_report=None):
     live(hub, db, identity, row, body)
     source = db.get(Worklog, row.source_worklog_id)
     if not source or source.receipt_hash != row.source_hash or body.source_hash != row.source_hash:
@@ -280,6 +290,7 @@ def complete(hub, db, identity, row, body, request_id):
     row.draft_version, row.state, row.lease_until = revision.version, "review", None
     row.version += 1
     event(hub, db, identity, row, "submitted", request_id, content_hash=revision.content_hash)
+    generation.record(db, identity, row, generation_report, "guide")
     db.flush()
     return view(db, row, content=True)
 
@@ -349,6 +360,7 @@ def install(app, hub, actor, mutate, dependency):
         repository_id: uuid.UUID | None = None,
         instance_id: uuid.UUID | None = None,
         state: str | None = Query(None, max_length=20),
+        include_archived: bool = False,
         query: str = Query("", max_length=200),
         offset: int = Query(0, ge=0, le=100000),
         limit: int = Query(50, ge=1, le=100),
@@ -356,6 +368,8 @@ def install(app, hub, actor, mutate, dependency):
         identity = actor(request, db)
         hub.project(db, identity, project_id)
         statement = select(GuideJob).where(GuideJob.project_id == project_id)
+        if not include_archived:
+            statement = statement.where(~func.hub.guide_archived(GuideJob.id))
         if repository_id:
             statement = statement.where(GuideJob.repository_id == repository_id)
         if task_id:
@@ -370,10 +384,12 @@ def install(app, hub, actor, mutate, dependency):
         if state:
             statement = statement.where(GuideJob.state == state)
         if query:
+            from .guide_lifecycle import content_expression
+
             statement = statement.join(
                 GuideRevision,
                 (GuideRevision.job_id == GuideJob.id) & (GuideRevision.version == GuideJob.draft_version),
-            ).where(func.strpos(func.lower(GuideRevision.content.cast(String)), query.lower()) > 0)
+            ).where(func.strpos(func.lower(content_expression().cast(String)), query.lower()) > 0)
         rows = list(
             db.scalars(
                 statement.order_by(GuideJob.created_at.desc(), GuideJob.id).offset(offset).limit(limit)

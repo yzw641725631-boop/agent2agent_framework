@@ -71,7 +71,7 @@ def collect(base=BASE, time=None):
 
     for name in ['agent-hub-postgres', 'agent-hub-app-api-1', 'agent-hub-app-document-worker-1',
                  'agent-hub-app-memory-worker-1', 'agent-hub-app-embedding-1',
-                 'agent-hub-app-embedding-worker-1', 'agent-hub-edge']:
+                 'agent-hub-app-embedding-worker-1', 'agent-hub-app-generation-worker-1', 'agent-hub-edge']:
         check('container:' + name, lambda name=name: container(name))
 
     def database():
@@ -98,6 +98,17 @@ def collect(base=BASE, time=None):
         if code or output.strip() != '0':
             raise ValueError()
     check('semantic:queue', embedding_queue)
+
+    def generation_queue():
+        code, output = command(['docker', 'exec', 'agent-hub-postgres', 'psql', '-X', '-U',
+                                'postgres', '-d', 'agent_hub', '-Atc',
+                                "SELECT count(*) FROM generation_calls WHERE state IN ('blocked','uncertain') "
+                                "OR state IN ('reserved','calling') AND lease_until<now()"])
+        if code or not output.strip().isdigit():
+            raise ValueError()
+        pending = int(output.strip())
+        return {'state': 'warning' if pending else 'ok', 'needs_attention': pending}
+    check('generation:manual-recovery', generation_queue)
 
     def public_health():
         with urlopen(ORIGIN + '/healthz', timeout=10) as response:

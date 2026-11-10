@@ -729,7 +729,7 @@ class MemoryDecision(Input):
 
 
 class KnowledgeGeneration(Input):
-    method: Literal["local-agent", "human"] = "local-agent"
+    method: Literal["local-agent", "human", "server-model"] = "local-agent"
     harness: Harness | None = None
     model_reported: str = Field(default="", max_length=120)
     prompt_version: str = Field(default="knowledge-v1", min_length=1, max_length=80)

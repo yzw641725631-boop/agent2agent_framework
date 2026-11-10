@@ -1,6 +1,6 @@
 # Offline upgrade from an operator-verified local image with identical locked dependencies.
 # Use the normal Dockerfile for a clean build or whenever requirements.lock changes.
-ARG HUB_DEPENDENCY_IMAGE=agent-hub:0.15.0
+ARG HUB_DEPENDENCY_IMAGE=agent-hub:0.15.1
 FROM ${HUB_DEPENDENCY_IMAGE} AS runtime
 USER root
 WORKDIR /app

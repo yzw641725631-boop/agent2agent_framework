@@ -156,6 +156,8 @@ def report(hub, db, actor, project_id, body, request_id):
 
 
 def summary(db, project_id, repository_id=None):
+    from .server_generation import Call
+
     month = now().replace(day=1, hour=0, minute=0, second=0, microsecond=0)
     statement = select(
         func.count(UsageEvent.id),
@@ -169,6 +171,16 @@ def summary(db, project_id, repository_id=None):
     if repository_id:
         statement = statement.where(UsageEvent.repository_id == repository_id)
     count, incoming, outgoing, cached, cost, cost_reports, byte_count = db.execute(statement).one()
+    central = select(
+        func.count(Call.id),
+        func.coalesce(func.sum(Call.reserved_tokens), 0),
+        func.coalesce(func.sum(Call.input_tokens), 0),
+        func.coalesce(func.sum(Call.output_tokens), 0),
+        func.count(Call.id).filter((Call.input_tokens.is_(None)) | (Call.output_tokens.is_(None))),
+    ).where(Call.project_id == project_id, Call.created_at >= month)
+    if repository_id:
+        central = central.where(Call.repository_id == repository_id)
+    calls, reserved, provider_input, provider_output, unknown = db.execute(central).one()
     return {
         "period_start": month.isoformat(),
         "visible_events": count,
@@ -182,6 +194,15 @@ def summary(db, project_id, repository_id=None):
         "billing_verified": False,
         "unreported_harness_usage_known": False,
         "budget": budget(db, project_id),
+        "server_generation": {
+            "calls": calls,
+            "conservative_reserved_units": reserved,
+            "provider_input_tokens": provider_input,
+            "provider_output_tokens": provider_output,
+            "unknown_usage_calls": unknown,
+            "billing_independently_verified": False,
+            "reservation_method": "request UTF-8 bytes plus maximum output tokens; not a bill",
+        },
     }
 
 

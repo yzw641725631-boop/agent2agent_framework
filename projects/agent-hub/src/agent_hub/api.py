@@ -268,10 +268,14 @@ def create_app(
     insights.install(app, hub, actor, mutate, semantic_query, db_dependency, security_sessions)
     from . import guides
     guides.install(app, hub, actor, mutate, db_dependency)
+    from . import guide_lifecycle
+    guide_lifecycle.install(app, hub, actor, mutate, db_dependency)
     from . import delivery_evidence
     delivery_evidence.install(app, hub, actor, token, mutate, db_dependency, security_sessions)
     from . import distillation
     distillation.install(app, hub, actor, mutate, db_dependency)
+    from . import server_generation
+    server_generation.install(app, hub, actor, mutate, db_dependency)
 
     @app.get("/healthz")
     def health():

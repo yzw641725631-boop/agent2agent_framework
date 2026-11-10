@@ -25,3 +25,17 @@ test('project MCP advertises current guide tools and invokes their actual names'
   const read=await dispatch({jsonrpc:'2.0',id:2,method:'tools/call',params:{name:'hub_read_guide',arguments:{job_id:id}}},invoke);
   assert.equal(read.result.structuredContent.name,'hub_read_guide');
 });
+test('revision and feedback calls retain project scope, versions and review privileges',()=>{
+  const b={projectId:id,repositoryId:repo};
+  const snapshot=request('hub_read_guide_publication',{job_id:id,publication_version:0},b,[]);
+  assert.equal(snapshot.path,`/api/projects/${id}/guides/${id}/publications/0?repository_id=${repo}`);
+  const feedback=request('hub_send_guide_feedback',{job_id:id,publication_version:0,kind:'outdated',body:'登录入口的名称已发生变化，请核对说明。',operation_id:id},b,['guides:read']);
+  assert.equal(feedback.body.publication_version,0);
+  assert.equal(feedback.path,`/api/projects/${id}/guides/${id}/feedback?repository_id=${repo}`);
+  const review={job_id:id,amendment_id:repo,gate:'product',approved:true,reason:'核对修订内容和适用版本后记录结论。',operation_id:id};
+  assert.throws(()=>request('hub_decide_guide_amendment',review,b,['tasks:test']),{code:'CAPABILITY_REQUIRED'});
+  const approved=request('hub_decide_guide_amendment',review,b,['tasks:publish']);
+  assert.equal(approved.path,`/api/projects/${id}/guides/${id}/amendments/${repo}/decisions?repository_id=${repo}`);
+  assert.ok(!Object.hasOwn(approved.body,'amendment_id'));
+  assert.throws(()=>request('hub_read_guide_publication',{job_id:id,publication_version:-1},b,[]),{code:'INVALID_REQUEST'});
+});

@@ -20,6 +20,12 @@ CREATE ROLE hub_embedding NOLOGIN;
 CREATE ROLE hub_embedding_worker LOGIN PASSWORD :'embedding_password'
     NOSUPERUSER NOCREATEDB NOCREATEROLE INHERIT NOBYPASSRLS;
 GRANT hub_embedding TO hub_owner, hub_embedding_worker;
+\getenv generation_password HUB_GENERATION_PASSWORD
+CREATE ROLE hub_generation NOLOGIN NOSUPERUSER NOBYPASSRLS;
+CREATE ROLE hub_generation_worker LOGIN PASSWORD :'generation_password'
+    NOSUPERUSER NOCREATEDB NOCREATEROLE INHERIT NOBYPASSRLS;
+GRANT hub_runtime TO hub_generation;
+GRANT hub_generation TO hub_owner, hub_generation_worker;
 ALTER DATABASE :"database_name" OWNER TO hub_owner;
 REVOKE CREATE ON SCHEMA public FROM PUBLIC;
 GRANT USAGE, CREATE ON SCHEMA public TO hub_owner;
