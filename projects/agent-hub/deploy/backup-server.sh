@@ -7,24 +7,45 @@ test "$(id -u)" = 0
 test ! -L "$base"
 mkdir -p "$base/staging"
 chmod 0700 "$base" "$base/staging"
+exec 8>/opt/agent-hub/database/deploy.lock
+flock -s -n 8
 exec 9>"$base/backup.lock"
 flock -n 9
 test -s "$base/restic-password"
 stage=$(mktemp -d "$base/staging/backup-XXXXXXXX")
 case "$stage" in "$base"/staging/backup-*) ;; *) exit 1 ;; esac
+checkpoint="$stage/checkpoint"
+tool=${HUB_CHECKPOINT_TOOL:-/opt/agent-hub/application/current/deploy/database-checkpoint.py}
 cleanup() {
-  rm -f "$stage/database.dump" "$stage/globals.sql" "$stage/manifest.json" "$stage/restic.json"
+  rm -f "$checkpoint/database.dump" "$checkpoint/inventory.json" "$checkpoint/globals.sql" "$checkpoint/manifest.json" "$stage/restic.json"
+  if test -d "$checkpoint"; then rmdir "$checkpoint"; fi
   rmdir "$stage"
 }
 trap cleanup EXIT
 trap 'exit 1' HUP INT TERM
-docker exec agent-hub-postgres pg_dump -U postgres -d agent_hub -Fc >"$stage/database.dump"
-docker exec -i agent-hub-postgres pg_restore --list <"$stage/database.dump" >/dev/null
-docker exec agent-hub-postgres pg_dumpall -U postgres --globals-only >"$stage/globals.sql"
-python3 - "$stage/manifest.json" <<'PY'
-import datetime,json,sys
-with open(sys.argv[1], 'x') as output:
-    json.dump({'schema':1,'database':'agent_hub','artifacts_immutable':True,
+python3 "$tool" capture --container agent-hub-postgres --database agent_hub --output "$checkpoint" >/dev/null
+docker exec -i agent-hub-postgres pg_restore --list <"$checkpoint/database.dump" >/dev/null
+docker exec agent-hub-postgres pg_dumpall -U postgres --globals-only >"$checkpoint/globals.sql"
+image=$(docker inspect --format '{{.Image}}' agent-hub-app-api-1)
+version=$(docker exec agent-hub-app-api-1 python -c 'from agent_hub import __version__; print(__version__)')
+python3 - "$checkpoint" "$image" "$version" <<'PY'
+import datetime,hashlib,json,re,sys
+from pathlib import Path
+directory=Path(sys.argv[1])
+assert re.fullmatch(r'sha256:[a-f0-9]{64}',sys.argv[2])
+assert re.fullmatch(r'[0-9]+\.[0-9]+\.[0-9]+',sys.argv[3])
+inventory=json.loads((directory/'inventory.json').read_text())
+checksums={}
+for name in ('database.dump','globals.sql','inventory.json'):
+    digest=hashlib.sha256()
+    with (directory/name).open('rb') as stream:
+        for block in iter(lambda:stream.read(1024*1024),b''): digest.update(block)
+    checksums[name]=digest.hexdigest()
+with (directory/'manifest.json').open('x') as output:
+    json.dump({'schema':2,'database':'agent_hub','artifacts_immutable':True,
+               'consistent_database_snapshot':True,'database_schema':inventory['database_schema'],
+               'application_image':sys.argv[2],'application_version':sys.argv[3],
+               'database_files_sha256':checksums,
                'created_at':datetime.datetime.now(datetime.timezone.utc).isoformat(),
                'offsite_confirmed':False},output)
 PY
@@ -33,7 +54,7 @@ restic() {
     --tmpfs /tmp:rw,nosuid,noexec,size=64m -e GOMEMLIMIT=320MiB \
     --cap-drop ALL --cap-add DAC_READ_SEARCH --security-opt no-new-privileges:true \
     -v "$base/restic:/repository" -v "$base/restic-password:/run/secrets/password:ro" \
-    -v "$stage:/data/database:ro" \
+    -v "$checkpoint:/data/database:ro" \
     -v /opt/agent-hub/artifacts/work:/data/work-archives:ro \
     -v /opt/agent-hub/semantic/model-fp32:/data/semantic-model:ro \
     -v /opt/agent-hub/application/.env:/data/config/application.env:ro \

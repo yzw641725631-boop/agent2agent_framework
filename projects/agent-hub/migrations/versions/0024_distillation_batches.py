@@ -9,6 +9,8 @@ depends_on = None
 
 
 def upgrade():
+    # The API may check compatibility, but it cannot change migration history.
+    op.execute("GRANT SELECT ON alembic_version TO hub_runtime")
     op.execute("""
       CREATE TABLE distillation_policies (
         project_id uuid NOT NULL REFERENCES projects(id), repository_id uuid NOT NULL,

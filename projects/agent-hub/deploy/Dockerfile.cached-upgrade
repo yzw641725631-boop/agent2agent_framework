@@ -1,0 +1,17 @@
+# Offline upgrade from an operator-verified local image with identical locked dependencies.
+# Use the normal Dockerfile for a clean build or whenever requirements.lock changes.
+ARG HUB_DEPENDENCY_IMAGE=agent-hub:0.15.0
+FROM ${HUB_DEPENDENCY_IMAGE} AS runtime
+USER root
+WORKDIR /app
+COPY requirements.lock /tmp/release-requirements.lock
+RUN cmp /tmp/release-requirements.lock /app/requirements.lock \
+    && rm /tmp/release-requirements.lock \
+    && rm -rf /app/src /app/migrations
+COPY pyproject.toml alembic.ini ./
+COPY src ./src
+COPY migrations ./migrations
+RUN PIP_NO_INDEX=1 pip install --no-deps --no-build-isolation .
+USER 10001
+EXPOSE 8765
+CMD ["agent-hub", "serve", "--host", "0.0.0.0", "--port", "8765"]

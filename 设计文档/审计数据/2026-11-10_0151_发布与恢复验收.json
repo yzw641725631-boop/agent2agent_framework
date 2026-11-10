@@ -1,0 +1,374 @@
+{
+  "schema": 1,
+  "date": "2026-11-10",
+  "scope": "complete-capabilities-release-upgrade-restore-and-windows-installation",
+  "backend": "0.15.1",
+  "desktop": "0.17.0",
+  "database_schema": "0024",
+  "backend_tests_passed": 303,
+  "backend_tests_failed": 0,
+  "backend_third_party_deprecation_warnings": 1,
+  "desktop_tests_passed": 161,
+  "desktop_tests_failed": 0,
+  "legacy_0140_on_0024_tests_passed": 225,
+  "test_log_sha256": {
+    "backend": "919829fc3779843ec71492630dd7a99c6194ca9de4ca20e7cfcdbf67af9cef54",
+    "desktop": "5d23c4ae640dd441c2a17f0367a8f32319a5cbb66b17c2524289125cc340062b",
+    "legacy_0140_on_0024": "142a9460d8f2562b211918514c9f4b08a3d915e6f2677e6cb5cda363bc8c033a"
+  },
+  "production_upgrades": [
+    {
+      "business_contents_disclosed": false,
+      "database_schema": "0024",
+      "mode": "upgrade",
+      "passed": true,
+      "structure_verified": false,
+      "verified_rows": 63,
+      "verified_tables": 45,
+      "schema": 1,
+      "application_version": "0.15.0",
+      "previous_application_version": "0.14.0",
+      "previous_database_schema": "0017",
+      "image_id": "sha256:5f28b334881de76e8692fa207c5a12537b950e1d11a24d8245f0d12b537edf46",
+      "created_at": "2026-11-10T01:19:14.962167+00:00",
+      "production_volume_preserved": true,
+      "business_pilot_performed": false
+    },
+    {
+      "business_contents_disclosed": false,
+      "database_schema": "0024",
+      "mode": "exact",
+      "passed": true,
+      "structure_verified": true,
+      "verified_rows": 64,
+      "verified_tables": 61,
+      "schema": 1,
+      "application_version": "0.15.1",
+      "previous_application_version": "0.15.0",
+      "previous_database_schema": "0024",
+      "image_id": "sha256:7bfceca687390f87a228131261956ddbe596333b0fc2875be6cbdf72b69371ba",
+      "created_at": "2026-11-10T01:35:57.584811+00:00",
+      "production_volume_preserved": true,
+      "business_pilot_performed": false
+    }
+  ],
+  "current_image_id": "sha256:7bfceca687390f87a228131261956ddbe596333b0fc2875be6cbdf72b69371ba",
+  "source_archive_sha256": "1a3368472b977d78aa65807a85234dd50c517835e62646ebca8e5b412178c3d9",
+  "runtime_application_files_match_tested_source": 45,
+  "database_and_docker_only_on_server": true,
+  "fresh_installation_sql": {
+    "passed": true,
+    "database_schema": "0024",
+    "tables": 61,
+    "fresh_and_upgraded_structure_equal": true,
+    "database_and_docker_only_on_server": true,
+    "bytes": 161811,
+    "sha256": "5b82d309a8e0b8fd13fa3d3a644b3b37b3395ee904735b88288df2fe3b9f0342",
+    "offline_percent_escaping_fixed_in": "0.15.1",
+    "not_executed_on_existing_production_volume": true
+  },
+  "production_backup": {
+    "schema": 1,
+    "snapshot_id": "9cdab89d32e2fdb57783c6affe476157c4ef6f1e1558e06346305cfbe9d758dc",
+    "created_at": "2026-11-10T01:39:01.576838+00:00",
+    "full_repository_check": true,
+    "offsite_confirmed": false
+  },
+  "production_restore": {
+    "restored_database": "hub_restore_20261110T013901Z",
+    "snapshot_id": "9cdab89d32e2fdb57783c6affe476157c4ef6f1e1558e06346305cfbe9d758dc",
+    "database_schema": "0024",
+    "role_bindings_verified": true,
+    "verified_archives": 0,
+    "memory": {
+      "documents": 0,
+      "exact_originals": 0,
+      "cards": 0,
+      "knowledge_facts": 0,
+      "knowledge_events": 0,
+      "semantic_vectors": 0,
+      "errors": [],
+      "healthy": true
+    },
+    "passed": true,
+    "created_at": "2026-11-10T01:39:15.285345+00:00",
+    "application_version": "0.15.1",
+    "database_inventory_verified": true,
+    "verified_tables": 61,
+    "verified_rows": 64,
+    "structure_verified": true
+  },
+  "production_contains_business_material": false,
+  "nonempty_synthetic_validation": {
+    "synthetic_only": true,
+    "before": {
+      "passed": true,
+      "synthetic_only": true,
+      "counts": {
+        "database_schema": "0017",
+        "worklogs": 2
+      },
+      "verified_archives": 1,
+      "memory": {
+        "documents": 1,
+        "exact_originals": 1,
+        "cards": 3,
+        "knowledge_facts": 1,
+        "knowledge_events": 2,
+        "semantic_vectors": 4,
+        "errors": [],
+        "healthy": true
+      }
+    },
+    "upgraded": {
+      "passed": true,
+      "synthetic_only": true,
+      "counts": {
+        "database_schema": "0024",
+        "worklogs": 2
+      },
+      "verified_archives": 1,
+      "memory": {
+        "documents": 1,
+        "exact_originals": 1,
+        "cards": 3,
+        "knowledge_facts": 1,
+        "knowledge_events": 2,
+        "semantic_vectors": 4,
+        "errors": [],
+        "healthy": true
+      }
+    },
+    "upgrade_preservation": {
+      "business_contents_disclosed": false,
+      "database_schema": "0024",
+      "mode": "upgrade",
+      "passed": true,
+      "structure_verified": false,
+      "verified_rows": 211,
+      "verified_tables": 45
+    },
+    "exact_restore": {
+      "business_contents_disclosed": false,
+      "database_schema": "0024",
+      "mode": "exact",
+      "passed": true,
+      "structure_verified": true,
+      "verified_rows": 212,
+      "verified_tables": 61
+    },
+    "restored_originals_knowledge_vectors_and_decryptable_archive": {
+      "passed": true,
+      "synthetic_only": true,
+      "counts": {
+        "database_schema": "0024",
+        "worklogs": 2
+      },
+      "verified_archives": 1,
+      "memory": {
+        "documents": 1,
+        "exact_originals": 1,
+        "cards": 3,
+        "knowledge_facts": 1,
+        "knowledge_events": 2,
+        "semantic_vectors": 4,
+        "errors": [],
+        "healthy": true
+      }
+    },
+    "additional_previous_nonempty_dump_upgrade": {
+      "business_contents_disclosed": false,
+      "database_schema": "0024",
+      "mode": "upgrade",
+      "passed": true,
+      "structure_verified": false,
+      "verified_rows": 308,
+      "verified_tables": 45
+    }
+  },
+  "desktop_release": {
+    "metadata_version": 18,
+    "expires_at": "2026-12-10T01:13:02.716Z",
+    "signature_algorithm": "Ed25519",
+    "authenticode_signed": false,
+    "signed_feed_sha256": "25cedaf7030c42153d402a8193808df2faa3f12fe4a5a3087cacc1cbb8d4ab3a",
+    "files_manifest_sha256": "3baf98fa394378a1a9a081087199d4a156db2967e11fd9c470480eaa72010486",
+    "installer": {
+      "url": "https://47.109.23.86:18180/desktop-updates/win-x64/AgentHub-Setup-0.17.0.exe",
+      "bytes": 123214655,
+      "sha256": "36ea346b6b8a5865b65f3eb4d38c92dbcc8829305f3b826390e83e47b47a4da7"
+    },
+    "zip": {
+      "url": "https://47.109.23.86:18180/desktop-updates/win-x64/AgentHub-0.17.0-win-x64.zip",
+      "bytes": 160053149,
+      "sha256": "cd4cc9f4bdd5e89f7db586bfa01d26c297f579b82aedd6ccbc23981c39874eb7"
+    },
+    "online_update": {
+      "passed": true,
+      "old_version": "0.16.0",
+      "new_version": "0.17.0",
+      "clicked_from_signed_out_client": true,
+      "signed_release_activated": true,
+      "native_restart_completed": true,
+      "publicDownload": true,
+      "profileIsolated": true
+    },
+    "installed": {
+      "passed": true,
+      "version": "0.17.0",
+      "installerBytesVerified": true,
+      "installerSource": "local-build-matched-published-sha256",
+      "installerSha256": "36ea346b6b8a5865b65f3eb4d38c92dbcc8829305f3b826390e83e47b47a4da7",
+      "installedManifestMatchesSignedRelease": true,
+      "installedFilesVerified": 183,
+      "unlistedApplicationResourcesAbsent": true,
+      "managedSkillMatchesPackagedVersion": true,
+      "managedSkillFilesVerified": 16,
+      "codexConfigurationUpdated": true,
+      "loginPerformedByAgent": false,
+      "authenticodeSigned": false
+    },
+    "existing_data_directory_preserved": true,
+    "installed_stdio_mcp": {
+      "passed": true,
+      "installedVersion": "0.17.0",
+      "realStdioMcp": true,
+      "configurationFromInstalledCodex": true,
+      "signedFeedVerified": true,
+      "loginState": "LOGIN_REQUIRED",
+      "authenticationNotBypassed": true
+    },
+    "actual_business_login_by_agent": false
+  },
+  "post_release_archive_audit": {
+    "schema": 1,
+    "recorded": 0,
+    "verified": 0,
+    "storage_bytes": 0,
+    "failed_snapshot_ids": [],
+    "orphans": 0,
+    "stale_uploads": 0,
+    "quarantined": 0,
+    "unexpected_entries": 0,
+    "free_bytes": 16030924800,
+    "total_quota_bytes": 4294967296,
+    "disaster_redundant": false,
+    "healthy": true,
+    "created_at": "2026-11-10T01:39:20.506767+00:00"
+  },
+  "post_release_operator_check": {
+    "schema": 1,
+    "created_at": "2026-11-10T01:49:49.557718+00:00",
+    "checks": [
+      {
+        "id": "container:agent-hub-postgres",
+        "state": "ok"
+      },
+      {
+        "id": "container:agent-hub-app-api-1",
+        "state": "ok"
+      },
+      {
+        "id": "container:agent-hub-app-document-worker-1",
+        "state": "ok"
+      },
+      {
+        "id": "container:agent-hub-app-memory-worker-1",
+        "state": "ok"
+      },
+      {
+        "id": "container:agent-hub-app-embedding-1",
+        "state": "ok"
+      },
+      {
+        "id": "container:agent-hub-app-embedding-worker-1",
+        "state": "ok"
+      },
+      {
+        "id": "container:agent-hub-edge",
+        "state": "ok"
+      },
+      {
+        "id": "database:query",
+        "state": "ok"
+      },
+      {
+        "id": "memory:queue",
+        "state": "ok"
+      },
+      {
+        "id": "semantic:queue",
+        "state": "ok"
+      },
+      {
+        "id": "public:https",
+        "state": "ok",
+        "version": "0.15.1"
+      },
+      {
+        "id": "desktop:signed-feed",
+        "state": "ok",
+        "version": "0.17.0",
+        "remaining_hours": 719
+      },
+      {
+        "id": "disk:capacity",
+        "state": "ok",
+        "free_bytes": 16244342784
+      },
+      {
+        "id": "agent-hub-backup",
+        "state": "ok",
+        "age_hours": 0.18,
+        "maximum_hours": 36
+      },
+      {
+        "id": "agent-hub-archive-audit",
+        "state": "ok",
+        "age_hours": 0.17,
+        "maximum_hours": 36
+      },
+      {
+        "id": "agent-hub-restore-drill",
+        "state": "ok",
+        "age_hours": 0.18,
+        "maximum_hours": 1080
+      },
+      {
+        "id": "offsite:continuous-copy",
+        "state": "warning",
+        "configured": false
+      },
+      {
+        "id": "alerts:external-delivery",
+        "state": "warning",
+        "configured": false
+      }
+    ],
+    "healthy": true,
+    "has_warnings": true,
+    "scope": "local-operator-checks-only"
+  },
+  "cleanup": {
+    "passed": true,
+    "failed_temporary_restore_databases_removed": 2,
+    "failed_restore_directories_removed": 2,
+    "labeled_test_containers_stopped": 2,
+    "test_volumes_preserved": true,
+    "production_volume_preserved": true,
+    "created_at": "2026-11-10T01:47:14.381161+00:00"
+  },
+  "business_pilot_performed": false,
+  "all_production_acceptance_complete": false,
+  "remaining_work": [
+    "unattended_generation_model_execution",
+    "operation_guide_feedback_revision_and_archive_lifecycle",
+    "all_seven_hosts_real_activation_and_remaining_installation_adapters",
+    "macos_package_signing_notarization_and_real_device_updates",
+    "windows_authenticode_certificate",
+    "real_business_github_delivery_and_long_term_scale_quality_validation",
+    "different_physical_devices_complete_collaboration_validation",
+    "independent_offsite_storage_external_alert_destination_and_new_migration_host"
+  ],
+  "credentials_runtime_configuration_private_keys_and_original_business_records_disclosed": false
+}

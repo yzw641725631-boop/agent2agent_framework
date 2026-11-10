@@ -1,6 +1,6 @@
 # Agent Hub：身份与项目基础服务
 
-> 2026-11-09｜0.14.0 / 迁移 0017：新增按人员、设备、仓库和执行实例登记的 Agent，离线任务投递与原子接受认领，工作日志轮次引用。配套 Windows 0.16.0 的逐轮漏记与宿主绑定。设计与验收见[Agent 投递与逐轮检查](../../设计文档/32_Agent登记投递与逐轮漏记检测.md)。
+> 2026-11-10｜0.15.1 / 迁移 0024，配套 Windows 0.17.0：增加账号恢复、带多来源的知识审核、自定义岗位与流程、用量、操作说明、外部交付核验和有界增量提炼；数据库备份使用同一快照生成数据清单并核验恢复。0.15.1 修复首次安装 SQL 的 PostgreSQL 百分号转义。实际发布、验收与缺口见[完整能力清单](../../设计文档/33_完整能力开发与验收清单.md)。
 
 本服务提供身份、设备审批、逐仓库授权、任务租约、不可覆盖工作日志、代码快照、Git 回执及共享记忆，含 REST API、中文后台、PostgreSQL 迁移和运维 CLI。通过 [桌面端](../agent-hub-desktop/README.md) 提供本机 stdio MCP。配套[私有模型服务](../agent-hub-embedding/README.md)，语义故障明示退回关键词。文档接入见 [Git 文档索引](../../设计文档/11_Git文档索引与MCP查询.md)。
 
@@ -29,7 +29,7 @@
 
 ## 当前边界
 
-这套内部 REST 登录**尚不是标准 OAuth 授权服务器**。授权码/PKCE、正式 MCP 授权入口、密码重置和成员自主领取邀请仍待实现。账号目前由获授权管理员在创建时设置初始密码。后台保存的服务地址需要部署端配合才实际切换；当前 IP HTTPS 已发布，QQ 验证码投递与正式超管初始化已完成。
+这套内部 REST 登录**尚不是标准 OAuth 授权服务器**。授权码/PKCE 与面向任意客户端的标准远程 MCP 授权入口尚未实现；当前由本人登录的桌面端提供 MCP。已支持修改密码、设备证明绑定的邮箱找回和本人领取邀请；这些操作不会扩大已有项目权限。后台保存的服务地址需要部署端配合才实际切换；当前使用 IP HTTPS。
 
 撤销立即阻止普通操作、释放任务租约，并冻结原执行范围。独立设备 DPoP 收尾凭证只允许上传原工作及回报按收据清理的结果；普通会话继续被拒绝，设备报告不是擦除证明。Hub Git 票据逐请求复核，不能撤销用户在平台外另行取得的 GitHub 凭证。七种 harness 的完整接入仍待验收。
 
@@ -61,7 +61,7 @@
 | `src/agent_hub/repositories.py` | 仓库登记、权限与多源文档范围 |
 | `src/agent_hub/git_gateway.py` | Git 代理、短期票据与任务分支限制 |
 | `src/agent_hub/github_credentials.py` | 加密 App 配置及指定仓库安装令牌 |
-| `migrations/versions/` | 版本化数据库迁移，当前到 0017 |
+| `migrations/versions/` | 版本化数据库迁移，当前到 0024 |
 | `tests/` | 真实 PostgreSQL 上的权限与会话测试 |
 | `deploy/compose.server-db.yaml` | 已在指定服务器运行的数据库配置 |
 | `deploy/compose.server-app.yaml` | 已部署的应用配置，复用服务器数据库 |
@@ -77,14 +77,14 @@
 |---|---|
 | 部署目录 | `/opt/agent-hub/database` |
 | 容器 | `agent-hub-postgres`，PostgreSQL 18.6 |
-| 数据库 | `agent_hub`，当前迁移 `0017` |
+| 数据库 | `agent_hub`，当前迁移 `0024`，上线回执见完整能力清单 |
 | 数据卷 | `agent-hub-postgres-data` |
 | 私有网络 | `agent-hub-database`，内部主机名 `postgres:5432` |
 | 运行/迁移角色 | `hub_runtime` / `hub_owner` |
 | 文档 Worker | `hub_document_worker` 登录，继承 `hub_indexer`；与 API 角色分开 |
 | 凭证 | 服务器 `.env`，root 所有，权限 `0600` |
 | 对外端口 | 数据库不发布宿主机或公网端口 |
-| 应用目录 | `/opt/agent-hub/application/current`，发行版目录 `releases/0.9.0` |
+| 应用目录 | `/opt/agent-hub/application/current`，本版目录 `releases/0.15.1` |
 | 应用容器 | `agent-hub-app-api-1`，仅发布服务器 `127.0.0.1:8765` |
 | 公网入口 | `https://47.109.23.86:18180`，容器 `agent-hub-edge` |
 | 入口与证书状态 | `/opt/agent-hub/edge`；每六小时检查证书续期 |
@@ -100,11 +100,11 @@ PostgreSQL 初始化脚本只在空数据卷执行；后续变更通过 owner �
 
 也保留 CLI：`agent-hub bootstrap <登录名> <邮箱> <公开JWK文件> --os windows`，macOS 设备用 `--os macos`。这条命令必须在部署主机、使用数据库 owner 配置执行，并真实验证邮箱。
 
-CLI 设备密钥使用 `agent-hub device-key <设备私有目录>` 生成加密私钥与公开 JWK；浏览器会自行生成设备密钥。私钥留在设备。正式库已建立超管，首次初始化关闭；新 IP 地址的浏览器设备仍需邮箱验证和原可信设备审批。
+CLI 设备密钥使用 `agent-hub device-key <设备私有目录>` 生成加密私钥与公开 JWK；浏览器会自行生成设备密钥。私钥留在设备。正式库已建立超管，首次初始化关闭；超管新设备可通过本人密码和邮箱验证自助确认，其他成员仍按设备审批流程。
 
 ## 内部 API 契约
 
-以下接口已部署服务器，通过 SSH 转发使用。内部 REST 客户端 `DeviceClient` 负责 P-256 请求签名，公网接入要求 HTTPS。正式 OAuth/MCP 授权仍待实现。新增后台接口见[初始化与设置说明](../../设计文档/08_管理后台与初始化.md)。
+以下内部 REST 接口由服务器的 IP HTTPS 入口提供。客户端 `DeviceClient` 负责 P-256 请求签名，桌面端在本人登录后提供 MCP。标准远程 OAuth 授权入口尚未实现。后台入口见[初始化与设置说明](../../设计文档/08_管理后台与初始化.md)。
 
 | 路径 | 作用 |
 |---|---|

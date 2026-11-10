@@ -16,6 +16,7 @@ from sqlalchemy.exc import DBAPIError
 from sqlalchemy.exc import TimeoutError as PoolTimeout
 
 from . import (
+    SCHEMA_REVISION,
     __version__,
     accounts,
     agent_dispatch,
@@ -58,6 +59,8 @@ def create_app(
     @asynccontextmanager
     async def lifespan(app):
         with sessions() as db:
+            if db.scalar(text("SELECT version_num FROM public.alembic_version")) != SCHEMA_REVISION:
+                raise RuntimeError("API requires its matching database schema revision")
             role = db.execute(text("SELECT rolsuper, rolbypassrls FROM pg_roles WHERE rolname=current_user"))
             superuser, bypass = role.one()
             owner = db.scalar(
@@ -272,7 +275,8 @@ def create_app(
 
     @app.get("/healthz")
     def health():
-        return {"status": "ok", "phase": "P8-reviewed-knowledge", "version": __version__}
+        return {"status": "ok", "phase": "P8-reviewed-knowledge", "version": __version__,
+                "database_schema": SCHEMA_REVISION}
 
     @app.post("/api/auth/enrollments")
     def enroll(body: S.Enroll, request: Request, db: DB):

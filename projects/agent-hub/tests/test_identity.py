@@ -361,3 +361,34 @@ def test_api_refuses_database_owner(database):
     with pytest.raises(RuntimeError, match="non-owner"):
         with TestClient(create_app(bad)):
             pass
+
+
+def test_api_refuses_a_schema_other_than_its_supported_revision(database, monkeypatch):
+    from agent_hub import api
+
+    cfg, _ = database
+    monkeypatch.setattr(api, "SCHEMA_REVISION", "0000")
+    app = create_app(cfg)
+    try:
+        with pytest.raises(RuntimeError, match="matching database schema"):
+            with TestClient(app):
+                pass
+    finally:
+        app.state.sessions.kw["bind"].dispose()
+        app.state.security_sessions.kw["bind"].dispose()
+
+
+def test_runtime_can_check_but_cannot_change_the_schema_revision(database):
+    from sqlalchemy.exc import DBAPIError
+
+    from agent_hub import SCHEMA_REVISION
+    from agent_hub.db import session_factory
+
+    factory = session_factory(database[0])
+    try:
+        with factory() as db:
+            assert db.scalar(text("SELECT version_num FROM alembic_version")) == SCHEMA_REVISION
+            with pytest.raises(DBAPIError):
+                db.execute(text("UPDATE alembic_version SET version_num='0000'"))
+    finally:
+        factory.kw["bind"].dispose()
