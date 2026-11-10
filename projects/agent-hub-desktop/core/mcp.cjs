@@ -120,8 +120,13 @@ async function dispatch(request,invoke,checkVersion,{omitToolText=false,scope='p
     if(!versionCheck && (!available.some(tool=>tool.name===name) || !object(args)))return error(id,-32602,'Unknown tool or invalid arguments');
     try {
       const data=versionCheck?await checkVersion():await invoke(name,args);
-      result={structuredContent:data,isError:false};
-      if(!omitToolText)result.content=[{type:'text',text:JSON.stringify(data)}];
+      if(name==='hub_recall_experience'){
+        // One copy of experience prose. Publishing it twice defeats the read budget on some hosts.
+        result={content:[{type:'text',text:JSON.stringify(data)}],isError:false};
+      }else{
+        result={structuredContent:data,isError:false};
+        if(!omitToolText)result.content=[{type:'text',text:JSON.stringify(data)}];
+      }
     } catch(failure) {
       const details={code:failure.code || 'TOOL_FAILED',message:failure.message};
       for(const key of ['current_version','task_status','run_id','lease_until','path','normal_operations_allowed','required_action','closeout_available','closeout']){

@@ -1,0 +1,37 @@
+{
+  "schema_version": 1,
+  "source_class": "synthetic",
+  "project_id": "b08c2f5f-6249-4eb5-b184-b4d155f79c89",
+  "repository_id": "5d33190d-9139-4385-b87c-fd2a94eb709f",
+  "records": [
+    {
+      "id": "1151cc93-d343-49ad-92ae-10e5cce030d2",
+      "revision": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "text": "合成经验：登录接口通过邮箱验证码验证新设备；重复发送失败时保留可重试状态，禁止在日志输出验证码。"
+    },
+    {
+      "id": "220a627e-be81-4d85-b079-c85a4fc3f7e9",
+      "revision": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "text": "合成经验：共享记忆返回来源与修订。同一会话读过的同版本正文可省略，换会话必须重新读取必要内容。"
+    },
+    {
+      "id": "33275a76-a064-4614-b03c-7d5a68085f3a",
+      "revision": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+      "text": "合成隔离样本：另一个受众的账单导出故障记录，不应在只允许登录经验的问题中被返回。"
+    }
+  ],
+  "cases": [
+    {
+      "query": "新设备邮箱验证失败如何避免泄露验证码？",
+      "allowed_ids": ["1151cc93-d343-49ad-92ae-10e5cce030d2", "220a627e-be81-4d85-b079-c85a4fc3f7e9"],
+      "expected_ids": ["1151cc93-d343-49ad-92ae-10e5cce030d2"],
+      "native_ids": ["1151cc93-d343-49ad-92ae-10e5cce030d2"]
+    },
+    {
+      "query": "换到新会话后应如何加载以前读过的经验？",
+      "allowed_ids": ["220a627e-be81-4d85-b079-c85a4fc3f7e9"],
+      "expected_ids": ["220a627e-be81-4d85-b079-c85a4fc3f7e9"],
+      "native_ids": ["220a627e-be81-4d85-b079-c85a4fc3f7e9"]
+    }
+  ]
+}

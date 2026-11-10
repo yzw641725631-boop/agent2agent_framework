@@ -1008,7 +1008,7 @@ class Console {
         },'quiet small'));
       }
       return h('article',{class:'card'},h('h2',{},card.title),h('p',{class:'hint'},labels[card.state] || card.state),
-        isKnowledge?h('p',{class:'mono'},`${card.topic} · ${card.kind} · 知识 ${card.id} · 版本 ${card.version}`):null,
+        isKnowledge?h('p',{class:'mono'},`${card.topic} · ${card.kind} · 经验 ${card.experience_id || card.id} · 版本 ${card.version}`):null,
         h('p',{class:'mono'},source.kind==='document'?`${source.path} · ${short(source.git_commit)} · 行 ${card.line_start}–${card.line_end}`:`日志 ${short(source.id)} · 任务 ${short(source.task_id)}`),
         h('pre',{class:'document-content'},card.body),card.truncated?h('p',{class:'hint'},'摘录已截短；完整内容保存在来源原文。'):null,
         isKnowledge?h('details',{},h('summary',{},'引用与生成记录'),h('pre',{class:'document-content'},card.source_quote),

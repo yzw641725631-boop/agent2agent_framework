@@ -18,7 +18,7 @@ description: 安装和使用 Agent Hub 桌面协作框架，通过 MCP 接入授
 ## 每次开始或恢复开发
 
 - 先检查项目连接版本和项目身份，明确本次允许修改的工程、目标端与功能。用户只要求 Web 时不新增 PC、移动端或其他工程；扩大范围前先取得用户的新指示。
-- 先核对项目进度，再认领并准备当前任务。提供新版记忆工具时按[共享记忆](references/shared-memory.md)使用开工包中的交接与文档摘录、队列状态和来源；按需展开原文，不全量加载历史。旧版没有记忆字段时明确其缺口。
+- 先核对项目进度，再认领并准备当前任务。按[共享记忆](references/shared-memory.md)读取开工包与缺口；提供 `hub_recall_experience` 时按当前问题或经验 ID 读取增量经验，每个新对话或上下文压缩后换新 `memory_session_id`，读完后下次传 `after_receipt`。有本对话已读回执才省略正文；不全量加载经验索引或历史。旧版缺少这些能力时明确缺口。
 - 有长期接口约定、决定或经验变更时，按[长期知识](references/knowledge.md)先检索现有结论，再引用获准来源提交少量候选。候选经独立审核后进入 `payload.memory.knowledge`；知识不能扩大权限或改写保护规则。
 - 连接提供 `hub_list_distillations` 时，按[增量记忆提炼](references/memory-distillation.md)查询最多一批待办。`execution_policy.server_enabled` 为真时交由服务端处理，不重复认领；未开启时由当前获准模型核对来源并提交候选或明确无新增。没有待办即继续原任务，准备资料不表示模型已执行。
 - 按[职业职责与部署](references/role-framework.md)读取当前任务的 `payload.role`；恢复时联网校验后加载本实例职责和记忆。需要在工程生成职责文档、流程和自检脚本时使用框架预览与部署工具。

@@ -940,6 +940,23 @@ def create_app(
                 "usage_budget_open": bool(db.scalar(select(func.hub.usage_budget_open(project_id)))),
                 "memory": memory.status(db, project_id, task.repository_id)}
 
+    @app.post("/api/projects/{project_id}/tasks/{task_id}/contexts/{context_id}/experience")
+    def recall_experience(project_id: uuid.UUID, task_id: uuid.UUID, context_id: uuid.UUID,
+                          body: S.ExperienceRecall, request: Request, db: DB):
+        from . import experience
+        identity = actor(request, db)
+        hub.project(db, identity, project_id, "tasks:write")
+        rate_limit(security_sessions, hub.secret, f"memory-read:{identity.user.id}", 180, 60)
+        task, run = tasks.live_run(db, identity, project_id, task_id, body)
+        work_policy.require_context(db, identity, task, run, context_id)
+        query = body.query or (task.title + " " + task.description)[:200]
+        if not body.validate_only and not body.experience_ids:
+            identity = semantic_query(request, db, identity, query, body.search_mode)
+            hub.project(db, identity, project_id, "tasks:write")
+            task, run = tasks.live_run(db, identity, project_id, task_id, body)
+            work_policy.require_context(db, identity, task, run, context_id)
+        return experience.recall(db, project_id, task, body)
+
     @app.get("/api/projects/{project_id}/memory/knowledge")
     def knowledge_search(project_id: uuid.UUID, request: Request, db: DB, query: str = Query("", max_length=200),
                          repository_id: uuid.UUID | None = None, include_history: bool = False,

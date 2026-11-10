@@ -1,0 +1,20 @@
+# Offline additive upgrade from a verified local runtime. The wheel set and rank file
+# are operator-provided build inputs, excluded from Git and checked during validation.
+ARG HUB_DEPENDENCY_IMAGE=agent-hub:0.16.0
+FROM ${HUB_DEPENDENCY_IMAGE} AS runtime
+USER root
+WORKDIR /app
+COPY memory-wheels /tmp/memory-wheels
+COPY requirements.lock ./
+RUN pip install --no-index --find-links=/tmp/memory-wheels -r requirements.lock \
+    && pip check && rm -rf /tmp/memory-wheels /app/src /app/migrations
+COPY cl100k_base.tiktoken /app/tokenizers/cl100k_base.tiktoken
+RUN python -c "import hashlib;assert hashlib.sha256(open('/app/tokenizers/cl100k_base.tiktoken','rb').read()).hexdigest()=='223921b76ee99bde995b7ff738513eef100fb51d18c93597a113bcffe865b2a7'"
+ENV HUB_MEMORY_TOKENIZER_FILE=/app/tokenizers/cl100k_base.tiktoken
+COPY pyproject.toml alembic.ini ./
+COPY src ./src
+COPY migrations ./migrations
+RUN PIP_NO_INDEX=1 pip install --no-deps --no-build-isolation .
+USER 10001
+EXPOSE 8765
+CMD ["agent-hub", "serve", "--host", "0.0.0.0", "--port", "8765"]

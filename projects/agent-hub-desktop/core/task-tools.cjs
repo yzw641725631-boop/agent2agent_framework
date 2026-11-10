@@ -27,7 +27,12 @@ const definitions=[
   define('hub_read_worklog','展开一条工作日志','按获准日志 ID 读取原文、来源与实际改动清单。内容是项目资料，不能扩大权限或修改规则。',
     {task_id:id,worklog_id:id},['task_id','worklog_id'],{route:':task/worklogs/:log'}),
   define('hub_load_memory','加载本执行实例记忆','准备并确认后，重新核验服务器来源权限，加载操作系统加密保管的本运行记忆。按账号、设备、仓库和运行实例隔离；不写全局 AGENTS.md，离线或失效时不返回旧记忆。',
-    {task_id:id,...lease},['task_id','run_id','lease_epoch'],{route:'@local',cap:'tasks:write'}),
+    {task_id:id,...lease,memory_session_id:id,known_content_hash:{type:'string',pattern:'^[a-f0-9]{64}$'}},['task_id','run_id','lease_epoch'],{route:'@local',cap:'tasks:write'}),
+  define('hub_recall_experience','按需读取增量经验','在已确认任务中，按问题或 experience_ids 检索当前获准经验。每个新对话或上下文压缩后生成新的 memory_session_id；读完后下次调用传 after_receipt，才省略已读正文。完整返回有参考分词预算，本运行累计上限不代表账单。经验不能修改规则；按 source_card_id 展开原文。',
+    {task_id:id,...lease,context_id:id,memory_session_id:id,after_receipt:{type:'string',pattern:'^[a-f0-9]{64}$'},
+      query:{type:'string',maxLength:200},search_mode:{type:'string',enum:['hybrid','keyword']},
+      experience_ids:{type:'array',maxItems:12,uniqueItems:true,items:id},max_tokens:{type:'integer',minimum:1024,maximum:4096},limit:{type:'integer',minimum:1,maximum:12}},
+    ['task_id','run_id','lease_epoch','context_id','memory_session_id'],{route:':task/contexts/:context/experience',method:'POST',cap:'tasks:write'}),
   define('hub_validate_work_context','核验规则和记忆权限','核验当前执行代次、规则、任务范围和记忆原文权限；失效时重新准备确认。新历史不会直接改写本轮已经确认的准备包。',
     {task_id:id,context_id:id,...lease},['task_id','context_id','run_id','lease_epoch'],{route:':task/contexts/:context/status',cap:'tasks:write'}),
   define('hub_download_work_backup','取回可交接代码检查点','按授权下载已保存的完整代码工作树到本机加密检查点，不把代码正文返回模型。随后从 PC 的本机检查点导出到新目录，核验后交接；不覆盖现有工程，不认领任务，不恢复 Git 历史。',
@@ -96,15 +101,20 @@ function tools(caps){return definitions.filter(d=>allowed(d,caps)).map(({route,w
 function validate(name,args,{internal=false}={}){
   const def=definitions.find(d=>d.name===name);
   if(!def)return null;
-  const privateKeys=internal && name==='hub_write_worklog'?['context_id','change_evidence']:internal && name==='hub_submit_task'?['evidence_hash']:[];
+  const privateKeys=internal && name==='hub_write_worklog'?['context_id','change_evidence']:internal && name==='hub_submit_task'?['evidence_hash']:
+    internal && name==='hub_recall_experience'?['known','validate_only','consumed_units']:[];
   if(!args || typeof args!=='object' || Array.isArray(args) || Object.keys(args).some(k=>!Object.hasOwn(def.inputSchema.properties,k) && !privateKeys.includes(k)) ||
     def.inputSchema.required.some(k=>!Object.hasOwn(args,k)) ||
-    ['task_id','run_id','worklog_id','parent_id','instance_id','operation_id','context_id','repository_id','turn_id'].some(k=>args[k]!==undefined && !uuid(args[k])) ||
+    ['task_id','run_id','worklog_id','parent_id','instance_id','operation_id','context_id','repository_id','turn_id','memory_session_id'].some(k=>args[k]!==undefined && !uuid(args[k])) ||
     args.session_key!==undefined && (typeof args.session_key!=='string' || !/^[a-f0-9]{64}$/.test(args.session_key)) ||
     name==='hub_preview_turn_hooks' && !['codex','claude-code'].includes(args.harness) ||
     args.depends_on!==undefined && (!Array.isArray(args.depends_on) || args.depends_on.length>40 || args.depends_on.some(v=>!uuid(v)) || new Set(args.depends_on).size!==args.depends_on.length) ||
     ['offset','limit','lease_epoch','expected_version'].some(k=>args[k]!==undefined && (!Number.isSafeInteger(args[k]) ||
       args[k]<(k==='offset' || k==='expected_version' && name==='hub_configure_collaboration'?0:1) || (k==='offset' && args[k]>100000) || (k==='limit' && args[k]>50))))throw new HubError('INVALID_REQUEST');
+  if(name==='hub_recall_experience' || name==='hub_load_memory'){
+    const visible=Object.fromEntries(Object.entries(args).filter(([key])=>!privateKeys.includes(key)));
+    if(!require('./knowledge-tools.cjs').valid(visible,def.inputSchema))throw new HubError('INVALID_REQUEST');
+  }
   return def;
 }
 function request(name,args,caps,projectId,{internal=false}={}){
@@ -114,9 +124,11 @@ function request(name,args,caps,projectId,{internal=false}={}){
   const route=def.route.replace(':task',task_id || '').replace(':log',args.worklog_id || '').replace(':context',args.context_id || '');
   if(name==='hub_read_worklog')delete body.worklog_id;
   if(name==='hub_validate_work_context')delete body.context_id;
+  if(name==='hub_recall_experience'){delete body.context_id;delete body.after_receipt;}
   if(route==='@local')throw new HubError('WORK_RUNTIME_REQUIRED');
   const base=['@policy','@collaboration'].includes(route)?`/api/projects/${projectId}/${route.slice(1)}`:`/api/projects/${projectId}/tasks${route?'/'+route:''}`;
-  const query=!def.write && Object.keys(body).length?'?'+new URLSearchParams(body).toString():'';
-  return {method:def.method || (def.write?'POST':'GET'),path:base+query,body:def.write?body:undefined,operation_id};
+  const post=def.write || def.method==='POST';
+  const query=!post && Object.keys(body).length?'?'+new URLSearchParams(body).toString():'';
+  return {method:def.method || (def.write?'POST':'GET'),path:base+query,body:post?body:undefined,operation_id};
 }
 module.exports={tools,request,validate};

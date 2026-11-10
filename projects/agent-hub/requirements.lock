@@ -6,6 +6,7 @@ anyio==4.16.0
 argon2-cffi==25.1.0
 argon2-cffi-bindings==26.1.0
 certifi==2026.10.23
+charset-normalizer==3.5.2
 cffi==2.1.1
 click==8.5.0
 colorama==0.4.6
@@ -38,10 +39,13 @@ Pygments==2.21.0
 PyJWT==2.15.1
 pytest==9.2.0
 python-dotenv==1.2.4
+regex==2026.11.9
+requests==2.34.2
 rich==15.0.0
 ruff==0.17.3
 shellingham==1.5.4
 SQLAlchemy==2.0.57
+tiktoken==0.14.0
 starlette==1.10.0
 tomlkit==0.15.2
 trove-classifiers==2026.9.21.13
@@ -49,4 +53,5 @@ typer==0.27.3
 typing-inspection==0.4.5
 typing_extensions==4.16.0
 tzdata==2026.6
+urllib3==2.8.0
 uvicorn==0.54.0

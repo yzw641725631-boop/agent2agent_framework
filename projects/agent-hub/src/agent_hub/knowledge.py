@@ -1,5 +1,6 @@
 """Reviewed, source-bound durable knowledge produced by an authorized local agent or person."""
 import uuid
+import re
 from types import SimpleNamespace
 
 from sqlalchemy import case, func, select
@@ -41,6 +42,9 @@ def view(db, row, *, compact=False):
     result["additional_sources"] = [{**citation,
         "source": memory.read_card(db, fact.project_id, uuid.UUID(citation["source_card_id"]))["source"]}
         for citation in fact.additional_sources]
+    result["experience_id"] = "EXP-" + str(fact.id)
+    result["revision"] = digest({"kind": "knowledge", "id": str(fact.id), "version": fact.version,
+                                 "source_hash": fact.source_hash, "content_hash": fact.content_hash, "state": state})
     if compact:
         for citation in result["additional_sources"]:
             citation.pop("source_quote")
@@ -62,6 +66,13 @@ def search(db, project_id, body, *, compact=False):
     if not body.include_history:
         statement = statement.where(MemoryFact.status == "active",
             func.hub.knowledge_sources_current(MemoryFact.source_card_id, MemoryFact.additional_sources))
+    exact = re.fullmatch(r"EXP-([a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12})", body.query.strip(), re.I)
+    if exact:
+        rows = list(db.execute(statement.where(MemoryFact.id == uuid.UUID(exact[1]))))
+        return {"items": [view(db, row, compact=compact) for row in rows[body.offset:body.offset + body.limit]],
+                "has_more": False, "next_offset": body.offset + len(rows),
+                "search_mode": "authorized-exact-experience-id", "semantic_search": "not-used-exact-id",
+                "review_required": True, "content_trust": "untrusted-project-data"}
     matches = [func.strpos(func.lower(MemoryFact.topic + "\n" + MemoryFact.title + "\n" + MemoryFact.body), word) > 0
                for word in memory.terms(body.query)]
     score = sum((case((condition, 1), else_=0) for condition in matches), 0)

@@ -722,6 +722,30 @@ class MemorySearch(Input):
     limit: int = Field(default=12, ge=1, le=50)
 
 
+class ExperienceVersion(Input):
+    kind: Literal["knowledge", "card"]
+    id: UUID
+    revision: str = Field(pattern=r"^[a-f0-9]{64}$")
+
+
+class ExperienceRecall(LeaseInput):
+    memory_session_id: UUID
+    consumed_units: int = Field(default=0, ge=0, le=24000)
+    query: str = Field(default="", max_length=200)
+    search_mode: Literal["hybrid", "keyword"] = "hybrid"
+    experience_ids: list[UUID] = Field(default_factory=list, max_length=12)
+    known: list[ExperienceVersion] = Field(default_factory=list, max_length=32)
+    max_tokens: int = Field(default=2048, ge=1024, le=4096)
+    limit: int = Field(default=6, ge=1, le=12)
+    validate_only: bool = False
+
+    @model_validator(mode="after")
+    def distinct_references(self):
+        if len(set(self.experience_ids)) != len(self.experience_ids) or len({(p.kind, p.id) for p in self.known}) != len(self.known):
+            raise ValueError("Duplicate experience references")
+        return self
+
+
 class MemoryDecision(Input):
     expected_version: int = Field(ge=0)
     state: Literal["active", "conflicted", "retired"]

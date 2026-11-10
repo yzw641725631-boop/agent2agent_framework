@@ -2,6 +2,7 @@
 const crypto=require('node:crypto');
 const {HubError}=require('./remote.cjs');
 const observer=require('./git-observer.cjs');
+const experience=require('./experience-cache.cjs');
 const {WorkStore,sameOwner}=require('./work-store.cjs');
 const retryable=new Set(['NETWORK_UNAVAILABLE','SERVICE_BUSY','UNAVAILABLE','CLIENT_UPDATE_REQUIRED','UPDATE_CHECK_PENDING']);
 const uuid=value=>typeof value==='string' && /^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/i.test(value);
@@ -49,7 +50,7 @@ class WorkRuntime{
         try{
           await c.invokeProjectRemote(b,'hub_heartbeat_task',{task_id:r.task_id,run_id:r.run_id,lease_epoch:r.lease_epoch,operation_id:r.heartbeat_operation});
           c.ensureCurrent(p,remote);r.next_heartbeat=Date.now()+120000;delete r.heartbeat_operation;
-        }catch(error){if(!retryable.has(error.code)){r.stopped=error.code;delete r.memory;delete r.role;}r.next_heartbeat=Date.now()+30000;}
+        }catch(error){if(!retryable.has(error.code)){r.stopped=error.code;experience.clear(r);}r.next_heartbeat=Date.now()+30000;}
       }
       if(c.profile===p)await c.persist();
       if(c.connection!=='active' || c.profile!==p || c.remote!==remote)return;
@@ -70,7 +71,7 @@ class WorkRuntime{
       c.ensureCurrent(p,remote);
       if(task.active_run_id===other.run_id && Date.parse(task.lease_until)>Date.now())
         throw new HubError('WORKSPACE_IN_USE','这个目录已有其他有效执行实例。请用独立任务 worktree，再准备当前运行。');
-      other.stopped='lease_inactive';delete other.memory;delete other.role;
+      other.stopped='lease_inactive';experience.clear(other);
     }
     if(c.repositories){
       const {task}=await c.invokeProjectRemote(binding,'hub_get_task',{task_id:args.task_id});
@@ -89,6 +90,7 @@ class WorkRuntime{
       memory:context.payload.memory || null,memory_required:context.payload.schema_version>=2,
       role:context.payload.role || null,role_required:context.payload.schema_version>=3,
       instance_id:context.payload.execution?.instance_id || null,harness:context.payload.execution?.harness || null,
+      experience_units:previous?.experience_units || 0,
       ...Object.fromEntries(Object.entries(previous || {}).filter(([key])=>key.startsWith('last_record_') || ['last_evidence_hash','last_worklog_id'].includes(key))),
       execution_mode:context.payload.task.execution_mode};
     await c.persist();this.start();return {...context,baseline_commit:baseline.base_commit,local_write_isolation:false,
@@ -105,9 +107,20 @@ class WorkRuntime{
         task_id:r.task_id,run_id:r.run_id,lease_epoch:r.lease_epoch,context_id:r.context_id});
       c.ensureCurrent(p,remote);
       if(result.content_hash!==r.context_hash)throw new HubError('WORK_CONTEXT_STALE');
+      if(this.runs()[r.run_id]!==r || r.stopped)throw new HubError('WORK_CONTEXT_STALE');
+      const known=experience.versions(r);
+      if(known.length){
+        const id=r.experience_validation_session??=crypto.randomUUID();
+        const checked=await c.invokeProjectRemote(binding,'hub_recall_experience',{
+          task_id:r.task_id,run_id:r.run_id,lease_epoch:r.lease_epoch,context_id:r.context_id,memory_session_id:id,
+          known,validate_only:true,max_tokens:4096,consumed_units:r.experience_units || 0},{internal:true});
+        c.ensureCurrent(p,remote);
+        if(this.runs()[r.run_id]!==r || r.stopped || !r.memory)throw new HubError('WORK_CONTEXT_STALE');
+        experience.accept(r,checked,id,{validation:true});
+      }
       return result;
     }catch(error){
-      if(!retryable.has(error.code)){delete r.memory;delete r.role;await c.persist();}
+      if(!retryable.has(error.code)){experience.clear(r);await c.persist();}
       throw error;
     }
   }
@@ -122,8 +135,37 @@ class WorkRuntime{
     if(!r.acknowledged)throw new HubError('WORK_CONTEXT_ACK_REQUIRED');
     const status=await this.validateMemory(binding,r);
     if(!r.memory)throw new HubError('WORK_CONTEXT_REQUIRED','请升级服务器并重新准备共享记忆。');
+    if(args.memory_session_id){
+      const s=experience.session(r,args.memory_session_id);
+      if(args.known_content_hash && args.known_content_hash!==r.context_hash)throw new HubError('WORK_CONTEXT_STALE');
+      if(args.known_content_hash===r.context_hash && s.base_delivered===r.context_hash)
+        return {context_id:r.context_id,content_hash:r.context_hash,memory:null,role:null,unchanged:true,
+          fresh_source_authorization:true,receipt_meaning:'caller-reported-current-context; not proof of understanding'};
+      s.base_delivered=r.context_hash;await this.c.persist();
+    }
     return {context_id:r.context_id,content_hash:r.context_hash,memory:r.memory,role:r.role || null,
       current_status:status?.memory,storage:'os-encrypted-vault',fresh_source_authorization:true};
+  }
+  recallExperience(binding,args){
+    return this.serialize('experience:'+args.run_id,async()=>{
+      const r=this.run(binding,args),c=this.c,p=c.profile,remote=c.remote;
+      if(!r.acknowledged)throw new HubError('WORK_CONTEXT_ACK_REQUIRED');
+      if(args.context_id!==r.context_id)throw new HubError('WORK_CONTEXT_STALE');
+      await this.validateMemory(binding,r);c.ensureCurrent(p,remote);
+      const s=experience.session(r,args.memory_session_id);
+      if(args.after_receipt){
+        if(s.pending?.receipt!==args.after_receipt)throw new HubError('MEMORY_RECEIPT_MISMATCH');
+        const known=new Map(s.known.map(v=>[v.kind+':'+v.id,v]));
+        for(const v of s.pending.versions)known.set(v.kind+':'+v.id,v);
+        s.known=[...known.values()];delete s.pending;
+      }
+      const data=await c.invokeProjectRemote(binding,'hub_recall_experience',{
+        ...args,known:s.known,consumed_units:r.experience_units || 0},{internal:true});
+      c.ensureCurrent(p,remote);
+      if(this.runs()[args.run_id]!==r || r.stopped || !r.memory)throw new HubError('WORK_CONTEXT_STALE');
+      try{experience.accept(r,data,args.memory_session_id);}catch(error){await c.persist();throw error;}
+      await c.persist();return data;
+    });
   }
   async acknowledge(binding,args){
     const r=this.run(binding,args),p=this.c.profile,remote=this.c.remote;
@@ -282,7 +324,7 @@ class WorkRuntime{
         throw new HubError('WORK_REMOTE_BACKUP_REQUIRED');
     }
     const result=await this.c.invokeProjectRemote(binding,'hub_submit_task',{...args,evidence_hash:snapshot.evidence_hash},{internal:true});
-    r.stopped='submitted';delete r.memory;delete r.role;await this.c.persist();return result;
+    r.stopped='submitted';experience.clear(r);await this.c.persist();return result;
   }
   async export(id,destination){
     return this.serialize(id,async()=>{

@@ -1,4 +1,5 @@
 import json
+import os
 import secrets
 from pathlib import Path
 
@@ -20,6 +21,28 @@ from .service import Hub
 from .site import SiteSettings
 
 app = typer.Typer(no_args_is_help=True, pretty_exceptions_enable=False)
+
+
+@app.command("compare-experience-engines")
+def compare_experience_engines(fixture: Path, output: Path, ingest: bool = False,
+                               allow_model_calls: bool = False, operation_id: str = ""):
+    """Compare a frozen authorized/synthetic corpus with the private Hindsight service."""
+    from .experience_benchmark import run
+    # The report contains hashes and aggregate metrics, not queries, source text or credentials.
+    if output.exists():
+        typer.echo("Comparison output already exists; choose a new output file", err=True)
+        raise typer.Exit(1)
+    with output.open("x", encoding="utf-8") as target:
+        try:
+            report = run(fixture, api_key=os.getenv("HUB_HINDSIGHT_API_KEY", ""), ingest=ingest,
+                         allow_model_calls=allow_model_calls, operation_id=operation_id or None)
+        except (HubError, OSError, ValueError, KeyError, TypeError) as error:
+            code = getattr(error, "code", "EXPERIENCE_COMPARISON_FAILED")
+            json.dump({"state": "failed", "code": code, "automatic_retry": False}, target)
+            typer.echo(code, err=True)
+            raise typer.Exit(1) from None
+        json.dump(report, target, ensure_ascii=False, indent=2)
+    typer.echo("Comparison report saved. Production memory engine was not changed.")
 
 
 @app.command()

@@ -3,6 +3,10 @@ ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1
 WORKDIR /app
 COPY requirements.lock pyproject.toml alembic.ini ./
 RUN pip install --no-cache-dir -r requirements.lock
+COPY scripts/cache-memory-tokenizer.py /tmp/cache-memory-tokenizer.py
+RUN python /tmp/cache-memory-tokenizer.py /app/tokenizers/cl100k_base.tiktoken \
+    && rm /tmp/cache-memory-tokenizer.py
+ENV HUB_MEMORY_TOKENIZER_FILE=/app/tokenizers/cl100k_base.tiktoken
 COPY src ./src
 COPY migrations ./migrations
 RUN pip install --no-cache-dir --no-deps --no-build-isolation . \

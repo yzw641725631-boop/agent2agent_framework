@@ -87,7 +87,7 @@ def prepare(hub, db, actor, project_id, task_id, body, request_id):
                "role": task_role(db, task),
                "workflow": task.workflow_policy,
                "memory": bundle,
-               "memory_mode": "source-bound-extractive-memory; semantic distillation not configured"}
+               "memory_mode": "source-bound-extractive-memory; reviewed-knowledge; generation-policy-controlled"}
     row = WorkContext(project_id=project_id, task_id=task_id, run_id=run.id,
                       author_id=actor.user.id, device_id=actor.device.id, lease_epoch=task.lease_epoch,
                       policy_version=policy["version"], task_hash=task_hash(task), payload=payload,

@@ -3,7 +3,7 @@ const {HubError}=require('./remote.cjs');
 const uuid=value=>typeof value==='string' && /^[a-f0-9]{8}(-[a-f0-9]{4}){3}-[a-f0-9]{12}$/i.test(value);
 const id={type:'string',format:'uuid'};
 const tools=[
-  {name:'hub_get_memory_status',title:'查看共享记忆状态',description:'查看当前授权范围的摘录、长期知识、语义索引覆盖和失败队列。模型只用于检索，不生成或审核结论。',
+  {name:'hub_get_memory_status',title:'查看共享记忆状态',description:'查看当前授权范围的摘录、长期知识、语义索引覆盖和失败队列。语义模型负责检索；后台提炼按仓库策略执行，候选审核另行完成。',
     inputSchema:{type:'object',properties:{repository_id:id},additionalProperties:false},annotations:{readOnlyHint:true}},
   {name:'hub_search_memory',title:'检索获准共享记忆',description:'语义与关键词混合检索获准日志和文档，默认排除过时、退役和冲突卡片。search_mode=keyword 可查精确标识符；模型不可用会明示降级。排序不是事实证明，按需追溯来源。',
     inputSchema:{type:'object',properties:{repository_id:id,query:{type:'string',maxLength:200},search_mode:{type:'string',enum:['hybrid','keyword']},include_history:{type:'boolean'},

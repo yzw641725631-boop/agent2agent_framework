@@ -67,7 +67,7 @@ class Controller extends EventEmitter {
     const terminal=stopped.has(error.code);
     if(!terminal && !transient.has(error.code))return;
     if(terminal)for(const run of Object.values(profile.workRuns || {})){
-      if(!projectId || run.project_id===projectId){delete run.memory;delete run.role;}
+      if(!projectId || run.project_id===projectId)require('./experience-cache.cjs').clear(run);
     }
     if(identityStopped.has(error.code) || (platform && terminal)){
       this.connection='reauth_required';this.message=error.message;this.stopWatches();this.cancelRecovery();
@@ -254,7 +254,7 @@ class Controller extends EventEmitter {
     const p=this.profile;if(!p)return;
     let changed=JSON.stringify(p.resourceVisibility?.[projectId])!==JSON.stringify(visibility);
     if(changed && p.resourceVisibility?.[projectId])for(const run of Object.values(p.workRuns || {})){
-      if(run.project_id===projectId){delete run.memory;delete run.role;}
+      if(run.project_id===projectId)require('./experience-cache.cjs').clear(run);
     }
     const count=(p.events || []).length;
     (p.resourceVisibility??={})[projectId]=visibility;
@@ -417,7 +417,7 @@ class Controller extends EventEmitter {
       try{return await operation;}finally{this.projectOperations.delete(operation);}
     }
     const localActions={hub_prepare_work:'prepare',hub_acknowledge_work:'acknowledge',hub_check_changes:'check',
-      hub_list_local_work:'list',hub_load_memory:'loadMemory'};
+      hub_list_local_work:'list',hub_load_memory:'loadMemory',hub_recall_experience:'recallExperience'};
     if(['hub_bind_work_session','hub_get_work_record_status','hub_preview_turn_hooks'].includes(action)){
       require('./task-tools.cjs').validate(action,args);
       if(this.closed || this.draining || this.binding(b.id)!==b || !this.profile?.sessions.platform || this.connection==='signed_out')throw new HubError('LOGIN_REQUIRED');
@@ -440,7 +440,7 @@ class Controller extends EventEmitter {
       try{return await operation;}finally{this.projectOperations.delete(operation);}
     }
     const result=await this.invokeProjectRemote(b,action,args);
-    if(action==='hub_release_task' && prepared){prepared.stopped='released';delete prepared.memory;delete prepared.role;await this.persist();}
+    if(action==='hub_release_task' && prepared){prepared.stopped='released';require('./experience-cache.cjs').clear(prepared);await this.persist();}
     return result;
   }
   async invokeProjectRemote(b,action,args,{internal=false}={}){
@@ -665,7 +665,7 @@ class Controller extends EventEmitter {
     this.remote?.close();this.remote=null;
     if(p){
       p.sessions={};delete p.enrollment;delete p.challengeId;
-      for(const run of Object.values(p.workRuns || {})){delete run.memory;delete run.role;}
+      for(const run of Object.values(p.workRuns || {}))require('./experience-cache.cjs').clear(run);
     }
     this.connection='signed_out';this.projects=[];this.grants=[];this.message=complete?'':'本机已退出，服务器会话撤销未全部确认。';
     // Freeze local access and persist before any network wait; old refreshes cannot repopulate sessions.

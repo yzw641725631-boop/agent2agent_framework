@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "agent-hub"
-version = "0.16.0"
+version = "0.17.0"
 description = "Project-scoped identities, approvals and device sessions for the Agent collaboration framework"
 requires-python = ">=3.12"
 dependencies = [
@@ -20,6 +20,7 @@ dependencies = [
   "httpx>=0.28,<1",
   "typer>=0.15,<1",
   "cryptography>=44,<51",
+  "tiktoken>=0.14,<0.15",
 ]
 
 [project.optional-dependencies]

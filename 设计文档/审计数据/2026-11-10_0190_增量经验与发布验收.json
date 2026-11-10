@@ -1,0 +1,98 @@
+{
+  "schema": 1,
+  "created_at": "2026-11-10T07:21:20.843783+00:00",
+  "scope": "incremental-authorized-experience-and-isolated-hindsight-comparison",
+  "backend": "0.17.0",
+  "desktop": "0.19.0",
+  "database_schema": "0026",
+  "backend_tests": {
+    "passed": 348,
+    "failed": 0,
+    "database": "isolated-real-postgresql-on-server",
+    "log_sha256": "6752a3da4e5b2b38eeb9260dc1ee1607e8ace293c86d9e7bd5ab53d5552e8fe6"
+  },
+  "desktop_tests": {
+    "passed": 167,
+    "failed": 0,
+    "suite_source_hashes_verified": true
+  },
+  "deployed_runtime_and_migration_sources_match_verified_release": true,
+  "backend_image_id": "sha256:b2f9faba3940ab007e85df53fb7dde5dbf7775a4a3191599e8e90ce88205ac77",
+  "rollback_image_id": "sha256:bb06972ca281cc114654719ceb3bb235d1a6c66ad26bfe7d525e647f9d33f2d7",
+  "production_upgrade": {
+    "passed": true,
+    "migration_performed": false,
+    "volume_preserved": true,
+    "inventory_exact": true,
+    "verified_tables": 71,
+    "verified_rows": 62
+  },
+  "backup_restore": {
+    "passed": true,
+    "database_inventory_verified": true,
+    "structure_verified": true,
+    "memory_audit_healthy": true,
+    "real_business_memory_fixture": false,
+    "offsite_confirmed": false
+  },
+  "public_desktop": {
+    "version": "0.19.0",
+    "metadata_sequence": 20,
+    "ed25519_feed_verified": true,
+    "zip_sha256": "d3f72485a2769140601f93b5a628e85c0ea60124831ccba47fca5f8f03fa8395",
+    "installer_sha256": "941bc583a0a0e37353746b24690428c5fe7de7a63b590ed1c11055c19d1c2f91",
+    "files_sha256": "99e68e166c42ed7910d65e2660dd11c24dc67fb65b3c19e4ff7b74acd065e632",
+    "public_gateway_full_bytes_verified": true,
+    "authenticode_signed": false
+  },
+  "installed_desktop": {
+    "passed": true,
+    "installed_files_verified": 184,
+    "skill_files_verified": 16,
+    "codex_configuration_updated": true,
+    "real_stdio_mcp": true,
+    "login_state": "LOGIN_REQUIRED",
+    "authentication_bypassed": false,
+    "online_upgrade_from": "0.18.0",
+    "online_upgrade_passed": true
+  },
+  "experience_delivery": {
+    "default_reference_units": 2048,
+    "single_request_range": [
+      1024,
+      4096
+    ],
+    "run_reference_limit": 24000,
+    "meter": "cl100k_base-with-explicit-conservative-utf8-fallback",
+    "complete_json_measured": true,
+    "byte_ceiling": 24000,
+    "known_receipts_limit": 32,
+    "session_limit": 8,
+    "scope": "local-run-experience-entry-only",
+    "provider_billing_savings": "not-measured"
+  },
+  "hindsight": {
+    "production_engine": "native-source-authorized-v1",
+    "adapter_and_fixture_available": true,
+    "protocol_tests": "mock-upstream",
+    "real_instance_deployed": false,
+    "real_model_calls_performed": false,
+    "retrieval_quality_comparison": "not-measured",
+    "billing_comparison": "not-measured",
+    "automatic_retry": false,
+    "upstream_prose_returned_to_agent": false
+  },
+  "operations": {
+    "healthy": true,
+    "remaining_warnings": [
+      "offsite:continuous-copy",
+      "alerts:external-delivery"
+    ]
+  },
+  "secret_scan": {
+    "gitleaks_findings": 0,
+    "protected_local_values_checked": true
+  },
+  "business_pilot_performed": false,
+  "macos_performed": false
+}

@@ -219,7 +219,8 @@ def status(db, project_id, repository_id=None):
                   "cards": card_coverage, "knowledge": fact_coverage,
                   "visible_jobs": dict(db.execute(job_query.group_by(EmbeddingJob.status)).all()),
                   "scope": "currently-authorized-sources-only", "configured": db.info.get("semantic_configured", False)}
-    return {"mode": EXTRACTOR, "automatic_extraction": True, "semantic_distillation": False,
+    return {"mode": EXTRACTOR, "automatic_extraction": True, "semantic_distillation": True,
+            "distillation_execution": "policy-controlled; inspect repository generation policy and receipts",
             "knowledge": knowledge.status(db, project_id, repository_id), "knowledge_review_required": True,
             "semantic_search": "configured" if embeddings["configured"] else "not-configured",
             "embeddings": embeddings, "visible_cards": counts, "visible_jobs": queue,

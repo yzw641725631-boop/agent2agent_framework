@@ -48,7 +48,8 @@ def test_new_code_tasks_require_prepared_acknowledged_context(world):
     assert response.json()["code"] == "WORK_CONTEXT_ACK_REQUIRED"
     assert prepared["payload"]["task"]["scope"]["platform"] == "web"
     assert prepared["payload"]["memory_mode"].startswith("source-bound-extractive-memory")
-    assert prepared["payload"]["memory"]["coverage"]["semantic_distillation"] is False
+    assert prepared["payload"]["memory"]["coverage"]["semantic_distillation"] is True
+    assert "policy-controlled" in prepared["payload"]["memory"]["coverage"]["distillation_execution"]
 
 
 def test_ack_must_name_all_current_rules_and_correct_content(world):
