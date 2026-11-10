@@ -1,0 +1,12 @@
+# Combine with the verified 0.17.0 compose file after migration to 0027.
+services:
+  api:
+    image: agent-hub:0.17.0-schema0027
+  document-worker:
+    image: agent-hub:0.17.0-schema0027
+  memory-worker:
+    image: agent-hub:0.17.0-schema0027
+  embedding-worker:
+    image: agent-hub:0.17.0-schema0027
+  generation-worker:
+    image: agent-hub:0.17.0-schema0027

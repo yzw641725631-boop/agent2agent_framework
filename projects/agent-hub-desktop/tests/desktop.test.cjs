@@ -41,7 +41,7 @@ test('verified root enrollment finishes login immediately while member enrollmen
   }
 });
 
-test('live and reconnect progress push once while initial history and this device remain quiet', async () => {
+test('live and reconnect progress deduplicate, including this device audit events', async () => {
   const profile = { sessions: { platform: {} }, bindings: [], events: [], cursors: {},
     deviceId: 'this-device', user: { platform_role: 'member' } };
   const vault = { data: { current: 'one', profiles: { one: profile } }, save: async () => {},
@@ -51,25 +51,29 @@ test('live and reconnect progress push once while initial history and this devic
   controller.projectSlot = async () => 'project-slot';
   const stop = new AbortController(), notices = [];
   let requests = 0;
-  const progress = (sequence, device = 'other-device') => `id: ${sequence}\nevent: progress\ndata: ${JSON.stringify({
+  const progress = (sequence, device = 'other-device', kind = 'task.updated') => `id: ${sequence}\nevent: progress\ndata: ${JSON.stringify({
     project_id: 'project-one', device_id: device, summary: `progress-${sequence}`, status: 'checkpoint',
+    kind,
   })}\n\n`;
   controller.remote = { close() {}, async request() {
     requests++;
     const data = requests === 1 ? progress(1) + 'event: ready\ndata: {}\n\n' +
-      progress(2) + progress(2) + progress(3, 'this-device') : progress(4) + 'event: ready\ndata: {}\n\n';
+      progress(2) + progress(2) + progress(3, 'this-device') +
+      progress(4, 'this-device', 'code_audit.queued') + progress(4, 'this-device', 'code_audit.queued') :
+      progress(5, 'this-device') + progress(6) + 'event: ready\ndata: {}\n\n';
     return { body: new ReadableStream({ start(output) {
       output.enqueue(new TextEncoder().encode(data)); output.close();
     } }) };
   } };
   controller.on('notification', message => {
     notices.push(message);
-    if (notices.length === 2) stop.abort();
+    if (notices.length === 3) stop.abort();
   });
   try {
     await controller.stream('project-one', AbortSignal.any([stop.signal, AbortSignal.timeout(4000)]));
-    assert.deepEqual(notices.map(n => n.body), ['progress-2', 'progress-4']);
-    assert.equal(profile.cursors['project-one'], '4');
-    assert.equal(profile.events.length, 4);
+    assert.deepEqual(notices.map(n => n.body), ['progress-2', 'progress-4', 'progress-6']);
+    assert.equal(notices[1].title, '代码规范审计有新进度');
+    assert.equal(profile.cursors['project-one'], '6');
+    assert.equal(profile.events.length, 6);
   } finally { stop.abort(); await controller.close(); }
 });

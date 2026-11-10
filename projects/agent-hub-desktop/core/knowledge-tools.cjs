@@ -34,7 +34,9 @@ function valid(value,schema){
   if(schema.type==='array')return Array.isArray(value) && value.length>=(schema.minItems??0) && value.length<=(schema.maxItems??100) &&
     (!schema.uniqueItems || new Set(value).size===value.length) && value.every(item=>valid(item,schema.items));
   if(schema.type==='object')return value && typeof value==='object' && !Array.isArray(value) &&
-    Object.keys(value).every(key=>Object.hasOwn(schema.properties,key) && valid(value[key],schema.properties[key])) &&
+    Object.keys(value).length<=(schema.maxProperties??1000) &&
+    Object.keys(value).every(key=>Object.hasOwn(schema.properties || {},key) ? valid(value[key],schema.properties[key]) :
+      schema.additionalProperties && typeof schema.additionalProperties==='object' && valid(value[key],schema.additionalProperties)) &&
     (schema.required || []).every(key=>Object.hasOwn(value,key));
   if(schema.type==='boolean')return typeof value==='boolean';
   if(schema.type==='integer')return Number.isSafeInteger(value) && value>=(schema.minimum??0) && value<=(schema.maximum??Number.MAX_SAFE_INTEGER);

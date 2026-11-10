@@ -1,0 +1,119 @@
+{
+  "schema": 1,
+  "created_at": "2026-11-10T14:02:56.815792+00:00",
+  "scope": "post-delivery-versioned-code-audit-and-ci-gates",
+  "backend": "0.18.0",
+  "desktop": "0.20.0",
+  "database_schema": "0027",
+  "backend_tests": {
+    "passed": 365,
+    "failed": 0,
+    "database": "isolated-real-postgresql-on-server",
+    "log_sha256": "060909eb7f44d72b5410dc8d829834e509a7dad44a493dbf7b183cc50a5665d8"
+  },
+  "previous_runtime_tests": {
+    "passed": 348,
+    "failed": 0,
+    "business_version": "0.17.0",
+    "explicit_schema_declaration": "0027",
+    "log_sha256": "6f424b578efa70c3c4352dd8c9f9b3604949b19de230d1b4dbd44d81319e5433"
+  },
+  "desktop_tests": {
+    "passed": 171,
+    "failed": 0,
+    "source_hashes_verified": true,
+    "log_sha256": "406bc132c695d6bc38992a5d10088f627eb9737db08efc32e973a00ff5abfdc2"
+  },
+  "ui": {
+    "pc": true,
+    "web": true,
+    "backend": "synthetic-fixtures",
+    "report_and_retry_history": true,
+    "scope_scrubbed_on_signout": true
+  },
+  "deployed_sources_match_verified_release": true,
+  "backend_image_id": "sha256:720dc49624436511abbdfecb336c1a7a6d959ce1f5914ed2be7e77ff0e862dd3",
+  "rollback_image_id": "sha256:4f82dc4af19f0b1e12ff1529bbcb42143370a89d712c3c21f0477ebc21930804",
+  "synthetic_database": {
+    "upgrade_preserved_rows": 211,
+    "exact_restore_rows": 212,
+    "tables": 75,
+    "fresh_and_upgraded_structure_equal": true,
+    "archive_and_memory_audited": true,
+    "real_business_pilot": false
+  },
+  "production_upgrade": {
+    "passed": true,
+    "migration_performed": true,
+    "old_schema": "0026",
+    "new_schema": "0027",
+    "volume_preserved": true,
+    "existing_rows_preserved": true,
+    "verified_tables": 70,
+    "verified_rows": 61
+  },
+  "backup_restore": {
+    "passed": true,
+    "structure_verified": true,
+    "role_bindings_verified": true,
+    "verified_tables": 75,
+    "verified_rows": 62,
+    "real_business_memory_fixture": false,
+    "offsite_confirmed": false
+  },
+  "public_desktop": {
+    "version": "0.20.0",
+    "metadata_sequence": 21,
+    "ed25519_feed_verified": true,
+    "zip_sha256": "4d50383d2fa3dc9c6fa391cbd39948033006a62950fd9708d73d54067adf0089",
+    "installer_sha256": "9ebae42e4278ef6b382a3996eacb70bee589db5c1472ff22be683c6d6b80cf35",
+    "files_sha256": "08180e71811829b65a6201cfe63f3dd5d7d2f4453cdd71b98161620e76b22bee",
+    "public_gateway_full_bytes_verified": true,
+    "authenticode_signed": false
+  },
+  "installed_desktop": {
+    "passed": true,
+    "files_verified": 186,
+    "skill_files_verified": 17,
+    "two_managed_skills": true,
+    "codex_configuration_updated": true,
+    "real_stdio_mcp": true,
+    "login_state": "LOGIN_REQUIRED",
+    "authentication_bypassed": false,
+    "online_upgrade_from": "0.19.0",
+    "online_upgrade_passed": true
+  },
+  "audit": {
+    "default_enabled": false,
+    "requires_verified_delivery": true,
+    "requires_independent_reviewer": true,
+    "superadmin_self_review_explicit_and_recorded": true,
+    "reports_append_only": true,
+    "revision_changes_invalidate": true,
+    "exact_checkout_required_for_pass": true,
+    "missing_coverage_blocks": true,
+    "ci_verified_separately": true,
+    "latest_ci_failure_blocks": true,
+    "api_and_database_gates": true,
+    "server_side_code_model_calls_added": false,
+    "queue_is_not_execution": true,
+    "github_branch_protection_separate": true,
+    "input_characters_default": 6000,
+    "input_characters_maximum": 12000,
+    "input_pagination": true,
+    "mcp_body_single_copy": true
+  },
+  "operations": {
+    "healthy": true,
+    "remaining_warnings": [
+      "offsite:continuous-copy",
+      "alerts:external-delivery"
+    ]
+  },
+  "secret_scan": {
+    "gitleaks_findings": 0,
+    "protected_local_values_checked": true
+  },
+  "business_pilot_performed": false,
+  "macos_performed": false
+}

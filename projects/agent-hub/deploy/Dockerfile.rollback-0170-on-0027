@@ -1,0 +1,5 @@
+# Tested 0.17.0 business code with an explicit additive schema 0027 declaration.
+FROM agent-hub:0.17.0 AS runtime
+USER root
+RUN python -c 'from pathlib import Path; import agent_hub; p=Path(agent_hub.__file__); s=p.read_text(); assert agent_hub.__version__=="0.17.0" and agent_hub.SCHEMA_REVISION=="0026"; old="SCHEMA_REVISION = \"0026\""; assert s.count(old)==1; p.write_text(s.replace(old,"SCHEMA_REVISION = \"0027\""))'
+USER 10001

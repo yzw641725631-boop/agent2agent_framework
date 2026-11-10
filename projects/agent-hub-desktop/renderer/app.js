@@ -7,8 +7,10 @@ let taskBinding=null,taskVersion=0,taskTimer,openTaskBinding=null,taskDialogVers
 let memoryBinding=null,memoryQuery='',memoryOffset=0,memoryLayer='extracts',memoryHistory=false;
 let distillationState='queued';
 let guideQuery='',guideOffset=0;
+let auditOffset=0;
+let openAuditBinding=null,openAuditView=null;
 let frameworkDialogVersion=0;
-modal.addEventListener('close',()=>{taskDialogVersion++;frameworkDialogVersion++;openTaskBinding=null;});
+modal.addEventListener('close',()=>{taskDialogVersion++;frameworkDialogVersion++;openTaskBinding=null;openAuditBinding=null;});
 const taskLabels={draft:'待准入',ready:'待认领',in_progress:'开发中',review:'待评审',testing:'待测试',release_ready:'待发布确认',completed:'已完成'};
 const dispatchLabels={queued:'等待接收',received:'已接收，待决定',accepted:'已接受并认领',declined:'已拒绝',cancelled:'已取消',expired:'已过期'};
 const deliveryLabels={pull_request:'合并请求',ci:'自动测试',merge:'合并',deployment:'部署',rollback:'回滚'};
@@ -17,7 +19,7 @@ const deliveryStates={missing:'尚未核验',open:'已打开',closed:'已关闭'
 const roleLabels={'project-manager':'项目经理',architect:'架构师',designer:'产品与交互设计',developer:'开发工程师',reviewer:'代码审查',tester:'测试工程师',publisher:'发布负责人'};
 const labels={active:'已连接',pending:'等待验证 / 审批',offline:'连接中断',blocked:'已拦截',signed_out:'未登录',
   reauth_required:'需要重新登录',running:'执行中',checkpoint:'检查点',completed:'已完成',approved:'已批准'};
-const titles={overview:'协作概览',workspaces:'项目与 MCP',tasks:'任务与日志',execution:'本机执行',guides:'功能操作说明',memory:'共享记忆',usage:'用量与预算',checkpoints:'本机检查点',closeouts:'撤权交接',activity:'项目动态',connection:'账号与设备',desktop:'桌面设置'};
+const titles={overview:'协作概览',workspaces:'项目与 MCP',tasks:'任务与日志',audits:'代码规范审计',execution:'本机执行',guides:'功能操作说明',memory:'共享记忆',usage:'用量与预算',checkpoints:'本机检查点',closeouts:'撤权交接',activity:'项目动态',connection:'账号与设备',desktop:'桌面设置'};
 function el(tag,props={},...children){
   const element=document.createElement(tag);
   for(const [key,value] of Object.entries(props)){
@@ -535,7 +537,67 @@ async function taskDetail(bindingId,taskId,generation,offset=0){
       text('pre',d.evidence+(d.override_reason?'\n自审原因：'+d.override_reason:'')))),
     text('p','取回代码会保存为本机加密检查点，导出到新目录后审查。自动逐轮记录仍需宿主钩子配合。','note'),
     el('div',{class:'actions end'},task.repository_id?button('交付核验',()=>deliveryDialog(bindingId,task,generation)):null,
+      task.repository_id?button('代码规范审计',()=>auditTaskDialog(bindingId,task,generation)):null,
       button('刷新',()=>taskDetail(bindingId,taskId,generation,offset)),button('关闭',()=>{openTaskBinding=null;closeDialog();},'primary')));
+}
+function auditLabel(item){return `${({queued:'待认领',running:'审查中',completed:'已提交报告'})[item.state]} · 规范 ${item.policy_version} · ${item.current?'当前来源':'已失效来源'}`;}
+function auditScreen(){
+  const generation=taskVersion,available=state.bindings.filter(b=>b.status==='active');
+  if(!available.length)return empty('没有可用项目连接','请先接入获准的项目和仓库。');
+  memoryBinding=available.some(b=>b.id===memoryBinding)?memoryBinding:available[0].id;
+  const bindingId=memoryBinding,account=state.user?.id,panel=el('section',{class:'card'});
+  const current=()=>view==='audits' && taskVersion===generation && memoryBinding===bindingId && state.user?.id===account;
+  const picker=el('select',{},available.map(b=>el('option',{value:b.id,...(b.id===bindingId?{selected:true}:{})},b.projectName+' · '+(b.repositoryName || b.workspace))));
+  picker.addEventListener('change',()=>{memoryBinding=picker.value;auditOffset=0;render();});
+  const load=async()=>{
+    try{
+      const data=await invoke('taskQuery',{bindingId,tool:'hub_list_code_audits',args:{offset:auditOffset,limit:20}});
+      if(!current())return;
+      panel.replaceChildren(!data.items.length?empty('暂无审计','仓库开启代码规范后，经过服务器核验的代码推送会自动排队。'):el('div',{},
+        ...data.items.map(item=>el('article',{class:'card'},text('h3',auditLabel(item)),text('p',item.git_commit,'mono'),
+          text('p',item.reason || '等待获准审查者执行'),item.self_review?text('p','超管自审：'+item.override_reason,'warning'):null,
+          button('报告与复审记录',()=>auditReportDialog(bindingId,item.id,'audits')))),
+        el('div',{class:'actions'},auditOffset?button('上一页',()=>{auditOffset=Math.max(0,auditOffset-20);render();}):null,
+          data.has_more?button('下一页',()=>{auditOffset=data.next_offset;render();}):null)));
+    }catch(error){if(current())panel.replaceChildren(text('p',error.message,'warning'));}
+    finally{if(current()){clearTimeout(taskTimer);taskTimer=setTimeout(load,5000);}}
+  };load();
+  return el('div',{},heading('CODE REVIEW','代码规范审计','按提交和规则版本跟踪审查。审查者在开发工具中执行，问题与每次复审保留；报告通过和必需 CI 分别核验。'),
+    el('div',{class:'actions'},field('项目连接',picker),button('刷新',()=>render())),panel);
+}
+async function auditTaskDialog(bindingId,task,generation){
+  const ticket=++taskDialogVersion,account=state.user?.id;
+  const data=await invoke('taskQuery',{bindingId,tool:'hub_list_code_audits',args:{task_id:task.id,limit:30}});
+  if(view!=='tasks' || generation!==taskVersion || ticket!==taskDialogVersion || account!==state.user?.id)return;
+  const gate=data.gate;
+  openDialog(text('h2','代码规范审计 · '+task.title),text('p',!gate.required?'本仓库尚未开启代码审计。':gate.ready?'当前审查和必需 CI 满足要求。':'当前审查或必需 CI 尚未满足要求，验收将被拦截。',gate.ready?'note':'warning'),
+    text('p','开发工具使用 agent-hub-code-review 认领并执行。排队和通知不代表已经审查。','note'),
+    ...data.items.map(item=>el('section',{class:'card'},text('h3',auditLabel(item)),text('p',item.git_commit,'mono'),
+      text('p',item.reason || '尚未提交审查报告'),button('报告与复审记录',()=>auditReportDialog(bindingId,item.id,'tasks',()=>auditTaskDialog(bindingId,task,generation))))),
+    !data.items.length?text('p','没有审计记录；发布负责人可在网页“仓库与资料 → 代码规范”设置。','note'):null,
+    el('div',{class:'actions end'},button('刷新',()=>auditTaskDialog(bindingId,task,generation)),button('返回任务',()=>taskDetail(bindingId,task.id,generation)),button('关闭',closeDialog)));
+}
+async function auditReportDialog(bindingId,jobId,expectedView,back=null){
+  openAuditBinding=bindingId;openAuditView=expectedView;
+  const ticket=++taskDialogVersion,generation=taskVersion,account=state.user?.id;
+  const current=()=>view===expectedView && ticket===taskDialogVersion && generation===taskVersion && state.user?.id===account && state.bindings.some(b=>b.id===bindingId && b.status==='active');
+  const data=await invoke('taskQuery',{bindingId,tool:'hub_read_code_audit',args:{job_id:jobId}});if(!current())return;
+  const reason=el('textarea',{minlength:10,maxlength:2000,rows:3,placeholder:'说明阻塞、误报或复审原因；原报告保留。'});
+  openDialog(text('h2','代码审计报告'),text('p',auditLabel(data)),text('p',data.git_commit,'mono'),
+    data.self_review?text('p','超管自审：'+data.override_reason,'warning'):null,
+    ...data.reports.map(r=>el('section',{class:'card'},text('h3',`第 ${r.lease_epoch} 次 · ${r.passed?'审查通过（CI另行核验）':r.content.conclusion==='incomplete'?'未完成覆盖':'审查未通过'}`),
+      text('p',r.content.summary),text('p','审查人：'+r.author_id+' · '+new Date(r.created_at).toLocaleString('zh-CN')),
+      text('p','逐规则结果：'+Object.entries(r.content.rule_checks).map(([k,v])=>k+' '+v).join('；')),
+      ...r.content.findings.map(f=>el('details',{},text('summary',`${f.severity} · ${f.title} · ${f.path}:${f.line}`),text('p',f.evidence),text('p','建议：'+f.recommendation))),
+      ...r.content.gaps.map(g=>text('p','未覆盖：'+g,'warning')),text('p',r.content.verification),text('p','报告回执：'+r.receipt_hash,'mono'))),
+    !data.reports.length?text('p','尚无审查报告。','note'):null,text('h3','过程记录'),
+    ...data.events.map(e=>text('p',`${new Date(e.created_at).toLocaleString('zh-CN')} · ${e.kind} · ${e.payload.reason || ''}`)),
+    data.current?el('div',{},field('重新排队原因',reason),button('保留旧报告并重新排队',async()=>{
+      if(reason.value.trim().length<10)throw new Error('请填写至少 10 字的原因。');
+      await invoke('auditAction',{bindingId,tool:'hub_retry_code_audit',args:{job_id:jobId,expected_version:data.version,reason:reason.value.trim(),operation_id:crypto.randomUUID()}});
+      if(current()){toast('已保存复审原因。',true);await auditReportDialog(bindingId,jobId,expectedView,back);}
+    }),text('small','审查需要评审与共享日志权限；已完成报告的复审还需要发布权限。')):text('p','这些报告已失效，不能用于当前验收。','warning'),
+    el('div',{class:'actions end'},back?button('返回审计列表',back):null,button('刷新',()=>auditReportDialog(bindingId,jobId,expectedView,back)),button('关闭',closeDialog)));
 }
 async function deliveryDialog(bindingId,task,generation,offset=0){
   const ticket=++taskDialogVersion,account=state.user?.id;
@@ -659,6 +721,10 @@ function renderUpdate(){
 }
 function render(){
   if(!state)return;
+  if(openAuditBinding && (view!==openAuditView || state.connection!=='active' ||
+      !state.bindings.some(b=>b.id===openAuditBinding && b.status==='active'))){
+    openAuditBinding=null;modal.replaceChildren();closeDialog();
+  }
   clearTimeout(taskTimer);taskVersion++;
   if(openTaskBinding && (view!=='tasks' || !state.bindings.some(b=>b.id===openTaskBinding && b.status==='active'))){
     openTaskBinding=null;modal.replaceChildren();closeDialog();
@@ -677,7 +743,7 @@ function render(){
   if(view==='desktop')content=desktopScreen();
   else if(view==='closeouts')content=closeoutsScreen();
   else if(!authenticated)content=state.connection==='pending'?pendingScreen():loginScreen();
-  else content=view==='overview'?overview():view==='workspaces'?workspaces():view==='tasks'?tasksScreen():view==='execution'?executionScreen():['guides','usage'].includes(view)?informationScreen(view):view==='memory'?memoryScreen():view==='checkpoints'?checkpointsScreen():view==='activity'?
+  else content=view==='overview'?overview():view==='workspaces'?workspaces():view==='tasks'?tasksScreen():view==='audits'?auditScreen():view==='execution'?executionScreen():['guides','usage'].includes(view)?informationScreen(view):view==='memory'?memoryScreen():view==='checkpoints'?checkpointsScreen():view==='activity'?
     el('div',{},heading('PROJECT ACTIVITY','项目动态','记录来自服务器。断线恢复后按游标补齐，重复记录会自动合并。'),el('section',{class:'card'},events())):connection();
   root.replaceChildren(el('div',{class:'layout'},sidebar,el('main',{class:'content'},
     el('header',{class:'topbar'},text('div',authenticated || view==='desktop'?titles[view]:'欢迎使用 Agent Hub'),

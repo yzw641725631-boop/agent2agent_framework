@@ -103,7 +103,8 @@ function dialog(title, description, form, actionLabel, action) {
 }
 
 class Console {
-  constructor() { this.client = new Client(); this.currentView = 'overview'; this.project = null; this.user = null; this.offset = 0; this.renderVersion = 0; }
+  constructor() { this.client = new Client(); this.currentView = 'overview'; this.project = null; this.user = null; this.offset = 0; this.renderVersion = 0;
+    modal.addEventListener('close',()=>{this.auditDialogVersion=(this.auditDialogVersion || 0)+1;clearTimeout(this.auditTimer);}); }
   api(method, path, data, options) { return this.client.request(method, path, data, options); }
   get isRoot() { return this.user?.platform_role === 'superadmin'; }
   report(error) {
@@ -638,6 +639,7 @@ class Console {
       repo.capabilities.map(cap => permissionNames[cap]).join('、') || '尚未获得代码或资料权限',
       repo.status === 'active' ? '可用' : '已归档',h('div',{class:'row-actions'},
       repo.status === 'active' && repo.capabilities.includes('code:read') && button('交付要求',()=>this.openDeliveryPolicy(projectId,repo),'small'),
+      repo.status === 'active' && repo.capabilities.includes('code:read') && button('代码规范',()=>this.openCodeAuditPolicy(projectId,repo),'small'),
       repo.status === 'active' && repo.capabilities.includes('code:read') && button('记忆整理设置',()=>this.openDistillationPolicy(projectId,repo),'small'),
       this.isRoot && repo.status === 'active' && button('服务端 AI',()=>this.openGenerationPolicy(projectId,repo),'small'),
       this.isRoot && button(repo.status === 'active' ? '归档' : '恢复',() => {
@@ -708,6 +710,74 @@ class Console {
         })));
       content.append(form);
     }else content.append(h('p',{},`自动准备：${config.enabled?'已开启':'未开启'}；每批 ${config.min_sources}–${config.max_sources} 份摘录，最多 ${config.max_candidates} 条候选。`),button('关闭',()=>modal.close()));
+    modal.replaceChildren(content);if(!modal.open)modal.showModal();
+  }
+  async openCodeAuditPolicy(projectId,repo){
+    const revision=this.renderVersion,base=`/api/projects/${projectId}/repositories/${repo.id}/code-audit-policy`;
+    const config=await this.api('GET',base);
+    if(this.project?.id!==projectId || this.currentView!=='repositories' || this.renderVersion!==revision)return;
+    const content=h('div',{id:'modal-body'},h('h2',{},'代码规范 · '+repo.name),
+      h('p',{},`规范版本 ${config.version} · ${config.enabled?'已开启提交后审计':'尚未开启'}`),
+      h('p',{class:'hint'},'开启前先在“交付要求”中要求自动测试，列出格式、类型、测试等实际执行检查的工作流，核验对象选择“推送的工作提交”。每次推送核验后自动排队，审查者须实际执行 Skill 并提交报告。'));
+    if(this.can('tasks:publish')){
+      const form=h('form',{},field('enabled','提交后审计',{items:[['yes','开启并拦截不合格验收'],['no','暂不开启']],value:config.enabled?'yes':'no'}),
+        field('rules','每行：规则ID|标题|具体要求',{multiline:true,required:true,value:config.rules.map(r=>`${r.id}|${r.title}|${r.requirement}`).join('\n'),hint:'例如 layers|分层边界|页面只能通过获准服务接口读取业务资料。规则用于只读审查，不包含安装或上传命令。'}),
+        field('medium','中等级问题是否阻断',{items:[['no','只阻断严重与高等级问题'],['yes','同时阻断中等级问题']],value:config.blocking_severities.includes('medium')?'yes':'no'}),
+        field('change_reason','设置或调整原因',{required:true,minlength:10,maxlength:2000}));
+      form.append(submit(form,'保存规范版本',async values=>{
+        const rules=values.rules.split(/\r?\n/).map(v=>v.trim()).filter(Boolean).map(line=>{
+          const parts=line.split('|');if(parts.length<3)throw new Error('每条规范需要规则ID、标题和具体要求。');
+          return {id:parts[0].trim(),title:parts[1].trim(),requirement:parts.slice(2).join('|').trim()};
+        });
+        await this.api('PUT',base,{expected_version:config.version,enabled:values.enabled==='yes',rules,
+          blocking_severities:['critical','high',...(values.medium==='yes'?['medium']:[])],change_reason:values.change_reason});
+        modal.close();toast('代码规范已保存；相关提交已按新版本重新排队。');
+      }));content.append(form);
+    }else content.append(...config.rules.map(r=>h('p',{},h('strong',{},r.id+' · '+r.title+'：'),r.requirement)));
+    content.append(button('关闭',()=>modal.close()));modal.replaceChildren(content);if(!modal.open)modal.showModal();
+  }
+  async openCodeAudits(projectId,taskId,offset=0){
+    const revision=this.renderVersion,ticket=this.auditDialogVersion=(this.auditDialogVersion || 0)+1;
+    const base=`/api/projects/${projectId}`,data=await this.api('GET',base+`/code-audits?task_id=${taskId}&offset=${offset}&limit=20`);
+    const current=()=>this.project?.id===projectId && this.currentView==='tasks' && this.renderVersion===revision && this.auditDialogVersion===ticket;
+    if(!current())return;
+    const gate=data.gate,refresh=()=>this.openCodeAudits(projectId,taskId,offset);
+    const content=h('div',{id:'modal-body'},h('h2',{},'提交后的代码规范审计'),
+      h('p',{class:gate.ready?'help-block':'danger-note'},!gate.required?'本仓库尚未开启；可在仓库的“代码规范”中设置。':gate.ready?'当前审查和必需 CI 满足要求。':'当前审查或必需 CI 尚未满足要求，验收将被拦截。'),
+      h('p',{class:'hint'},'认领后由审查者在开发工具中执行 agent-hub-code-review。排队、通知和取得输入都不表示已经完成模型审查。'),
+      ...data.items.map(item=>h('div',{class:'card'},h('h3',{},`${({queued:'待认领',running:'审查中',completed:'已提交报告'})[item.state]} · 规范 ${item.policy_version} · ${item.current?'当前来源':'已失效来源'}`),
+        h('p',{class:'mono'},'提交：'+item.git_commit),h('p',{},item.reason || '等待获准审查者执行'),
+        item.self_review && h('p',{class:'danger-note'},'超管自审：'+item.override_reason),
+        button('报告与复审记录',()=>{this.auditDialogVersion++;return this.openCodeAuditReport(projectId,taskId,item.id);}))),
+      !data.items.length && h('p',{},'还没有审计记录；仅在已开启规范且代码交付已核验后排队。'),
+      h('div',{class:'row-actions'},offset>0 && button('较新记录',()=>this.openCodeAudits(projectId,taskId,Math.max(0,offset-20))),
+        data.has_more && button('较早记录',()=>this.openCodeAudits(projectId,taskId,data.next_offset)),button('刷新',refresh),
+        button('返回任务',()=>{this.auditDialogVersion++;return this.openTask(projectId,taskId);}),button('关闭',()=>{this.auditDialogVersion++;modal.close();})));
+    modal.replaceChildren(content);if(!modal.open)modal.showModal();
+    clearTimeout(this.auditTimer);this.auditTimer=setTimeout(()=>{if(current() && modal.open)refresh().catch(e=>this.report(e));},5000);
+  }
+  async openCodeAuditReport(projectId,taskId,jobId){
+    const ticket=this.auditDialogVersion=(this.auditDialogVersion || 0)+1,revision=this.renderVersion;
+    const base=`/api/projects/${projectId}/code-audits/${jobId}`,data=await this.api('GET',base);
+    if(this.project?.id!==projectId || this.currentView!=='tasks' || this.renderVersion!==revision || this.auditDialogVersion!==ticket)return;
+    const content=h('div',{id:'modal-body'},h('h2',{},'审计报告与复审记录'),h('p',{class:'mono'},data.git_commit),
+      data.self_review && h('p',{class:'danger-note'},'超管自审：'+data.override_reason),
+      !data.current && h('p',{class:'danger-note'},'来源已经变化，这些报告不能用于当前验收。'),
+      ...data.reports.map(r=>h('section',{class:'card'},h('h3',{},`第 ${r.lease_epoch} 次 · ${r.passed?'审查通过（CI另行核验）':r.content.conclusion==='incomplete'?'未完成覆盖':'审查未通过'}`),
+        h('p',{},r.content.summary),h('p',{},'审查人：'+r.author_id+' · '+date(r.created_at)),
+        h('p',{},'逐规则结果：'+Object.entries(r.content.rule_checks).map(([k,v])=>k+' '+v).join('；')),
+        ...r.content.findings.map(f=>h('details',{},h('summary',{},`${f.severity} · ${f.title} · ${f.path}:${f.line}`),h('p',{},f.evidence),h('p',{},'建议：'+f.recommendation))),
+        ...r.content.gaps.map(g=>h('p',{class:'danger-note'},'未覆盖：'+g)),h('p',{},r.content.verification),
+        h('p',{class:'hint'},'报告回执：'+r.receipt_hash))),
+      !data.reports.length && h('p',{},'尚无审查报告。'),h('h3',{},'过程记录'),
+      ...data.events.map(e=>h('p',{},`${date(e.created_at)} · ${e.kind} · ${e.payload.reason || ''}`)));
+    if(data.current && this.can('tasks:review') && (data.state!=='completed' || this.can('tasks:publish'))){
+      const form=h('form',{},field('reason','重新排队原因',{required:true,minlength:10,maxlength:2000}));
+      form.append(submit(form,'保留旧报告并重新排队',async values=>{
+        await this.api('POST',base+'/retry',{expected_version:data.version,reason:values.reason});toast('已保留历史并重新排队。');await this.openCodeAudits(projectId,taskId);
+      }));content.append(form);
+    }
+    content.append(button('返回审计列表',()=>this.openCodeAudits(projectId,taskId)),button('关闭',()=>{this.auditDialogVersion++;modal.close();}));
     modal.replaceChildren(content);if(!modal.open)modal.showModal();
   }
   async openDeliveryPolicy(projectId, repo) {
@@ -824,6 +894,7 @@ class Console {
     const act = async (path,body) => { await this.api('POST',base+path,body); toast('服务器已保存'); await reload(); };
     const actions = [button('关闭',() => modal.close()),button('刷新',reload)];
     if(task.repository_id)actions.push(button('交付核验',()=>this.openDelivery(projectId,taskId)));
+    if(task.repository_id)actions.push(button('代码规范审计',()=>this.openCodeAudits(projectId,taskId)));
     if(this.can('tasks:publish') && task.status==='ready')actions.push(button('投递给执行者',()=>this.dispatchTask(projectId,task)));
     const coordination = data.coordination;
     if(this.can('tasks:publish') && !task.lease_epoch && ['draft','ready'].includes(task.status) && !coordination?.has_restricted_dependencies)

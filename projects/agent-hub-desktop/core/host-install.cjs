@@ -144,7 +144,7 @@ async function skillFiles(directory) {
   return files;
 }
 
-async function planHost({ host, home, codexHome, workspace, receiptDirectory, skillDirectory, name, entry }) {
+async function planHost({ host, home, codexHome, workspace, receiptDirectory, skillDirectory, additionalSkills=[], name, entry }) {
   if (!/^[a-z][a-z0-9-]{2,79}$/.test(name) || !path.isAbsolute(receiptDirectory)) throw conflict();
   const target = targetFor(host, { home, codexHome, workspace });
   if (!path.isAbsolute(target)) throw conflict();
@@ -156,11 +156,15 @@ async function planHost({ host, home, codexHome, workspace, receiptDirectory, sk
   const changes = [{ file: target, previous, next: Buffer.from(merged.next) }];
   const files = {};
   let installedSkill = null;
-  if (skillDirectory) {
-    installedSkill = host === 'codex' ? path.join(codexHome || path.join(home, '.agents'), 'skills', 'agent-hub') :
-      path.join(home, host === 'claude' ? '.claude' : '.cursor', 'skills', 'agent-hub');
-    for (const source of await skillFiles(skillDirectory)) {
-      const file = path.join(installedSkill, ...source.name.split('/'));
+  const skills=[...(skillDirectory?[{name:'agent-hub',directory:skillDirectory}]:[]),...additionalSkills];
+  if(new Set(skills.map(s=>s.name)).size!==skills.length)throw conflict();
+  for (const skill of skills) {
+    if(!/^[a-z][a-z0-9-]{2,63}$/.test(skill.name) || !path.isAbsolute(skill.directory))throw conflict();
+    const targetSkill = host === 'codex' ? path.join(codexHome || path.join(home, '.agents'), 'skills', skill.name) :
+      path.join(home, host === 'claude' ? '.claude' : '.cursor', 'skills', skill.name);
+    if(skill.name==='agent-hub')installedSkill=targetSkill;
+    for (const source of await skillFiles(skill.directory)) {
+      const file = path.join(targetSkill, ...source.name.split('/'));
       const before = await snapshot(file);
       if (before && !before.equals(source.bytes) && digest(before) !== receipt.data.files[file]) throw conflict();
       changes.push({ file, previous: before, next: source.bytes });

@@ -6,6 +6,7 @@ const frameworkTools=require('./framework-tools.cjs');
 const agentTools=require('./agent-tools.cjs');
 const hookTools=require('./hook-tools.cjs');
 const deliveryTools=require('./delivery-tools.cjs');
+const auditTools=require('./audit-tools.cjs');
 const distillationTools=require('./distillation-tools.cjs');
 
 const versionTool={
@@ -91,7 +92,7 @@ async function dispatch(request,invoke,checkVersion,{omitToolText=false,scope='p
   const insightTools=require('./insight-tools.cjs');
   const guideTools=require('./guide-tools.cjs');
   const executionTools=require('./execution-tools.cjs');
-  const available=setup?setupTools:management?managementTools:[...closeoutTools,...readTools,...frameworkTools.tools,...hookTools.tools,...documentTools,...memoryTools,...distillationTools.tools(['tasks:publish','tasks:write']),...deliveryTools.tools(['tasks:publish','tasks:write']),...executionTools.tools(['tasks:write']),...guideTools.tools(['tasks:publish','tasks:test','tasks:write']),...agentTools.tools(['tasks:publish','tasks:claim','tasks:write']),...knowledgeTools.tools(['tasks:publish','tasks:write']),...insightTools.tools(['tasks:publish','tasks:write']),...repositoryTools.tools,reportTool,...taskTools.tools(['tasks:publish','tasks:claim','tasks:write','tasks:review','tasks:test','logs:read'])];
+  const available=setup?setupTools:management?managementTools:[...closeoutTools,...readTools,...frameworkTools.tools,...hookTools.tools,...documentTools,...memoryTools,...distillationTools.tools(['tasks:publish','tasks:write']),...deliveryTools.tools(['tasks:publish','tasks:write']),...auditTools.tools(['tasks:publish','tasks:write','tasks:review','logs:read']),...executionTools.tools(['tasks:write']),...guideTools.tools(['tasks:publish','tasks:test','tasks:write']),...agentTools.tools(['tasks:publish','tasks:claim','tasks:write']),...knowledgeTools.tools(['tasks:publish','tasks:write']),...insightTools.tools(['tasks:publish','tasks:write']),...repositoryTools.tools,reportTool,...taskTools.tools(['tasks:publish','tasks:claim','tasks:write','tasks:review','tasks:test','logs:read'])];
   const id=request?.id??null;
   if (!object(request) || request.jsonrpc!=='2.0' || typeof request.method!=='string' ||
       ('id' in request && !['string','number'].includes(typeof request.id))) return error(id,-32600,'Invalid Request');
@@ -111,7 +112,7 @@ async function dispatch(request,invoke,checkVersion,{omitToolText=false,scope='p
   else if(request.method==='tools/list'){
     const meta=await invoke('metadata',{});
     const tools=setup?setupTools:management?managementTools.filter(tool=>meta.capabilities.includes(tool.name==='hub_create_project'?'projects:create':'projects:list')):
-      meta.closeout_required?closeoutTools:[...closeoutTools,...readTools,...frameworkTools.tools,...hookTools.tools,...memoryTools,...distillationTools.tools(meta.capabilities),...deliveryTools.tools(meta.capabilities),...executionTools.tools(meta.capabilities),...guideTools.tools(meta.capabilities),...agentTools.tools(meta.capabilities),...knowledgeTools.tools(meta.capabilities),...insightTools.tools(meta.capabilities),...taskTools.tools(meta.capabilities),...repositoryTools.available(meta),
+      meta.closeout_required?closeoutTools:[...closeoutTools,...readTools,...frameworkTools.tools,...hookTools.tools,...memoryTools,...distillationTools.tools(meta.capabilities),...deliveryTools.tools(meta.capabilities),...auditTools.tools(meta.capabilities),...executionTools.tools(meta.capabilities),...guideTools.tools(meta.capabilities),...agentTools.tools(meta.capabilities),...knowledgeTools.tools(meta.capabilities),...insightTools.tools(meta.capabilities),...taskTools.tools(meta.capabilities),...repositoryTools.available(meta),
         ...(meta.capabilities.includes('documents:read')?documentTools:[]),...(meta.capabilities.includes('tasks:write')?[reportTool]:[])];
     result={tools:[...(checkVersion?[versionTool]:[]),...tools]};
   } else if(request.method==='tools/call'){
@@ -120,7 +121,7 @@ async function dispatch(request,invoke,checkVersion,{omitToolText=false,scope='p
     if(!versionCheck && (!available.some(tool=>tool.name===name) || !object(args)))return error(id,-32602,'Unknown tool or invalid arguments');
     try {
       const data=versionCheck?await checkVersion():await invoke(name,args);
-      if(name==='hub_recall_experience'){
+      if(['hub_recall_experience','hub_get_code_audit_input','hub_read_code_audit_source','hub_read_code_audit'].includes(name)){
         // One copy of experience prose. Publishing it twice defeats the read budget on some hosts.
         result={content:[{type:'text',text:JSON.stringify(data)}],isError:false};
       }else{

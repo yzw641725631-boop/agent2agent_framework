@@ -512,6 +512,9 @@ class Controller extends EventEmitter {
       const guideRequest=require('./guide-tools.cjs').request(action,args,b,context.capabilities);
       if(guideRequest)return await remote.request(guideRequest.method,guideRequest.path,guideRequest.body,
         {slot,idempotency:guideRequest.operation_id});
+      const auditRequest=require('./audit-tools.cjs').request(action,args,b,context.capabilities);
+      if(auditRequest)return await remote.request(auditRequest.method,auditRequest.path,auditRequest.body,
+        {slot,idempotency:auditRequest.operation_id});
       const deliveryRequest=require('./delivery-tools.cjs').request(action,args,b,context.capabilities);
       if(deliveryRequest)return await remote.request(deliveryRequest.method,deliveryRequest.path,deliveryRequest.body,
         {slot,idempotency:deliveryRequest.operation_id});
@@ -642,7 +645,7 @@ class Controller extends EventEmitter {
           profile.events.push(event.data);profile.events=profile.events.slice(-100);
           await this.persist();this.emitState();
           if(signal.aborted || this.closed || this.profile!==profile || this.remote!==remote)return;
-          if((ready || caughtUp) && event.data.device_id!==profile.deviceId)this.emit('notification',{title:'项目有新的进度',body:event.data.summary});
+          if((ready || caughtUp) && (event.data.device_id!==profile.deviceId || event.data.kind?.startsWith('code_audit.')))this.emit('notification',{title:event.data.kind?.startsWith('code_audit.')?'代码规范审计有新进度':'项目有新的进度',body:event.data.summary});
         }
       }catch(error){
         if(signal.aborted || this.closed || this.profile!==profile || this.remote!==remote)return;

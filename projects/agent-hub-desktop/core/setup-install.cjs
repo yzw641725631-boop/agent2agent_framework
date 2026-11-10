@@ -6,7 +6,8 @@ const { install, hosts, snapshot } = require('./host-install.cjs');
 const { version } = require('../package.json');
 
 async function configure({ directory, home = os.homedir(), codexHome = process.env.CODEX_HOME, executable,
-  selected, skillDirectory = path.resolve(__dirname, '../skills/agent-hub') }) {
+  selected, skillDirectory = path.resolve(__dirname, '../skills/agent-hub'),
+  auditSkillDirectory = path.resolve(__dirname, '../skills/agent-hub-code-review') }) {
   if (!path.isAbsolute(directory) || !path.isAbsolute(home) || !path.isAbsolute(executable) ||
       codexHome && !path.isAbsolute(codexHome) || !selected?.length || selected.some(host => !hosts.includes(host))) {
     throw new Error('Invalid installation options');
@@ -20,7 +21,8 @@ async function configure({ directory, home = os.homedir(), codexHome = process.e
     args: [path.join(__dirname, 'bridge.cjs'), '--binding', path.join(directory, 'setup-mcp.json'),
       '--setup', '--connection-id', descriptor.binding], env: { ELECTRON_RUN_AS_NODE: '1' } };
   const result = await install({ hosts: selected, home, codexHome,
-    receiptDirectory: path.join(directory, 'setup-installations'), skillDirectory, name: 'agent-hub-setup', entry });
+    receiptDirectory: path.join(directory, 'setup-installations'), skillDirectory,
+    additionalSkills:[{name:'agent-hub-code-review',directory:auditSkillDirectory}],name: 'agent-hub-setup', entry });
   return { version, ...result, message: '桌面端、Skill 和 MCP 已准备。请在 PC 端完成本人登录，并重新加载开发工具。' };
 }
 

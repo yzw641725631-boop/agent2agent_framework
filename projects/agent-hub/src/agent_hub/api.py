@@ -21,6 +21,7 @@ from . import (
     accounts,
     agent_dispatch,
     closeouts,
+    code_audit,
     documents,
     git_gateway,
     github_credentials,
@@ -272,6 +273,7 @@ def create_app(
     guide_lifecycle.install(app, hub, actor, mutate, db_dependency)
     from . import delivery_evidence
     delivery_evidence.install(app, hub, actor, token, mutate, db_dependency, security_sessions)
+    code_audit.install(app, hub, actor, mutate, db_dependency)
     from . import distillation
     distillation.install(app, hub, actor, mutate, db_dependency)
     from . import server_generation

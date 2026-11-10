@@ -222,8 +222,10 @@ def verify_delivery(hub, db, identity, project_id, task_id, body, request_id, to
         raise HubError("GIT_REMOTE_VERIFICATION_FAILED", 409)
     previous = db.scalar(select(CodeDelivery).where(CodeDelivery.worklog_id == log.id,
                                                     CodeDelivery.git_commit == log.git_commit))
+    from . import code_audit
+
     if previous:
-        return delivery_view(previous)
+        return {**delivery_view(previous), "code_audit": code_audit.status(db, task)}
     row = CodeDelivery(id=uuid.uuid4(), created_at=now(), project_id=project_id, repository_id=repo.id,
         task_id=task_id, run_id=run.id, worklog_id=log.id, author_id=identity.user.id,
         device_id=identity.device.id, git_commit=log.git_commit, git_ref=ref)
@@ -231,7 +233,7 @@ def verify_delivery(hub, db, identity, project_id, task_id, body, request_id, to
     db.add(row)
     db.flush()
     tasks.emit(hub, db, identity, task, "code.delivery_verified", request_id, run_id=run.id, worklog_id=log.id)
-    return delivery_view(row)
+    return {**delivery_view(row), "code_audit": code_audit.status(db, task)}
 
 
 def install(app, hub, actor, token, db_dependency):

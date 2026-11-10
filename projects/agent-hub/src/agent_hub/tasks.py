@@ -371,6 +371,10 @@ def submit(hub, db, actor, project_id, task_id, body, request_id):
     run.state, run.ended_at = "submitted", now()
     emit(hub, db, actor, task, "task.submitted", request_id, run_id=run.id, worklog_id=latest.id)
     result = task_view(task)
+    if task.repository_id:
+        from . import code_audit
+        db.flush()
+        result["code_audit"] = code_audit.status(db, task)
     if task.documentation.get("kind", "none") != "none":
         from .guides import GuideJob
         from .guides import view as guide_view
@@ -413,6 +417,9 @@ def decide(hub, db, actor, project_id, task_id, body, request_id):
                 raise HubError("TASK_INDEPENDENT_REVIEW_REQUIRED", 403)
         elif body.override_reason:
             raise HubError("TASK_OVERRIDE_NOT_APPLICABLE", 422)
+        if body.approved:
+            from . import code_audit
+            code_audit.check_gate(db, task)
         if body.approved and body.gate == "release":
             collaboration.check_release(db, task)
             from . import guides

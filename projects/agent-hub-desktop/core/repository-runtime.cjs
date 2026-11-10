@@ -204,7 +204,7 @@ class RepositoryRuntime{
     if(receipt.git_commit!==actual || receipt.ref!==access.write_ref || receipt.worklog_id!==logs.items[0].id ||
        !/^[a-f0-9]{64}$/.test(receipt.receipt_hash || ''))fail('GIT_REMOTE_VERIFICATION_FAILED');
     return {repository_id:repo.id,task_id:args.task_id,run_id:args.run_id,git_commit:actual,ref:access.write_ref,
-      remote_verified:true,delivery_receipt:receipt,merged:false,deployed:false};
+      remote_verified:true,delivery_receipt:receipt,code_audit:receipt.code_audit || null,merged:false,deployed:false};
   }
 }
 module.exports={RepositoryRuntime,git,safePath};

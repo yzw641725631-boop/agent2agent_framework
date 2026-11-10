@@ -1,6 +1,6 @@
 # Agent Hub：身份与项目基础服务
 
-> 2026-11-10｜0.17.0 / 迁移 0026，配套 Windows 0.19.0：新增授权经验入口、稳定经验 ID、增量版本核验、完整响应预算及 Hindsight 隔离对照 CLI。生产仍用原生检索；未部署真实 Hindsight 或验证真实模型质量。操作和验收见[增量经验与 Hindsight 对照](../../设计文档/36_增量经验与Hindsight对照.md)，模型配置见[服务端 AI](../../设计文档/35_服务端AI与操作说明维护.md)。
+> 2026-11-10｜0.18.0 / 迁移 0027，配套 Windows 0.20.0：新增按提交和规范版本绑定的代码审计、独立审查租约、报告历史及 CI 验收关口。使用现有服务器数据库，未新增服务端代码模型外发。开启方法与实际边界见[提交后代码规范审计](../../设计文档/37_提交后代码规范审计.md)。
 
 本服务提供身份、设备审批、逐仓库授权、任务租约、不可覆盖工作日志、代码快照、Git 回执及共享记忆，含 REST API、中文后台、PostgreSQL 迁移和运维 CLI。通过 [桌面端](../agent-hub-desktop/README.md) 提供本机 stdio MCP。配套[私有模型服务](../agent-hub-embedding/README.md)，语义故障明示退回关键词。文档接入见 [Git 文档索引](../../设计文档/11_Git文档索引与MCP查询.md)。
 
@@ -64,7 +64,7 @@
 | `src/agent_hub/generation_provider.py` | 有界的兼容 OpenAI 请求，不自动重试 |
 | `src/agent_hub/generation_worker.py` | 独立角色的后台生成、撤权复核和执行回执 |
 | `src/agent_hub/guide_lifecycle.py` | 已发布说明的修订、审核、历史、归档和反馈 |
-| `migrations/versions/` | 版本化数据库迁移，当前到 0026 |
+| `migrations/versions/` | 版本化数据库迁移，当前到 0027 |
 | `tests/` | 真实 PostgreSQL 上的权限与会话测试 |
 | `deploy/compose.server-db.yaml` | 已在指定服务器运行的数据库配置 |
 | `deploy/compose.server-app.yaml` | 已部署的应用配置，复用服务器数据库 |
@@ -80,14 +80,14 @@
 |---|---|
 | 部署目录 | `/opt/agent-hub/database` |
 | 容器 | `agent-hub-postgres`，PostgreSQL 18.6 |
-| 数据库 | `agent_hub`，迁移 `0026`，上线回执见本版发布记录 |
+| 数据库 | `agent_hub`，迁移 `0027`，上线回执见本版发布记录 |
 | 数据卷 | `agent-hub-postgres-data` |
 | 私有网络 | `agent-hub-database`，内部主机名 `postgres:5432` |
 | 运行/迁移角色 | `hub_runtime` / `hub_owner` |
 | 文档 Worker | `hub_document_worker` 登录，继承 `hub_indexer`；与 API 角色分开 |
 | 凭证 | 服务器 `.env`，root 所有，权限 `0600` |
 | 对外端口 | 数据库不发布宿主机或公网端口 |
-| 应用目录 | `/opt/agent-hub/application/current`，本版目录 `releases/0.17.0` |
+| 应用目录 | `/opt/agent-hub/application/current`，本版目录 `releases/0.18.0` |
 | 应用容器 | `agent-hub-app-api-1`，仅发布服务器 `127.0.0.1:8765` |
 | 公网入口 | `https://47.109.23.86:18180`，容器 `agent-hub-edge` |
 | 入口与证书状态 | `/opt/agent-hub/edge`；每六小时检查证书续期 |
@@ -105,7 +105,7 @@ PostgreSQL 初始化脚本只在空数据卷执行；后续变更通过 owner �
 
 密钥仅加密保存在服务器；API 不回显。支持输入字节、输出 Token、每日次数、保守预留和超时限制。提供方响应中的 Token 单独记录，不代表已核对账单。超时和未知结果不自动重复付费；超管可以批准复用已保存结果，或明确批准一次新调用。后台生成不自动审核、发布或修改代码。
 
-首次建立独立角色需在服务器运行 `deploy/provision-generation-worker.sh`。0.15.1 → 0.16.0 使用 `deploy/upgrade-server-0160.sh`；0.16.0 → 0.17.0 使用 `deploy/upgrade-server-0170.sh`，数据库保持 0026，升级不执行迁移或首次安装 SQL。两者均要求预先完成候选镜像验证、备份与恢复检查，并保留旧应用回退。生成契约见[服务端 AI](../../设计文档/35_服务端AI与操作说明维护.md)，当前验收见[增量经验](../../设计文档/36_增量经验与Hindsight对照.md)。
+首次建立独立角色需在服务器运行 `deploy/provision-generation-worker.sh`。历史版本的升级脚本保留；0.17.0 → 0.18.0 使用 `deploy/upgrade-server-0180.sh`，数据库迁移到 0027，不重新初始化生产卷。升级前完成非空数据升级、恢复、候选镜像和旧业务代码回退验证，再执行生产备份与停写迁移。生成契约见[服务端 AI](../../设计文档/35_服务端AI与操作说明维护.md)，本版操作与验收见[提交后代码规范审计](../../设计文档/37_提交后代码规范审计.md)。
 
 ## 超管初始化与设备密钥
 
