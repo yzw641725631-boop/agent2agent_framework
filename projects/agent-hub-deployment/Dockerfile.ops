@@ -1,0 +1,15 @@
+ARG BACKEND_IMAGE=agent-hub-portable-api:0.22.0
+FROM ${BACKEND_IMAGE} AS backend
+FROM restic/restic@sha256:136600b6ff6843d61d355f7f71f460a166429f35de6fd11b568fece3c9a4d510 AS restic
+FROM postgres:18.6-bookworm@sha256:f1ea2a1a4fb7b68d4836be1fdcb8a6466a89b072158bf9d97663600538c294c5
+# Reuse the exact application Python, dependencies and archive verification code.
+COPY --from=backend /usr/local /usr/local
+RUN ldconfig
+COPY --from=backend /app /app
+COPY --from=restic /usr/bin/restic /usr/local/bin/restic
+COPY agent-hub/deploy/database-checkpoint.py /deployment/database_checkpoint.py
+COPY agent-hub-deployment/scripts /deployment
+ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1 HUB_MEMORY_TOKENIZER_FILE=/app/tokenizers/cl100k_base.tiktoken
+WORKDIR /deployment
+ENTRYPOINT ["python", "/deployment/ops.py"]
+CMD ["schedule"]

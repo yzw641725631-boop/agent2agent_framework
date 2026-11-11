@@ -1,0 +1,8 @@
+**
+!agent-hub/
+!agent-hub/deploy/
+!agent-hub/deploy/database-checkpoint.py
+!agent-hub-deployment/
+!agent-hub-deployment/Dockerfile.ops
+!agent-hub-deployment/scripts/
+!agent-hub-deployment/scripts/**

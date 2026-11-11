@@ -1,0 +1,514 @@
+{
+  "schema": 1,
+  "created_at": "2026-11-11T08:37:41.935596+00:00",
+  "application_version": "0.22.0",
+  "database_schema": "0032",
+  "desktop_version": "0.23.1",
+  "server": "server47",
+  "separate_physical_server": false,
+  "public_acme_issuance_tested": false,
+  "offsite_confirmed": false,
+  "external_alert_delivery_configured": false,
+  "docker_compose": "2.27.1",
+  "source": {
+    "backup": {
+      "application_version": "0.22.0",
+      "consistent_snapshot": true,
+      "created_at": "2026-11-11T08:04:01.912305+00:00",
+      "database_schema": "0032",
+      "full_repository_check": true,
+      "offsite_confirmed": false,
+      "passed": true,
+      "rows": 101,
+      "snapshot_id": "2588f8610bf4d6d7d33b1bd36ccfc320b7bee923fdde7c846ba4e70df6b473d6",
+      "tables": 80
+    },
+    "restore_drill": {
+      "archives": {
+        "memory_healthy": true,
+        "passed": true,
+        "recorded_archives": 1,
+        "verified_archives": 1
+      },
+      "created_at": "2026-11-11T08:04:27.640772+00:00",
+      "database": {
+        "business_contents_disclosed": false,
+        "database_schema": "0032",
+        "mode": "exact",
+        "passed": true,
+        "structure_verified": true,
+        "verified_rows": 101,
+        "verified_tables": 80
+      },
+      "offsite_confirmed": false,
+      "passed": true,
+      "snapshot_id": "2588f8610bf4d6d7d33b1bd36ccfc320b7bee923fdde7c846ba4e70df6b473d6"
+    },
+    "fixture": {
+      "passed": true,
+      "https_api_and_html": true,
+      "binary_bytes": 262144,
+      "binary_sha256": "4b449f47b6bedebb92510df418fd4a02a783b107c5b292db3a3071f1e440980b",
+      "jobs": {
+        "memory_jobs_succeeded": 1,
+        "semantic_vectors": 1,
+        "document_syncs_succeeded": 1,
+        "generation_calls": 0
+      },
+      "encrypted_archive_sha256": "2faa59951589684c9df30aecbf81e65a2f78390c1625e4a21fdaeedeb3831f24",
+      "runtime_roles_restricted": true,
+      "forced_rls": true,
+      "archive_audit": {
+        "passed": true,
+        "recorded_archives": 1,
+        "verified_archives": 1,
+        "memory_healthy": true
+      },
+      "binary_roundtrip_verified": true
+    },
+    "restart_verify_passed": true
+  },
+  "target": {
+    "backup": {
+      "application_version": "0.22.0",
+      "consistent_snapshot": true,
+      "created_at": "2026-11-11T08:31:03.312015+00:00",
+      "database_schema": "0032",
+      "full_repository_check": true,
+      "offsite_confirmed": false,
+      "passed": true,
+      "rows": 101,
+      "snapshot_id": "cfe3698c97c3594b26e4b91e48bc5855aabb0e573bf843471632069b925f665f",
+      "tables": 80
+    },
+    "restore_drill": {
+      "archives": {
+        "memory_healthy": true,
+        "passed": true,
+        "recorded_archives": 1,
+        "verified_archives": 1
+      },
+      "created_at": "2026-11-11T08:31:29.000010+00:00",
+      "database": {
+        "business_contents_disclosed": false,
+        "database_schema": "0032",
+        "mode": "exact",
+        "passed": true,
+        "structure_verified": true,
+        "verified_rows": 101,
+        "verified_tables": 80
+      },
+      "offsite_confirmed": false,
+      "passed": true,
+      "snapshot_id": "cfe3698c97c3594b26e4b91e48bc5855aabb0e573bf843471632069b925f665f"
+    },
+    "import": {
+      "archives": {
+        "memory_healthy": true,
+        "passed": true,
+        "recorded_archives": 1,
+        "verified_archives": 1
+      },
+      "created_at": "2026-11-11T08:29:48.723462+00:00",
+      "database": {
+        "business_contents_disclosed": false,
+        "database_schema": "0032",
+        "mode": "exact",
+        "passed": true,
+        "structure_verified": true,
+        "verified_rows": 101,
+        "verified_tables": 80
+      },
+      "fresh_target_confirmed": true,
+      "passed": true,
+      "snapshot_id": "2588f8610bf4d6d7d33b1bd36ccfc320b7bee923fdde7c846ba4e70df6b473d6",
+      "source_application_key_restored": true,
+      "target_database_passwords_retained": true
+    },
+    "fixture": {
+      "passed": true,
+      "https_api_and_html": true,
+      "binary_bytes": 262144,
+      "binary_sha256": "4b449f47b6bedebb92510df418fd4a02a783b107c5b292db3a3071f1e440980b",
+      "jobs": {
+        "memory_jobs_succeeded": 1,
+        "semantic_vectors": 1,
+        "document_syncs_succeeded": 1,
+        "generation_calls": 0
+      },
+      "encrypted_archive_sha256": "2faa59951589684c9df30aecbf81e65a2f78390c1625e4a21fdaeedeb3831f24",
+      "runtime_roles_restricted": true,
+      "forced_rls": true,
+      "archive_audit": {
+        "passed": true,
+        "recorded_archives": 1,
+        "verified_archives": 1,
+        "memory_healthy": true
+      },
+      "binary_roundtrip_verified": true
+    },
+    "deployment": {
+      "passed": true,
+      "origin": "https://127.0.0.1:19444",
+      "tls_mode": "local-test",
+      "publicly_trusted_tls": false,
+      "health": {
+        "status": "ok",
+        "phase": "P8-reviewed-knowledge",
+        "version": "0.22.0",
+        "database_schema": "0032"
+      },
+      "desktop_download_metadata_verified": true,
+      "signed_feed_bytes_verified": true
+    },
+    "passwords": {
+      "passed": true,
+      "target_passwords_preserved": true,
+      "snapshot_id": "2588f8610bf4d6d7d33b1bd36ccfc320b7bee923fdde7c846ba4e70df6b473d6"
+    },
+    "nonempty_rejection": {
+      "passed": true,
+      "nonempty_target_rejected": true,
+      "running_container_ids_unchanged": true,
+      "https": {
+        "passed": true,
+        "origin": "https://127.0.0.1:19444",
+        "tls_mode": "local-test",
+        "publicly_trusted_tls": false,
+        "health": {
+          "status": "ok",
+          "phase": "P8-reviewed-knowledge",
+          "version": "0.22.0",
+          "database_schema": "0032"
+        }
+      }
+    },
+    "tls": {
+      "passed": true,
+      "gateway_reloaded_new_certificate": true,
+      "invalid_pair_rejected": true,
+      "active_certificate_retained": true,
+      "acme_public_issuance_tested": false
+    },
+    "desktop_downloads": {
+      "passed": true,
+      "files": [
+        {
+          "file": "AgentHub-0.23.1-win-x64.zip",
+          "bytes": 160078932,
+          "sha256": "805467554d63c52f1f936b786b7d58a5a16788cab330f8f9090d7a4a78734ac0",
+          "passed": true
+        },
+        {
+          "file": "AgentHub-Setup-0.23.1.exe",
+          "bytes": 123237765,
+          "sha256": "f8c16ef3b87e9782ecc01e135fb1459a213926e5a750aafa714b6bf4a91c47be",
+          "passed": true
+        }
+      ],
+      "signed_feed_bytes_verified": true
+    },
+    "fresh_release_downloads": [
+      {
+        "file": "config.json",
+        "bytes": 716,
+        "sha256": "d4193ead3a810fd694fa8a31d7fc72fbaebc0668b603e398734bf2f6538ff42f",
+        "passed": true
+      },
+      {
+        "file": "model.onnx",
+        "bytes": 94851877,
+        "sha256": "69a0b846f4f116b5e6aabf9546ea6754d02264f3211a13a1bd69b31b8040749a",
+        "passed": true
+      },
+      {
+        "file": "special_tokens_map.json",
+        "bytes": 125,
+        "sha256": "b6d346be366a7d1d48332dbc9fdf3bf8960b5d879522b7799ddba59e76237ee3",
+        "passed": true
+      },
+      {
+        "file": "tokenizer.json",
+        "bytes": 439125,
+        "sha256": "48cea5d44424912a6fd1ea647bf4fe50b55ab8b1e5879c3275f80e339e8fae26",
+        "passed": true
+      },
+      {
+        "file": "tokenizer_config.json",
+        "bytes": 367,
+        "sha256": "e6f3b96db926a37d4039995fbf5ad17de158dfb8f6343d607e4dbaad18d75f5a",
+        "passed": true
+      },
+      {
+        "file": "AgentHub-0.23.1-win-x64.zip",
+        "bytes": 160078932,
+        "sha256": "805467554d63c52f1f936b786b7d58a5a16788cab330f8f9090d7a4a78734ac0",
+        "passed": true
+      },
+      {
+        "file": "AgentHub-Setup-0.23.1.exe",
+        "bytes": 123237765,
+        "sha256": "f8c16ef3b87e9782ecc01e135fb1459a213926e5a750aafa714b6bf4a91c47be",
+        "passed": true
+      }
+    ],
+    "used_external_asset_cache": false,
+    "scheduler_receipts": {
+      "check": {
+        "created_at": "2026-11-11T08:33:31.370311+00:00",
+        "database_schema": "0032",
+        "external_alert_delivery_configured": false,
+        "offsite_confirmed": false,
+        "passed": true,
+        "scope": "database-and-internal-services",
+        "version": "0.22.0"
+      },
+      "backup": {
+        "application_version": "0.22.0",
+        "consistent_snapshot": true,
+        "created_at": "2026-11-11T08:31:03.312015+00:00",
+        "database_schema": "0032",
+        "full_repository_check": true,
+        "offsite_confirmed": false,
+        "passed": true,
+        "rows": 101,
+        "snapshot_id": "cfe3698c97c3594b26e4b91e48bc5855aabb0e573bf843471632069b925f665f",
+        "tables": 80
+      },
+      "audit": {
+        "created_at": "2026-11-11T08:28:58.820496+00:00",
+        "memory_healthy": true,
+        "passed": true,
+        "recorded_archives": 0,
+        "verified_archives": 0
+      },
+      "restore": {
+        "archives": {
+          "memory_healthy": true,
+          "passed": true,
+          "recorded_archives": 1,
+          "verified_archives": 1
+        },
+        "created_at": "2026-11-11T08:31:29.000010+00:00",
+        "database": {
+          "business_contents_disclosed": false,
+          "database_schema": "0032",
+          "mode": "exact",
+          "passed": true,
+          "structure_verified": true,
+          "verified_rows": 101,
+          "verified_tables": 80
+        },
+        "offsite_confirmed": false,
+        "passed": true,
+        "snapshot_id": "cfe3698c97c3594b26e4b91e48bc5855aabb0e573bf843471632069b925f665f"
+      }
+    },
+    "scheduler_failed_markers": [],
+    "containers": [
+      {
+        "service": "gateway",
+        "image_id": "sha256:dc73b49f5124cf2ee538dfbdfbd121f0b4ccdcb20fea30f3a81bd477c02e2bb5",
+        "status": "running",
+        "restart_count": 0,
+        "memory_limit": 134217728,
+        "database_isolated": true
+      },
+      {
+        "service": "scheduler",
+        "image_id": "sha256:606faa7cdd9d8b30acd787536c9b7c7d74b7dbd31220e1d05343b80fda01e51a",
+        "status": "running",
+        "restart_count": 0,
+        "memory_limit": 402653184,
+        "database_isolated": true
+      },
+      {
+        "service": "api",
+        "image_id": "sha256:3273aa292734520b9a7d0d8a07ea4d2653c91177a592db6cc7bedd4717c51b3b",
+        "status": "running",
+        "restart_count": 0,
+        "memory_limit": 536870912,
+        "database_isolated": true
+      },
+      {
+        "service": "embedding-worker",
+        "image_id": "sha256:3273aa292734520b9a7d0d8a07ea4d2653c91177a592db6cc7bedd4717c51b3b",
+        "status": "running",
+        "restart_count": 0,
+        "memory_limit": 268435456,
+        "database_isolated": true
+      },
+      {
+        "service": "document-worker",
+        "image_id": "sha256:3273aa292734520b9a7d0d8a07ea4d2653c91177a592db6cc7bedd4717c51b3b",
+        "status": "running",
+        "restart_count": 0,
+        "memory_limit": 268435456,
+        "database_isolated": true
+      },
+      {
+        "service": "memory-worker",
+        "image_id": "sha256:3273aa292734520b9a7d0d8a07ea4d2653c91177a592db6cc7bedd4717c51b3b",
+        "status": "running",
+        "restart_count": 0,
+        "memory_limit": 268435456,
+        "database_isolated": true
+      },
+      {
+        "service": "generation-worker",
+        "image_id": "sha256:3273aa292734520b9a7d0d8a07ea4d2653c91177a592db6cc7bedd4717c51b3b",
+        "status": "running",
+        "restart_count": 0,
+        "memory_limit": 268435456,
+        "database_isolated": true
+      },
+      {
+        "service": "embedding",
+        "image_id": "sha256:094dae843bcbf21c8374aec9e6e3798842c0fd4d0a4db07b98fe56ed01e77c66",
+        "status": "running",
+        "restart_count": 0,
+        "memory_limit": 402653184,
+        "database_isolated": true
+      },
+      {
+        "service": "migrate",
+        "image_id": "sha256:3273aa292734520b9a7d0d8a07ea4d2653c91177a592db6cc7bedd4717c51b3b",
+        "status": "exited",
+        "restart_count": 0,
+        "memory_limit": 268435456,
+        "database_isolated": true
+      },
+      {
+        "service": "db",
+        "image_id": "sha256:bafef7839c837825d120a2e4c4621ee86ef13a7f0a06feafc1b91fea9e7e6cb0",
+        "status": "running",
+        "restart_count": 0,
+        "memory_limit": 402653184,
+        "database_isolated": true
+      }
+    ]
+  },
+  "verified_runtime_sources": {
+    "projects/agent-hub-deployment/deploy.py": "99c00b6e1fd3e1ea13863376eb214b4c2b85870a8ab51249ee43d0a6287b045f",
+    "projects/agent-hub-deployment/compose.yaml": "29a1d566b1b39683f26424af86b8b31802b52bbf709c82a875d019446cef2dd7",
+    "projects/agent-hub-deployment/Dockerfile.ops": "59b27f7af0104240e86e3ded3334a9ab9a56ea0fba4e9e115b4af48997979a9a",
+    "projects/agent-hub-deployment/assets.lock.json": "ed32ca6b6a01e22f37ba13279f8e3d5281b934162f2756fbebcea52b51e59e1f",
+    "projects/agent-hub/.dockerignore": "77af78510f27ac96a6946fda9d9cdd9c725cda8674124b36f584ef65c83f9259",
+    "projects/agent-hub/Dockerfile": "5e6ba8268f38009c5dd83f9f320de70fc9fefdc620513ef96f5d25e5d9a3aed4",
+    "projects/agent-hub/deploy/database-checkpoint.py": "3912305c1553cffad5fc0d3ad30b837574d4530c0b49edc2a85d2166c52f1989",
+    "projects/agent-hub-deployment/scripts/publish-tls.py": "af481510674a96212c9f572023934859ac4b46915e1b79b85931443e5294a324",
+    "projects/agent-hub-deployment/scripts/app-entrypoint.py": "41125e920215a9e907d581de723e22ede850b46e2c2c50233032d3c3cef56aea",
+    "projects/agent-hub-deployment/scripts/ops.py": "61ab3cd0a00e4dd1a770ea51cea324157bf945c3c39c872fbeaad8ad798444f6",
+    "projects/agent-hub-deployment/scripts/db-init.sh": "c2f3fe58f75ab597b8f697739affdcc07828025beaadbcc7dc4cb36ed77dd35b",
+    "projects/agent-hub-deployment/scripts/gateway.sh": "09848d90ba8c2f39cc01f3209a3be5de0169611fa1b2be195487eb33c445f9ea",
+    "projects/agent-hub-deployment/scripts/certbot.sh": "b1178f7451d20c340361aab153202aadf5a227aa41e7415e59f350441a0bf09c",
+    "projects/agent-hub-deployment/templates/nginx.conf": "6c01ec77f7178bf0c626d8c9188c0c854f461dbcabc77fa3aa2dca32dc3ba183",
+    "projects/agent-hub-deployment/tests/acceptance.py": "72007fce97716a4f66c41e83746f6a1ab9de9a371b0d253e86ff5ce8d7b5fb40"
+  },
+  "certbot": {
+    "version": "5.9.0",
+    "ip_address_flag": true,
+    "preferred_profile_flag": true,
+    "webroot_flag": true,
+    "deploy_hook_flag": true,
+    "public_issuance_tested": false
+  },
+  "production_health": {
+    "status": "ok",
+    "phase": "P8-reviewed-knowledge",
+    "version": "0.22.0",
+    "database_schema": "0032"
+  },
+  "production_containers": [
+    {
+      "name": "agent-hub-postgres",
+      "image_id": "sha256:02379aeb6ffc220ae64ee8ba6e61bf66799a69155d6ba61bca1f88df4be6a05d",
+      "started_at": "2026-11-09T04:19:28.677698281Z",
+      "health": "healthy"
+    },
+    {
+      "name": "agent-hub-app-api-1",
+      "image_id": "sha256:e0d64ea7ad89267715cb7f97c0299e311b39541fc342c2d490586f056c46f60c",
+      "started_at": "2026-11-11T03:53:23.38321956Z",
+      "health": "healthy"
+    },
+    {
+      "name": "agent-hub-edge",
+      "image_id": "sha256:dc73b49f5124cf2ee538dfbdfbd121f0b4ccdcb20fea30f3a81bd477c02e2bb5",
+      "started_at": "2026-11-11T03:53:33.419121943Z",
+      "health": "healthy"
+    }
+  ],
+  "protected_production_volume_exists": true,
+  "passed": true,
+  "cleanup": {
+    "passed": true,
+    "removed": {
+      "projects": [
+        "hub-portable-qa-20261111",
+        "hub-portable-qa-restore-20261111"
+      ],
+      "volumes": [
+        "hub-portable-qa-20261111_acme-web",
+        "hub-portable-qa-20261111_backups",
+        "hub-portable-qa-20261111_database",
+        "hub-portable-qa-20261111_model",
+        "hub-portable-qa-20261111_staging",
+        "hub-portable-qa-20261111_tls",
+        "hub-portable-qa-20261111_updates",
+        "hub-portable-qa-20261111_work",
+        "hub-portable-qa-restore-20261111_acme",
+        "hub-portable-qa-restore-20261111_acme-web",
+        "hub-portable-qa-restore-20261111_backups",
+        "hub-portable-qa-restore-20261111_database",
+        "hub-portable-qa-restore-20261111_model",
+        "hub-portable-qa-restore-20261111_staging",
+        "hub-portable-qa-restore-20261111_tls",
+        "hub-portable-qa-restore-20261111_updates",
+        "hub-portable-qa-restore-20261111_work"
+      ],
+      "image_tags": [
+        "hub-portable-qa-20261111-ops:0.22.0",
+        "hub-portable-qa-20261111-api:0.22.0",
+        "hub-portable-qa-20261111-embedding:0.1.0",
+        "hub-portable-qa-20261111-postgres:18.6-vector0.8.7",
+        "hub-portable-qa-restore-20261111-ops:0.22.0",
+        "hub-portable-qa-restore-20261111-api:0.22.0",
+        "hub-portable-qa-restore-20261111-embedding:0.1.0",
+        "hub-portable-qa-restore-20261111-postgres:18.6-vector0.8.7"
+      ],
+      "directories": [
+        "/opt/agent-hub/application/candidates/portable-deployment-20261111",
+        "/opt/agent-hub/application/candidates/portable-deployment-restore-20261111"
+      ]
+    },
+    "production_health": {
+      "status": "ok",
+      "phase": "P8-reviewed-knowledge",
+      "version": "0.22.0",
+      "database_schema": "0032"
+    },
+    "production_containers": [
+      {
+        "name": "agent-hub-postgres",
+        "image_id": "sha256:02379aeb6ffc220ae64ee8ba6e61bf66799a69155d6ba61bca1f88df4be6a05d",
+        "started_at": "2026-11-09T04:19:28.677698281Z",
+        "health": "healthy"
+      },
+      {
+        "name": "agent-hub-app-api-1",
+        "image_id": "sha256:e0d64ea7ad89267715cb7f97c0299e311b39541fc342c2d490586f056c46f60c",
+        "started_at": "2026-11-11T03:53:23.38321956Z",
+        "health": "healthy"
+      },
+      {
+        "name": "agent-hub-edge",
+        "image_id": "sha256:dc73b49f5124cf2ee538dfbdfbd121f0b4ccdcb20fea30f3a81bd477c02e2bb5",
+        "started_at": "2026-11-11T03:53:33.419121943Z",
+        "health": "healthy"
+      }
+    ],
+    "protected_production_volume_preserved": true,
+    "production_state_unchanged": true
+  }
+}

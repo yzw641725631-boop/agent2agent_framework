@@ -1,0 +1,66 @@
+{
+  "schema": 1,
+  "desktop_version": "0.23.1",
+  "stable_sha256": "5e336873a05133ec3f9961b4d5a3602432e68b1f49f300a07dbd38cb680f1f06",
+  "desktop_files": [
+    {
+      "file": "AgentHub-0.23.1-win-x64.zip",
+      "url": "https://github.com/yzw641725631-boop/agent2agent_framework/releases/download/deployment-assets-20261111/AgentHub-0.23.1-win-x64.zip",
+      "bytes": 160078932,
+      "sha256": "805467554d63c52f1f936b786b7d58a5a16788cab330f8f9090d7a4a78734ac0",
+      "api_url": "https://api.github.com/repos/yzw641725631-boop/agent2agent_framework/releases/assets/734659022"
+    },
+    {
+      "file": "AgentHub-Setup-0.23.1.exe",
+      "url": "https://github.com/yzw641725631-boop/agent2agent_framework/releases/download/deployment-assets-20261111/AgentHub-Setup-0.23.1.exe",
+      "bytes": 123237765,
+      "sha256": "f8c16ef3b87e9782ecc01e135fb1459a213926e5a750aafa714b6bf4a91c47be",
+      "api_url": "https://api.github.com/repos/yzw641725631-boop/agent2agent_framework/releases/assets/734664746"
+    }
+  ],
+  "model_manifest_canonical_sha256": "d939c952f59248f205f919cc5475e83b34f905620d3c00e51af4aedce39e5f95",
+  "stable_issued_at": "2026-11-11T02:01:24.137Z",
+  "stable_expires_at": "2026-12-11T02:01:24.137Z",
+  "model_files": [
+    {
+      "file": "config.json",
+      "release_file": "bge-small-zh-v1.5-fp32-75c43b0-config.json",
+      "url": "https://github.com/yzw641725631-boop/agent2agent_framework/releases/download/deployment-assets-20261111/bge-small-zh-v1.5-fp32-75c43b0-config.json",
+      "bytes": 716,
+      "sha256": "d4193ead3a810fd694fa8a31d7fc72fbaebc0668b603e398734bf2f6538ff42f",
+      "api_url": "https://api.github.com/repos/yzw641725631-boop/agent2agent_framework/releases/assets/734704711"
+    },
+    {
+      "file": "model.onnx",
+      "release_file": "bge-small-zh-v1.5-fp32-75c43b0-model.onnx",
+      "url": "https://github.com/yzw641725631-boop/agent2agent_framework/releases/download/deployment-assets-20261111/bge-small-zh-v1.5-fp32-75c43b0-model.onnx",
+      "bytes": 94851877,
+      "sha256": "69a0b846f4f116b5e6aabf9546ea6754d02264f3211a13a1bd69b31b8040749a",
+      "api_url": "https://api.github.com/repos/yzw641725631-boop/agent2agent_framework/releases/assets/734704758"
+    },
+    {
+      "file": "special_tokens_map.json",
+      "release_file": "bge-small-zh-v1.5-fp32-75c43b0-special_tokens_map.json",
+      "url": "https://github.com/yzw641725631-boop/agent2agent_framework/releases/download/deployment-assets-20261111/bge-small-zh-v1.5-fp32-75c43b0-special_tokens_map.json",
+      "bytes": 125,
+      "sha256": "b6d346be366a7d1d48332dbc9fdf3bf8960b5d879522b7799ddba59e76237ee3",
+      "api_url": "https://api.github.com/repos/yzw641725631-boop/agent2agent_framework/releases/assets/734707483"
+    },
+    {
+      "file": "tokenizer.json",
+      "release_file": "bge-small-zh-v1.5-fp32-75c43b0-tokenizer.json",
+      "url": "https://github.com/yzw641725631-boop/agent2agent_framework/releases/download/deployment-assets-20261111/bge-small-zh-v1.5-fp32-75c43b0-tokenizer.json",
+      "bytes": 439125,
+      "sha256": "48cea5d44424912a6fd1ea647bf4fe50b55ab8b1e5879c3275f80e339e8fae26",
+      "api_url": "https://api.github.com/repos/yzw641725631-boop/agent2agent_framework/releases/assets/734707534"
+    },
+    {
+      "file": "tokenizer_config.json",
+      "release_file": "bge-small-zh-v1.5-fp32-75c43b0-tokenizer_config.json",
+      "url": "https://github.com/yzw641725631-boop/agent2agent_framework/releases/download/deployment-assets-20261111/bge-small-zh-v1.5-fp32-75c43b0-tokenizer_config.json",
+      "bytes": 367,
+      "sha256": "e6f3b96db926a37d4039995fbf5ad17de158dfb8f6343d607e4dbaad18d75f5a",
+      "api_url": "https://api.github.com/repos/yzw641725631-boop/agent2agent_framework/releases/assets/734707608"
+    }
+  ]
+}

@@ -1,0 +1,289 @@
+{
+  "source_server": "server47",
+  "application_release": "/opt/agent-hub/application/releases/0.22.0",
+  "containers": {
+    "agent-hub-postgres": {
+      "image_id": "sha256:02379aeb6ffc220ae64ee8ba6e61bf66799a69155d6ba61bca1f88df4be6a05d",
+      "image_refs": [],
+      "compose_files": "/opt/agent-hub/database/compose.yaml",
+      "mounts": [
+        {
+          "source": "/opt/agent-hub/database/init/01_roles.sql",
+          "destination": "/docker-entrypoint-initdb.d/01_roles.sql",
+          "type": "bind"
+        },
+        {
+          "source": "/opt/agent-hub/database/init/02_schema.sql",
+          "destination": "/docker-entrypoint-initdb.d/02_schema.sql",
+          "type": "bind"
+        },
+        {
+          "source": "/var/lib/docker/volumes/agent-hub-postgres-data/_data",
+          "destination": "/var/lib/postgresql",
+          "type": "volume"
+        }
+      ],
+      "environment_names": [
+        "GOSU_VERSION",
+        "HUB_INDEXER_PASSWORD",
+        "HUB_MEMORY_PASSWORD",
+        "HUB_OWNER_PASSWORD",
+        "HUB_RUNTIME_PASSWORD",
+        "LANG",
+        "PATH",
+        "PGDATA",
+        "PG_MAJOR",
+        "PG_VERSION",
+        "POSTGRES_DB",
+        "POSTGRES_PASSWORD",
+        "POSTGRES_USER"
+      ]
+    },
+    "agent-hub-app-api-1": {
+      "image_id": "sha256:e0d64ea7ad89267715cb7f97c0299e311b39541fc342c2d490586f056c46f60c",
+      "image_refs": [],
+      "compose_files": "/opt/agent-hub/application/releases/0.22.0/deploy/compose.server-app.yaml",
+      "mounts": [
+        {
+          "source": "/opt/agent-hub/artifacts/work",
+          "destination": "/var/lib/agent-hub/work-archives",
+          "type": "bind"
+        }
+      ],
+      "environment_names": [
+        "FORWARDED_ALLOW_IPS",
+        "GPG_KEY",
+        "HUB_ARTIFACT_DIRECTORY",
+        "HUB_ARTIFACT_PROJECT_BYTES",
+        "HUB_ARTIFACT_TOTAL_BYTES",
+        "HUB_BOOTSTRAP_TOKEN",
+        "HUB_DATABASE_URL",
+        "HUB_EMBEDDING_URL",
+        "HUB_ENVIRONMENT",
+        "HUB_MAIL_MODE",
+        "HUB_MEMORY_TOKENIZER_FILE",
+        "HUB_PUBLIC_URL",
+        "HUB_SECRET",
+        "LANG",
+        "PATH",
+        "PYTHONDONTWRITEBYTECODE",
+        "PYTHONUNBUFFERED",
+        "PYTHON_SHA256",
+        "PYTHON_VERSION"
+      ]
+    },
+    "agent-hub-app-document-worker-1": {
+      "image_id": "sha256:e0d64ea7ad89267715cb7f97c0299e311b39541fc342c2d490586f056c46f60c",
+      "image_refs": [],
+      "compose_files": "/opt/agent-hub/application/releases/0.22.0/deploy/compose.server-app.yaml",
+      "mounts": [],
+      "environment_names": [
+        "GPG_KEY",
+        "HUB_DATABASE_URL",
+        "HUB_ENVIRONMENT",
+        "HUB_MAIL_MODE",
+        "HUB_MEMORY_TOKENIZER_FILE",
+        "HUB_PUBLIC_URL",
+        "HUB_SECRET",
+        "LANG",
+        "PATH",
+        "PYTHONDONTWRITEBYTECODE",
+        "PYTHONUNBUFFERED",
+        "PYTHON_SHA256",
+        "PYTHON_VERSION"
+      ]
+    },
+    "agent-hub-app-memory-worker-1": {
+      "image_id": "sha256:e0d64ea7ad89267715cb7f97c0299e311b39541fc342c2d490586f056c46f60c",
+      "image_refs": [],
+      "compose_files": "/opt/agent-hub/application/releases/0.22.0/deploy/compose.server-app.yaml",
+      "mounts": [],
+      "environment_names": [
+        "GPG_KEY",
+        "HUB_DATABASE_URL",
+        "HUB_ENVIRONMENT",
+        "HUB_MAIL_MODE",
+        "HUB_MEMORY_TOKENIZER_FILE",
+        "HUB_PUBLIC_URL",
+        "HUB_SECRET",
+        "LANG",
+        "PATH",
+        "PYTHONDONTWRITEBYTECODE",
+        "PYTHONUNBUFFERED",
+        "PYTHON_SHA256",
+        "PYTHON_VERSION"
+      ]
+    },
+    "agent-hub-app-embedding-worker-1": {
+      "image_id": "sha256:e0d64ea7ad89267715cb7f97c0299e311b39541fc342c2d490586f056c46f60c",
+      "image_refs": [],
+      "compose_files": "/opt/agent-hub/application/releases/0.22.0/deploy/compose.server-app.yaml",
+      "mounts": [],
+      "environment_names": [
+        "GPG_KEY",
+        "HUB_DATABASE_URL",
+        "HUB_EMBEDDING_URL",
+        "HUB_ENVIRONMENT",
+        "HUB_MAIL_MODE",
+        "HUB_MEMORY_TOKENIZER_FILE",
+        "HUB_PUBLIC_URL",
+        "HUB_SECRET",
+        "LANG",
+        "PATH",
+        "PYTHONDONTWRITEBYTECODE",
+        "PYTHONUNBUFFERED",
+        "PYTHON_SHA256",
+        "PYTHON_VERSION"
+      ]
+    },
+    "agent-hub-app-generation-worker-1": {
+      "image_id": "sha256:e0d64ea7ad89267715cb7f97c0299e311b39541fc342c2d490586f056c46f60c",
+      "image_refs": [],
+      "compose_files": "/opt/agent-hub/application/releases/0.22.0/deploy/compose.server-app.yaml",
+      "mounts": [],
+      "environment_names": [
+        "GPG_KEY",
+        "HUB_DATABASE_URL",
+        "HUB_ENVIRONMENT",
+        "HUB_MAIL_MODE",
+        "HUB_MEMORY_TOKENIZER_FILE",
+        "HUB_PUBLIC_URL",
+        "HUB_SECRET",
+        "LANG",
+        "PATH",
+        "PYTHONDONTWRITEBYTECODE",
+        "PYTHONUNBUFFERED",
+        "PYTHON_SHA256",
+        "PYTHON_VERSION"
+      ]
+    },
+    "agent-hub-app-embedding-1": {
+      "image_id": "sha256:db871a872fff66446743ee59b8f12de90d0674ae4e16db9253178ba287973eed",
+      "image_refs": [],
+      "compose_files": "/opt/agent-hub/application/releases/0.13.0/deploy/compose.server-app.yaml",
+      "mounts": [
+        {
+          "source": "/opt/agent-hub/semantic/model-fp32",
+          "destination": "/model",
+          "type": "bind"
+        }
+      ],
+      "environment_names": [
+        "GPG_KEY",
+        "LANG",
+        "OMP_NUM_THREADS",
+        "PATH",
+        "PYTHONDONTWRITEBYTECODE",
+        "PYTHONUNBUFFERED",
+        "PYTHON_SHA256",
+        "PYTHON_VERSION",
+        "TOKENIZERS_PARALLELISM"
+      ]
+    },
+    "agent-hub-edge": {
+      "image_id": "sha256:dc73b49f5124cf2ee538dfbdfbd121f0b4ccdcb20fea30f3a81bd477c02e2bb5",
+      "image_refs": [
+        "nginx@sha256:a8b39bd9cf0f83869a2162827a0caf6137ddf759d50a171451b335cecc87d236",
+        "docker.m.daocloud.io/library/nginx@sha256:a8b39bd9cf0f83869a2162827a0caf6137ddf759d50a171451b335cecc87d236"
+      ],
+      "compose_files": "/opt/agent-hub/edge/gateway/releases/memory-performance-0220/compose.server-edge.yaml",
+      "mounts": [
+        {
+          "source": "/opt/agent-hub/edge/gateway/releases/memory-performance-0220/nginx.ip.conf",
+          "destination": "/etc/nginx/nginx.conf",
+          "type": "bind"
+        },
+        {
+          "source": "/opt/agent-hub/edge/tls",
+          "destination": "/etc/agent-hub/tls",
+          "type": "bind"
+        },
+        {
+          "source": "/opt/agent-hub/edge/desktop-updates",
+          "destination": "/srv/agent-hub/desktop-updates",
+          "type": "bind"
+        }
+      ],
+      "environment_names": [
+        "ACME_VERSION",
+        "DYNPKG_RELEASE",
+        "NGINX_VERSION",
+        "NJS_RELEASE",
+        "NJS_VERSION",
+        "PATH",
+        "PKG_RELEASE"
+      ]
+    }
+  },
+  "public_images": {
+    "HUB_CERTBOT_IMAGE": "docker.m.daocloud.io/certbot/certbot@sha256:bc93cb710b413e6b456d622f9b0133b3e109c0a78c2ed9976af43d209b0a1805",
+    "HUB_EDGE_IMAGE": "docker.m.daocloud.io/library/nginx@sha256:a8b39bd9cf0f83869a2162827a0caf6137ddf759d50a171451b335cecc87d236"
+  },
+  "source_hashes": {
+    "src/agent_hub/distillation.py": "30abee40b375d900e58976f46daec123b63cae3ea44f8cd26b7b027408e3c39d",
+    "src/agent_hub/git_gateway.py": "5d76d6edb8d96d59edaeaedd9179ea390444e0dae87b38a5c3b01cca6767f0c0",
+    "src/agent_hub/hindsight_engine.py": "e1841264a2ab0970703317a14c23f88da2c8dcdd53c503b42c1210fea01ada78",
+    "src/agent_hub/memory_worker.py": "0ae33f00bad1a71022fbaf041bb4c30d0731b037e8c3b4fdfc11a7343a2da410",
+    "src/agent_hub/tasks.py": "dea8200f8c3985ccd3fc69e766a37ca97139293434cee0d8b5e0f832a338382b",
+    "src/agent_hub/remote_mcp.py": "1560131b4bb1d44b5996c0685d4152eeb530d3b3c24fc4b55ccf2550b59fed82",
+    "src/agent_hub/db.py": "b54396a33d865796c5c69499ec5025d002189fd03a9dc05435cc84ab39a1608e",
+    "src/agent_hub/experience.py": "f46af4d0761ed7cc0c6600ec8ebea7b718dd20e713a24f95ad1f97da5f50023c",
+    "src/agent_hub/__init__.py": "5759de9d65bec8428650187aa43bb54edd75921c107fea88547aab05873516fd",
+    "src/agent_hub/guide_lifecycle.py": "334661dd84be7cabdfcb2b0f4da71793555b551e10b2ae79049e549dfb2fa092",
+    "src/agent_hub/guides.py": "90d7344dbb5d89cf09ef10a80b2ab92cd6bf081d639fdbafea96bca989115f33",
+    "src/agent_hub/client.py": "2337e4be118cb6a15c4375219ba0c58b40c032ba979c890cd04a2da00f27ae44",
+    "src/agent_hub/generation.py": "3533c1143e9dc84b2085aa67ae866e9c67bf8892ecf91135cb3a33487d1f80d0",
+    "src/agent_hub/memory_maintenance.py": "5f01f9113c96ca1b99041c3ab1779cf24a02f5d0e83569ce3e470957d9217237",
+    "src/agent_hub/insights.py": "6e31bbaefec41cf72a160dce7a84e9a31777dbd5939d9b71860e601b937a5aba",
+    "src/agent_hub/mail.py": "8697167e5a21c8c658ac710073237bf4769f85d4beaaf91239cba81d95a9fe5c",
+    "src/agent_hub/memory_benchmark.py": "62f1badf15e595ed215a7370a46328b3e7fe2c9397e926c89f3a2bf518b11c15",
+    "src/agent_hub/collaboration.py": "57d864773b37c04b3f135b8f72c83ddc394f06da42062048a51c4c2e7fcd7b66",
+    "src/agent_hub/knowledge.py": "6cd11aa3057f68b785f67a7603d0a840304d1df77df95d52f695b4f20086bc0f",
+    "src/agent_hub/embedding_worker.py": "432187228d309e531a967efd7d53cecee9491a361ce289727f432ed54ab61ff3",
+    "src/agent_hub/api.py": "ca6eb964656cd329cb7febd0ca51accbf20aaf69b741eaa10942778d64776362",
+    "src/agent_hub/cli.py": "2221c087c725b10a8b21914d4f288144a100b411f0e9fe4126b8b32761d96299",
+    "src/agent_hub/experience_benchmark.py": "0fa02a6a2b537aebcd44bad359e20a9309af1dc5f87c9b68363ba1b541240be3",
+    "src/agent_hub/memory.py": "dbe711575dc0a6bc4dc22f2ab4c410a64cc1aa1f94ba0bc00be5ffa41c8b8dc2",
+    "src/agent_hub/site.py": "9ac7975a555479ab210d74474e81abf40b8fd7e77dbf0f2c684e03be7c04a9c8",
+    "src/agent_hub/schemas.py": "b7487be45bcbf895c5b6e9feaf198c1c82e0a31b6c3f773a2f55efbdcfb0d15f",
+    "src/agent_hub/server_generation.py": "9aae76fb2ee58430e83d9a9f5e85cd9cce853d88d1b0ac52be8a643737b063b8",
+    "src/agent_hub/roles.py": "fec3d8903a383fc5c56457751d7cfc1b2ea689a1d6aa29e95b19079f8d322616",
+    "src/agent_hub/archive_v2.py": "4b15584e099271c07a4f9a2676fa4fc00c0e6c3d7f66024d4f06a86f7b180723",
+    "src/agent_hub/memory_budget.py": "a1222ca138e33d4518a856552ea99236b561df7c6026f3b32907879e14dd2274",
+    "src/agent_hub/agent_dispatch.py": "b7467fe7f34da673d238e54519413884092a12175324562c77960cda5d845505",
+    "src/agent_hub/mail_outbox.py": "f5f82e027d6a7e6793c344e02366ab524515299448e4434fd2b8511878b669cb",
+    "src/agent_hub/audit_source.py": "26408079cf70127867ec69675c858a61c536b90f91317ed384884a68157ec31d",
+    "src/agent_hub/github_credentials.py": "e5938728b1a890a5f5d0189a521643776a6d64f3526a97d1822dc70e9a1cf6ff",
+    "src/agent_hub/models.py": "7d92dc349a2f152d43103c69bdd591571993bd9e34a78a6ea5c0dc01b7b06e24",
+    "src/agent_hub/repositories.py": "60a62dffaad397ae5c3b90c8d184f51baaa73f1c7207f471ad18300eb8a233f6",
+    "src/agent_hub/service.py": "e9a9c092e5bfb9c4c238ff11a42e128804e225806f67c6bf9805d983c0a7a9e6",
+    "src/agent_hub/work_archives.py": "c0651155d470b70f3a5513524fdaa67f41b30ba92702964b4bcabbef0694a7e5",
+    "src/agent_hub/archive_codec.py": "1b5654f0f0301fc90506315e2ac1f520e15fd3df966fa5bba6ee984336d46b26",
+    "src/agent_hub/work_policy.py": "fe95ae4e5f1e28c7fa1f48227cb6082e7097e297f8181193a17e0ed8c5957dfa",
+    "src/agent_hub/archive_maintenance.py": "4889b9e103a3590bd710b668899b20b07a7ae93aef294667b7e1bc75de14814a",
+    "src/agent_hub/documents.py": "7038b8d22939d6a0956154084858b7e6fd9c54113f9302fd9a96096e59cdff70",
+    "src/agent_hub/progress.py": "190583188cd3f93829aa99956ea4ed26e2ffcbb9553ba9b5dbc22f14aedc2d08",
+    "src/agent_hub/accounts.py": "0cce3d9a45e980d7d0905fb9618cafae8dcf6bff6ecb7a9ce36d84f4c91bdde2",
+    "src/agent_hub/release_monitor.py": "1e95142e4bafbfea9c9ac5af662efe72db5a67b7f2c95c7fabb2718b0bcc80f2",
+    "src/agent_hub/document_worker.py": "8767d0bd2e7a8463c42df6cf26685cf1efe15d564ba813627791d18b7308c6a4",
+    "src/agent_hub/config.py": "7ab3fe966cbb4a878ca7730e6499303c11d1750a076c39b517936d7e11a05c5e",
+    "src/agent_hub/generation_provider.py": "62ba4aa8ad31254f3149a2b4a0fc26c6189e942e8b8d2bce998a6f664eeabbc1",
+    "src/agent_hub/closeouts.py": "dd07590d70756a8259f88b718221c5bd8e0d4cb9ad69912c3e3163e88c3f0722",
+    "src/agent_hub/oauth.py": "01ff6e93a6de9835c1ef3bcff6b4d48a127ff7064c7edf01381fea4c6e46c1f5",
+    "src/agent_hub/generation_worker.py": "0845ac49fd3c7fa5202678365ad6bce6753ac786d853508df1209ca4b659e318",
+    "src/agent_hub/workflow_control.py": "5aa4a3f3778d73efbe6254d73bcfda5f5083d6a3698b9b0c094ec789e02f420b",
+    "src/agent_hub/code_audit.py": "343fd4cbb5df9544a71cb5c31652d2e3bd183a7780e59d042afae8b462c1bd24",
+    "src/agent_hub/security.py": "96651def97b5b9303ffd7f49fe4237a9eab0b6d27e14ab70a21e10840017829a",
+    "src/agent_hub/offline_recovery.py": "fae71cf4391020757b38343f021e09af24393c8bd5071bd77455824b5f0bc670",
+    "src/agent_hub/administration.py": "6894f7987cfa1be0aa93686c6ecf1597bb0f5df47d4d2fb1aeb07c3f377d6b86",
+    "src/agent_hub/semantic.py": "cdf8e12aff491dbfea9e478061ba68de1ea163722df265f469672ecae21c50ad",
+    "src/agent_hub/delivery_evidence.py": "7473e8c6cbf0bdbfbbf21c3a37b324e131f84f2a8775037f23492eb387731c0f"
+  },
+  "restic_image": "restic/restic@sha256:136600b6ff6843d61d355f7f71f460a166429f35de6fd11b568fece3c9a4d510",
+  "reference_commit": "ac4053ac3160d7bda33f8ea9ffcf1ddbd8d1bc61",
+  "source_comparison": {
+    "line_endings": "normalized-lf",
+    "verified_files": 58,
+    "different_files": []
+  }
+}

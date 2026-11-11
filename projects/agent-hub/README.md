@@ -4,6 +4,8 @@
 
 本服务提供身份、设备审批、逐仓库授权、任务租约、不可覆盖工作日志、代码快照、Git 回执及共享记忆，含 REST API、中文后台、PostgreSQL 迁移和运维 CLI。通过 [桌面端](../agent-hub-desktop/README.md) 提供本机 stdio MCP。配套[私有模型服务](../agent-hub-embedding/README.md)，语义故障明示退回关键词。文档接入见 [Git 文档索引](../../设计文档/11_Git文档索引与MCP查询.md)。
 
+**新服务器完整部署入口：** [agent-hub-deployment](../agent-hub-deployment/README.md)。使用统一 Docker Compose 构建数据库、应用、四种Worker、模型、网关、续证及备份巡检，并生成独立凭证。下文的 `compose.server-*.yaml` 和 `/opt/agent-hub` 路径保留为服务器47现有部署记录；新安装按统一入口操作。
+
 2026-11-11后续完成[服务器并发与故障演练](../../设计文档/44_服务器并发容量与故障演练.md)：8项检查、800次混合请求及API/PostgreSQL进程SIGKILL恢复通过。复现入口为`scripts/run-server-resilience.py`与`tests/server_resilience_fixture.py`，只在服务器新建的隔离测试资源中运行；有限资源下的合成测量不代表最大生产容量。本轮不修改运行代码或升级正式版本。
 
 ## 已实现

@@ -12,6 +12,20 @@
 
 服务器隔离环境的[并发、容量与故障演练](设计文档/44_服务器并发容量与故障演练.md)8项检查通过：800次混合请求、16路认领与幂等重试、二进制备份，以及API和PostgreSQL进程强制终止后的恢复。测试资源已清理，正式服务和版本保持原状；结果为有界合成负载，生产容量上限及长期规模仍待验收。
 
+## 服务端完整 Docker 部署
+
+新服务器统一从 [projects/agent-hub-deployment](projects/agent-hub-deployment/README.md) 部署。后端、PostgreSQL/pgvector、四种Worker、私有模型、HTTPS网关、证书续期、加密备份与巡检均有仓库内的Docker配置和脚本，完整克隆后即可按说明构建运行；不需要这台开发电脑的私有运维目录。
+
+在目标 Linux x86_64 服务器进入该目录，使用实际域名和邮箱：
+
+```bash
+python3 deploy.py init --name agent-hub-company --origin https://hub.example.com --email owner@example.com
+python3 deploy.py up
+python3 deploy.py check
+```
+
+模型和Windows大文件已归档到[仓库Release](https://github.com/yzw641725631-boop/agent2agent_framework/releases/tag/deployment-assets-20261111)，部署时获取固定版本并校验SHA-256。首次账号和密码由本人设置。运行密钥和业务数据通过受控备份迁移，不提交Git。完整条件、备份恢复及AI接手指令见[部署说明](projects/agent-hub-deployment/README.md)。
+
 ## Windows 一句话安装
 
 Windows x64 使用同一入口安装桌面端、Skill 和 MCP，正式发行信息保存在 `releases/windows-x64.json`。
@@ -67,6 +81,7 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/install-windows.
 ## 开发与设计资料
 
 - [桌面端说明](projects/agent-hub-desktop/README.md)、[服务端说明](projects/agent-hub/README.md)、[服务器部署记录](设计文档/07_服务器部署.md)。
+- [完整Docker部署入口](projects/agent-hub-deployment/README.md)、[两套独立栈部署与恢复验收](设计文档/45_完整Docker部署与恢复验收.md)。
 - [完整协作框架实施基线](设计文档/14_跨端协作Skill框架_生产实施基线.md)、[授权与分层记忆](设计文档/13_授权组装_分层记忆与交接方案.md)。
 - [审计整改](设计文档/15_审计整改与复评.md)、[超管登录与在线升级](设计文档/17_超管设备确认与在线升级修复.md)、[通过 MCP 创建项目](设计文档/18_通过MCP创建项目.md)。
 - [原 install.md](install.md)保留为原始部署规范和迁移参考，不是当前一键安装入口。

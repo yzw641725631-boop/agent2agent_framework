@@ -1,0 +1,8 @@
+.env
+.runtime/
+*.dump
+*.backup
+*.tar
+*.tar.gz
+*.tgz
+*.log
