@@ -99,21 +99,23 @@ def prepare(hub, db, actor, project_id, task_id, body, request_id):
     return {**context_view(row), "context_measurement": insights.record_context(db, actor, task, run, row)}
 
 
-def require_context(db, actor, task, run, context_id, *, acknowledged=True):
+def require_context(db, actor, task, run, context_id, *, acknowledged=True, preserving=False):
     row = db.get(WorkContext, context_id) if context_id else None
     if not row or (row.project_id, row.task_id, row.run_id, row.author_id, row.device_id, row.lease_epoch) != (
         task.project_id, task.id, run.id, actor.user.id, actor.device.id, task.lease_epoch
     ):
         raise HubError("WORK_CONTEXT_REQUIRED", 409)
     policy = current(db, task.project_id)
-    if (row.policy_version != policy["version"] or row.task_hash != task_hash(task)
+    if not preserving and (row.policy_version != policy["version"] or row.task_hash != task_hash(task)
             or row.payload.get("policy", {}).get("content_hash") != policy["content_hash"]):
         raise HubError("WORK_CONTEXT_STALE", 409, current_version=policy["version"])
     from .collaboration import task_role
     from .memory import validate_bundle
-    if run.role != task.execution_role or row.payload.get("role", {}).get("content_hash") != task_role(db, task)["content_hash"]:
+    if not preserving and (run.role != task.execution_role or
+            row.payload.get("role", {}).get("content_hash") != task_role(db, task)["content_hash"]):
         raise HubError("WORK_ROLE_STALE", 409)
-    validate_bundle(db, task.project_id, row.payload)
+    if not preserving:
+        validate_bundle(db, task.project_id, row.payload)
     if acknowledged and not row.acknowledged_at:
         raise HubError("WORK_CONTEXT_ACK_REQUIRED", 409)
     return row, policy
@@ -155,13 +157,15 @@ def check_paths(paths, scope, policy):
             raise HubError("TASK_PATH_OUT_OF_SCOPE", 422, path=path)
 
 
-def evidence(db, actor, task, run, body):
-    row, policy = require_context(db, actor, task, run, body.context_id)
+def evidence(db, actor, task, run, body, *, preserving=False):
+    row, policy = require_context(db, actor, task, run, body.context_id, preserving=preserving)
     if not body.change_evidence:
         raise HubError("WORK_CHANGE_EVIDENCE_REQUIRED", 422)
     value = body.change_evidence.model_dump(mode="json")
     paths = [f["path"] for f in value["files"]]
     check_paths(paths, task.scope, policy)
+    if preserving:
+        check_paths(paths, row.payload["task"]["scope"], row.payload["policy"])
     if sorted(paths) != sorted(body.changed_paths):
         raise HubError("WORK_CHANGE_PATHS_MISMATCH", 422)
     if body.git_commit and body.git_commit.lower() != value["head_commit"]:

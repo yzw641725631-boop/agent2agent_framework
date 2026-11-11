@@ -219,7 +219,7 @@ function frameworkDialog(binding){
   });
   openDialog(text('h2','部署项目职责框架'),text('p',binding.projectName+(binding.repositoryName?' / '+binding.repositoryName:'')),
     text('p','包含七种职业职责、流程、文档索引和本地自检脚本。部署会保存安装收据；撤权交接成功后按收据清理。'),
-    text('p','职责按当前任务加载。职业名称不增加账号或仓库权限，跨端自动调度尚未接入。','note'),
+    text('p','职责按当前任务加载，不增加账号或仓库权限。支持跨设备登记、投递和接受任务；自动启动仅限本人批准的 Codex / Claude Code CLI。','note'),
     el('div',{class:'fields'},field('角色文件名语言',names),field('文档正文语言',contents)),inspect,status,results,dialogActions(install));
 }
 async function assembleDialog(binding){
@@ -445,7 +445,7 @@ function tasksScreen(){
           text('p',o.run_id?'认领回执：'+o.run_id:'尚无认领回执','mono'))),
         offers.has_more?text('p','这里只展示最近 20 条；完整历史可通过项目 MCP 按任务翻页。','note'):null);
       rows.replaceChildren(...data.items.map(task=>el('article',{class:'binding'},
-        el('div',{class:'row between'},text('h3',task.title),text('span',taskLabels[task.status],'pill')),
+        el('div',{class:'row between'},text('h3',task.title),text('span',task.workflow_control?.manual_required?'待负责人处理':taskLabels[task.status],'pill')),
         text('p',`${roleLabels[task.execution_role] || task.execution_role || '开发工程师'} · ${task.scope.repository} · ${task.scope.platform} · ${task.scope.paths.join('、')}`,'note'),
         task.dependencies_satisfied===false?text('p','前置任务尚未完成','warning'):null,
         text('p',task.active_run_id?'认领到期 '+new Date(task.lease_until).toLocaleString('zh-CN'):'当前没有开发租约','note'),
@@ -502,6 +502,7 @@ async function taskDetail(bindingId,taskId,generation,offset=0){
   if(!current())return;
   const task=data.task;openTaskBinding=bindingId;
   openDialog(text('h2',task.title),text('p',(taskLabels[task.status] || task.status)+' · 版本 '+task.version),
+    task.workflow_control?workflowStatus(task,data.workflow_events):null,
     text('p','负责角色：'+(roleLabels[task.execution_role] || task.execution_role || '开发工程师')),
     text('pre',task.description+'\n\n验收：'+task.acceptance),
     data.coordination?el('section',{},text('h3','前置任务与范围占用'),
@@ -539,6 +540,17 @@ async function taskDetail(bindingId,taskId,generation,offset=0){
     el('div',{class:'actions end'},task.repository_id?button('交付核验',()=>deliveryDialog(bindingId,task,generation)):null,
       task.repository_id?button('代码规范审计',()=>auditTaskDialog(bindingId,task,generation)):null,
       button('刷新',()=>taskDetail(bindingId,taskId,generation,offset)),button('关闭',()=>{openTaskBinding=null;closeDialog();},'primary')));
+}
+function workflowStatus(task,events=[]){
+  const c=task.workflow_control,limits=c.limits || {},reasons={stage_timeout:'当前阶段超时',stage_rejections:'同一环节多次不通过',test_returns:'测试多次退回开发'};
+  return el('section',{},text('h3','流程限制与人工处理'),
+    text('p',c.manual_required?'已暂停：'+(reasons[c.reason] || '等待负责人处理'):'当前流程正常',c.manual_required?'warning':'note'),
+    text('p',`处理周期 ${c.cycle} · 单环节 ${limits.stage_rejections} 次不通过转人工 · 测试退回 ${c.test_returns}/${limits.test_returns} 次`,'note'),
+    text('p',c.deadline_at?'本阶段期限：'+new Date(c.deadline_at).toLocaleString('zh-CN'):'尚未开工排队或任务已结束，无阶段期限','note'),
+    text('p','各环节不通过：'+(Object.entries(c.rejections || {}).map(([k,v])=>`${k} ${v}`).join('；') || '无'),'note'),
+    c.manual_required?text('p','停止开发、推送和流程推进。当前执行者仍可保存获准日志和代码备份；请由负责人在网站后台填写处理原因。','warning'):null,
+    c.manual_required?button('打开后台处理',()=>invoke('openAdmin')):null,
+    ...events.map(e=>text('p',`${new Date(e.created_at).toLocaleString('zh-CN')} · ${e.kind==='resumed'?'人工恢复':'转人工'} · ${e.resolution || reasons[e.reason] || e.reason}`,'note')));
 }
 function auditLabel(item){return `${({queued:'待认领',running:'审查中',completed:'已提交报告'})[item.state]} · 规范 ${item.policy_version} · ${item.current?'当前来源':'已失效来源'}`;}
 function auditScreen(){

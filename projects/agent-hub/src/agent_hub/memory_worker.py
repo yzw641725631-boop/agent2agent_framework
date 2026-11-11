@@ -18,8 +18,14 @@ class MemoryWorker:
         self.sessions = factory or session_factory(settings, security=True)
         self.last_scheduled = 0
         self.sources_changed = True
+        self.last_workflow_check = 0
 
     def run_once(self):
+        # Separate, short transaction: extraction backlog must not delay workflow escalation.
+        if time.monotonic() - self.last_workflow_check >= 30:
+            with self.sessions.begin() as control_db:
+                control_db.execute(text("SELECT hub.expire_task_workflows(100)"))
+            self.last_workflow_check = time.monotonic()
         with self.sessions.begin() as db:
             job = db.scalar(select(MemoryJob).where(MemoryJob.status == "queued")
                             .order_by(MemoryJob.created_at, MemoryJob.id).limit(1).with_for_update(skip_locked=True))

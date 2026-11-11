@@ -4,6 +4,7 @@ from datetime import datetime
 from sqlalchemy import (
     BigInteger,
     DateTime,
+    FetchedValue,
     ForeignKey,
     ForeignKeyConstraint,
     Index,
@@ -263,8 +264,8 @@ class ProjectProgress(Base):
     sequence: Mapped[int] = mapped_column(BigInteger, AutoIdentity(), primary_key=True)
     project_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("projects.id"), index=True)
     repository_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("project_repositories.id"))
-    author_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id"))
-    device_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("devices.id"))
+    author_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id"))
+    device_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("devices.id"))
     status: Mapped[str] = mapped_column(String(24))
     summary: Mapped[str] = mapped_column(String(300))
     detail: Mapped[str] = mapped_column(Text, default="")
@@ -299,6 +300,7 @@ class Task(Identity, Base):
     workflow: Mapped[str] = mapped_column(String(16), default="standard", server_default="standard")
     workflow_reason: Mapped[str] = mapped_column(String(1000), default="", server_default="")
     workflow_policy: Mapped[dict] = mapped_column(JSONB, default=dict, server_default="{}")
+    workflow_runtime: Mapped[dict] = mapped_column(JSONB, server_default="{}", server_onupdate=FetchedValue())
     documentation: Mapped[dict] = mapped_column(JSONB, default=dict, server_default='{"kind":"none"}')
     status: Mapped[str] = mapped_column(String(24), default="draft")
     admission_step: Mapped[int] = mapped_column(Integer, default=0)
@@ -307,6 +309,20 @@ class Task(Identity, Base):
     active_run_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))
     lease_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     submission_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))
+
+
+class TaskWorkflowEvent(Identity, Base):
+    __tablename__ = "task_workflow_events"
+    project_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("projects.id"))
+    task_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("tasks.id"))
+    cycle: Mapped[int] = mapped_column(Integer)
+    revision: Mapped[int] = mapped_column(Integer)
+    kind: Mapped[str] = mapped_column(String(32))
+    reason: Mapped[str] = mapped_column(String(40))
+    snapshot: Mapped[dict] = mapped_column(JSONB)
+    author_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id"))
+    device_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("devices.id"))
+    resolution: Mapped[str] = mapped_column(Text, default="")
 
 
 class UsagePolicy(Base):

@@ -177,13 +177,17 @@ class WorkRuntime{
     const r=this.run(binding,args),p=this.c.profile,remote=this.c.remote;
     if(!r.acknowledged)throw new HubError('WORK_CONTEXT_ACK_REQUIRED');
     if(this.c.connection!=='active')throw new HubError('NETWORK_UNAVAILABLE','离线时只保全工作，恢复连接并核验后再开始受管修改。');
+    const {task}=await this.c.invokeProjectRemote(binding,'hub_get_task',{task_id:r.task_id});
+    this.c.ensureCurrent(p,remote);
+    if(task.workflow_control?.manual_required){
+      r.stopped='TASK_MANUAL_RESOLUTION_REQUIRED';await this.c.persist();
+      throw new HubError('TASK_MANUAL_RESOLUTION_REQUIRED');
+    }
     const checkedContext=await this.validateMemory(binding,r);
     if(checkedContext?.usage_budget_open===false)throw new HubError('USAGE_BUDGET_EXCEEDED','项目已达到所设的上报用量额度，请先保全工作并联系负责人。日志与交接仍可上传。');
     const policy=await this.c.invokeProjectRemote(binding,'hub_get_policy',{});
     this.c.ensureCurrent(p,remote);
     if(policy.content_hash!==r.policy.content_hash)throw new HubError('WORK_CONTEXT_STALE','规则已更新，请重新准备并确认。');
-    const {task}=await this.c.invokeProjectRemote(binding,'hub_get_task',{task_id:r.task_id});
-    this.c.ensureCurrent(p,remote);
     if(task.status!=='in_progress' || task.active_run_id!==r.run_id || task.lease_epoch!==r.lease_epoch)
       throw new HubError('TASK_LEASE_STALE');
     if(!task.lease_until || Date.parse(task.lease_until)<=Date.now())throw new HubError('TASK_LEASE_EXPIRED');
@@ -314,6 +318,9 @@ class WorkRuntime{
   }
   async submit(binding,args){
     const r=this.run(binding,args),p=this.c.profile,remote=this.c.remote;
+    const {task}=await this.c.invokeProjectRemote(binding,'hub_get_task',{task_id:r.task_id});
+    this.c.ensureCurrent(p,remote);
+    if(task.workflow_control?.manual_required)throw new HubError('TASK_MANUAL_RESOLUTION_REQUIRED');
     if(!r.acknowledged || r.last_worklog_id!==args.worklog_id)throw new HubError('TASK_LATEST_CHECKPOINT_REQUIRED');
     const snapshot=await this.capture(binding,r);
     this.c.ensureCurrent(p,remote);

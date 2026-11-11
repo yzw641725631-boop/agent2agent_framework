@@ -486,7 +486,7 @@ class Console {
         if (!current()) return;
         list.replaceChildren(table('协作任务',['任务 / 父任务','当前阶段','专注范围','开发租约','操作'],tasks.items.map(task => [
           textPair(task.title,`${short(task.id)}${task.parent_id ? ` · 父 ${short(task.parent_id)}` : ''}`),
-          textPair(taskStates[task.status],task.dependencies_satisfied === false ? '前置任务未完成' : ''),
+          textPair(task.workflow_control?.manual_required?'待负责人处理':taskStates[task.status],task.dependencies_satisfied === false ? '前置任务未完成' : ''),
           textPair(`${task.scope.repository} · ${task.scope.platform}`,task.scope.paths.join('、')),
           task.active_run_id ? textPair(short(task.active_run_id),`到期 ${date(task.lease_until)}`) : '—',
           button('查看 / 推进',() => this.openTask(projectId,task.id),'small')])));
@@ -911,8 +911,8 @@ class Console {
   async openCollaboration(projectId) {
     const config=await this.api('GET',`/api/projects/${projectId}/collaboration`);
     if(this.project?.id!==projectId)return;
-    const save=(profiles,allow_compact,change_reason,require_guides=config.require_guides)=>this.api('PUT',`/api/projects/${projectId}/collaboration`,
-      {expected_version:config.version,profiles,allow_compact,require_guides,change_reason});
+    const save=(profiles,allow_compact,change_reason,require_guides=config.require_guides,workflow_limits=config.workflow_limits)=>this.api('PUT',`/api/projects/${projectId}/collaboration`,
+      {expected_version:config.version,profiles,allow_compact,require_guides,workflow_limits,change_reason});
     const edit=profile=>{
       const form=h('form',{},field('key','岗位标识',{value:profile?.key || '',required:true,pattern:'[a-z][a-z0-9-]{0,63}',readonly:!!profile}),
         field('name','岗位名称',{value:profile?.name || '',required:true,maxlength:100}),
@@ -932,6 +932,17 @@ class Console {
       ...config.profiles.map(p=>h('p',{},p.name+' · '+p.base_role+' · '+(p.enabled?'启用':'停用')+' ',button('编辑',()=>edit(p),'small'))),
       h('p',{},'紧凑流程：'+(config.allow_compact?'允许负责人明确选择':'未开放')),
       h('p',{},'操作说明：'+(config.require_guides?'代码任务须安排说明或明确说明豁免原因':'由任务负责人选择')),
+      h('p',{},`流程限制：单环节 ${config.workflow_limits.stage_rejections} 次不通过、测试退回 ${config.workflow_limits.test_returns} 次或阶段超过 ${config.workflow_limits.stage_timeout_seconds/3600} 小时后转人工。`),
+      button('调整流程限制',()=>{
+        const limits=config.workflow_limits;
+        const form=h('form',{},field('stage_rejections','单环节不通过次数',{type:'number',required:true,min:1,max:10,value:limits.stage_rejections}),
+          field('test_returns','测试退回开发次数',{type:'number',required:true,min:1,max:10,value:limits.test_returns}),
+          field('stage_timeout_seconds','单阶段期限（秒，60 秒至 7 天）',{type:'number',required:true,min:60,max:604800,value:limits.stage_timeout_seconds}),
+          field('change_reason','批准调整的原因',{required:true,minlength:10,maxlength:1000}));
+        dialog('调整流程限制','只影响新建任务。已有任务保留原阈值和计数；暂停任务须在详情中单独处理。',form,'保存新版本',data=>
+          save(config.profiles,config.allow_compact,data.change_reason,config.require_guides,
+            {stage_rejections:Number(data.stage_rejections),test_returns:Number(data.test_returns),stage_timeout_seconds:Number(data.stage_timeout_seconds)}));
+      }),
       button(config.require_guides?'关闭说明计划要求':'要求代码任务安排说明',()=>{
         const form=h('form',{},field('change_reason','调整原因',{required:true,minlength:10,maxlength:1000}));
         dialog('操作说明要求','之后创建的代码任务必须安排说明；确实没有操作变化时，由有权负责人填写明确豁免原因。',form,'保存设置',
@@ -973,6 +984,7 @@ class Console {
     const data = await this.api('GET',base), logs = await this.api('GET',`${base}/worklogs?offset=${offset}&limit=20`);
     if (this.project?.id !== projectId || this.currentView !== 'tasks' || this.renderVersion !== revision) return;
     const task = data.task, run = data.runs.find(r => r.id === task.active_run_id);
+    const control=task.workflow_control,manual=!!control?.manual_required;
     const owned = run?.user_id === this.user.id && run?.device_id === this.device;
     const lease = {run_id:task.active_run_id,lease_epoch:task.lease_epoch};
     const reload = () => this.openTask(projectId,taskId,offset);
@@ -980,9 +992,9 @@ class Console {
     const actions = [button('关闭',() => modal.close()),button('刷新',reload)];
     if(task.repository_id)actions.push(button('交付核验',()=>this.openDelivery(projectId,taskId)));
     if(task.repository_id)actions.push(button('代码规范审计',()=>this.openCodeAudits(projectId,taskId)));
-    if(this.can('tasks:publish') && task.status==='ready')actions.push(button('投递给执行者',()=>this.dispatchTask(projectId,task)));
+    if(!manual && this.can('tasks:publish') && task.status==='ready')actions.push(button('投递给执行者',()=>this.dispatchTask(projectId,task)));
     const coordination = data.coordination;
-    if(this.can('tasks:publish') && !task.lease_epoch && ['draft','ready'].includes(task.status) && !coordination?.has_restricted_dependencies)
+    if(!manual && this.can('tasks:publish') && !task.lease_epoch && ['draft','ready'].includes(task.status) && !coordination?.has_restricted_dependencies)
       actions.push(button('设置前置任务',() => {
         const form=h('form',{},h('label',{},'前置任务 ID（每行一项）',h('textarea',{name:'depends_on',rows:4},
           (coordination?.dependencies || []).map(t=>t.id).join('\n'))),field('reason','调整原因',{required:true,minlength:10,maxlength:1000,full:true}));
@@ -991,7 +1003,7 @@ class Console {
             depends_on:values.depends_on.split(/\r?\n/).map(v=>v.trim()).filter(Boolean)}));
       }));
     if (this.can('tasks:publish') && task.status !== 'completed') actions.push(button('拆解子任务',() => this.createTask(taskId)));
-    if (this.can('tasks:publish') && ['draft','ready'].includes(task.status)) actions.push(button('调整流程',()=>{
+    if (!manual && this.can('tasks:publish') && ['draft','ready'].includes(task.status)) actions.push(button('调整流程',()=>{
       const form=h('form',{},field('workflow','新流程',{items:[['standard','标准'],['compact','紧凑（须项目开放）'],['strict','严格（须代码仓库与核验交付）']]}),
         field('reason','调整原因',{required:true,minlength:10,maxlength:1000}));
       dialog('调整任务流程','执行过的任务只允许升级。保存后重新准入，旧决定保留。',form,'保存并重新准入',data=>this.api('POST',base+'/workflow',
@@ -1000,7 +1012,9 @@ class Console {
     const expired = !task.lease_until || new Date(task.lease_until).getTime() <= Date.now();
     if (task.execution_mode !== 'observed' && ['ready','in_progress'].includes(task.status) && expired && coordination?.claimable !== false && this.can('tasks:claim') && this.can('tasks:write'))
       actions.push(button('本人认领',() => act('/claim',{instance_id:crypto.randomUUID(),harness:'human'}),'primary'));
-    if (owned && !expired && task.status === 'in_progress') {
+    if (manual && owned && task.status==='in_progress' && task.execution_mode!=='observed')
+      actions.push(button('保存已有工作记录',()=>this.writeTaskLog(base,lease)));
+    if (!manual && owned && !expired && task.status === 'in_progress') {
       actions.push(button('续租 10 分钟',() => act('/heartbeat',lease)),
         task.execution_mode !== 'observed' && button('记录本轮工作',() => this.writeTaskLog(base,lease)),
         button('释放认领',() => {
@@ -1014,7 +1028,7 @@ class Console {
     const nextGate = task.status === 'draft' ? (task.workflow_policy?.admission || ['requirements','design','feasibility'])[task.admission_step] :
       {review:'review',testing:'test',release_ready:'release'}[task.status];
     const gateCap = {review:'tasks:review',test:'tasks:test'}[nextGate] || 'tasks:publish';
-    if (nextGate && this.can(gateCap) && (!task.submission_id || this.can('logs:read'))) actions.push(button(gateNames[nextGate],() => {
+    if (!manual && nextGate && this.can(gateCap) && (!task.submission_id || this.can('logs:read'))) actions.push(button(gateNames[nextGate],() => {
       const form = h('form',{},h('label',{},'决定依据 / 验证证据',h('textarea',{name:'evidence',required:true,rows:5,maxlength:8000})),
         field('approved','决定',{items:[['yes','通过'],['no','退回 / 不通过']]}),
         this.isRoot && ['review','test'].includes(nextGate) ? field('override_reason','超管自审原因（仅评审本人工作时填写）',{maxlength:1000}) : null);
@@ -1022,7 +1036,22 @@ class Console {
         gate:nextGate,approved:values.approved === 'yes',expected_version:task.version,worklog_id:task.submission_id,
         evidence:values.evidence,override_reason:values.override_reason || '',instance_id:crypto.randomUUID(),harness:'human'}));
     },'primary'));
-    const content = h('div',{id:'modal-body'},h('h2',{},task.title),h('p',{},`${taskStates[task.status]} · 版本 ${task.version} · ${task.id}`),
+    if(manual && this.can('tasks:publish'))actions.push(button('负责人处理并恢复',()=>{
+      const form=h('form',{},field('reason','问题处理和后续安排',{multiline:true,required:true,minlength:10,maxlength:2000}),
+        field('current_password','本人当前密码',{type:'password',required:true,maxlength:256,autocomplete:'current-password'}));
+      dialog('负责人处理并恢复','确认已核对失败原因、现有改动和交接记录。恢复后开始新的处理周期，旧记录保留；开发任务须重新认领。',form,'确认恢复',async values=>{
+        try{await this.api('POST',base+'/workflow-resume',{expected_version:task.version,expected_revision:control.revision,...values});}
+        finally{form.elements.current_password.value='';values.current_password='';}
+      });
+    },'primary'));
+    const reasons={stage_timeout:'阶段超时',stage_rejections:'同一环节多次不通过',test_returns:'测试多次退回开发'};
+    const content = h('div',{id:'modal-body'},h('h2',{},task.title),h('p',{},`${manual?'待负责人处理':taskStates[task.status]} · 版本 ${task.version} · ${task.id}`),
+      control && h('section',{},h('h3',{},'流程限制与人工处理'),
+        h('p',{class:manual?'danger-note':'hint'},manual?`已暂停：${reasons[control.reason] || '等待处理'}。停止开发、推送和流程推进；当前执行者仍可保存获准日志与代码备份。`:'当前流程正常。'),
+        h('p',{},`周期 ${control.cycle} · 单环节 ${control.limits.stage_rejections} 次不通过转人工 · 测试退回 ${control.test_returns}/${control.limits.test_returns} 次`),
+        h('p',{},control.deadline_at?'本阶段期限：'+date(control.deadline_at):'尚未开工排队或任务已结束，无阶段期限'),
+        h('p',{},'各环节不通过：'+(Object.entries(control.rejections || {}).map(([k,v])=>`${gateNames[k] || k} ${v}`).join('；') || '无')),
+        ...(data.workflow_events || []).map(e=>h('p',{},`${date(e.created_at)} · ${e.kind==='resumed'?'人工恢复':'转人工'} · ${e.resolution || reasons[e.reason] || e.reason}`))),
       task.execution_mode === 'observed' && h('p',{class:'help-block'},'代码任务：在工程 MCP 调用 hub_claim_task 认领，再调用 hub_prepare_work、hub_acknowledge_work。保存日志时采集本机实际改动。网页用于查看与流程决定。'),
       h('p',{},`${roleNames[task.execution_role] || task.execution_role} · ${task.scope.repository} / ${task.scope.platform} · ${task.scope.paths.join('、')}`),
       h('p',{},`岗位：${task.role_profile || '基础职责'} · 流程：${{standard:'标准',compact:'紧凑',strict:'严格'}[task.workflow] || '标准'}${task.workflow_reason?' · '+task.workflow_reason:''}`),

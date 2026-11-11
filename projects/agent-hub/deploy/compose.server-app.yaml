@@ -13,7 +13,7 @@ services:
     build:
       context: ..
       target: runtime
-    image: agent-hub:0.19.0
+    image: agent-hub:0.20.0
     environment:
       <<: *hub-environment
       HUB_DATABASE_URL: postgresql+psycopg://hub_owner:${HUB_OWNER_PASSWORD}@postgres:5432/agent_hub
@@ -32,7 +32,7 @@ services:
     build:
       context: ..
       target: runtime
-    image: agent-hub:0.19.0
+    image: agent-hub:0.20.0
     environment:
       <<: *hub-environment
       HUB_DATABASE_URL: postgresql+psycopg://hub_runtime:${HUB_RUNTIME_PASSWORD}@postgres:5432/agent_hub
@@ -78,7 +78,7 @@ services:
       retries: 5
 
   archive-maintenance:
-    image: agent-hub:0.19.0
+    image: agent-hub:0.20.0
     profiles: [maintenance]
     environment:
       <<: *hub-environment
@@ -97,7 +97,7 @@ services:
     networks: [database]
 
   document-worker:
-    image: agent-hub:0.19.0
+    image: agent-hub:0.20.0
     environment:
       <<: *hub-environment
       HUB_DATABASE_URL: postgresql+psycopg://hub_document_worker:${HUB_INDEXER_PASSWORD:?Use the server-only database environment file}@postgres:5432/agent_hub
@@ -150,7 +150,7 @@ services:
       retries: 3
 
   embedding-worker:
-    image: agent-hub:0.19.0
+    image: agent-hub:0.20.0
     environment:
       <<: *hub-environment
       HUB_DATABASE_URL: postgresql+psycopg://hub_embedding_worker:${HUB_EMBEDDING_PASSWORD:?Provision the separate embedding worker role}@postgres:5432/agent_hub
@@ -174,7 +174,7 @@ services:
       embedding: {condition: service_healthy}
 
   memory-worker:
-    image: agent-hub:0.19.0
+    image: agent-hub:0.20.0
     environment:
       <<: *hub-environment
       HUB_DATABASE_URL: postgresql+psycopg://hub_memory_worker:${HUB_MEMORY_PASSWORD:?Use the server-only database environment file}@postgres:5432/agent_hub
@@ -199,7 +199,7 @@ services:
         condition: service_completed_successfully
 
   generation-worker:
-    image: agent-hub:0.19.0
+    image: agent-hub:0.20.0
     environment:
       <<: *hub-environment
       HUB_DATABASE_URL: postgresql+psycopg://hub_generation_worker:${HUB_GENERATION_PASSWORD:?Provision the generation worker role}@postgres:5432/agent_hub

@@ -235,6 +235,26 @@ test('offline background observations retain actual code without claiming a shar
   f.setOffline(false);await f.runtime.tick();assert.equal(f.uploads(),0);
 });
 
+test('workflow pause fences development while preserving encrypted checkpoints and worklog delivery',async t=>{
+  const f=await runtimeFixture(t),original=f.c.invokeProjectRemote;
+  f.c.invokeProjectRemote=async(b,tool,args)=>{
+    const result=await original(b,tool,args);
+    if(tool==='hub_get_task')result.task.workflow_control={manual_required:true,reason:'stage_timeout'};
+    return result;
+  };
+  await fs.writeFile(path.join(f.dir,'src/main.ts'),'existing code to hand off');
+  await assert.rejects(f.runtime.check(f.binding,f.lease),{code:'TASK_MANUAL_RESOLUTION_REQUIRED'});
+  assert.equal(f.profile.workRuns[f.lease.run_id].stopped,'TASK_MANUAL_RESOLUTION_REQUIRED');
+  const saved=await f.runtime.save(f.binding,{...f.lease,summary:'Paused handoff',notes:'Existing work only',
+    tests:'Not run',next_steps:'Owner resolution',outcome:'blocked',operation_id:crypto.randomUUID()});
+  assert.equal(saved.server_confirmed,true);
+  const record=await f.runtime.store.read(saved.local_checkpoint_id);
+  assert.equal(Buffer.from(record.snapshot.contents[0].content_base64,'base64').toString(),'existing code to hand off');
+  await assert.rejects(f.runtime.submit(f.binding,{...f.lease,worklog_id:'server-log',expected_version:5,operation_id:crypto.randomUUID()}),
+    {code:'TASK_MANUAL_RESOLUTION_REQUIRED'});
+  assert.equal(f.binding.status,'active');
+});
+
 test('account switch while capturing cannot assign old code to the new account or upload it',async t=>{
   const f=await runtimeFixture(t);await fs.writeFile(path.join(f.dir,'src/main.ts'),'old account code');
   const original=observer.capture;

@@ -5,6 +5,8 @@ const encode = value => btoa(String.fromCharCode(...new Uint8Array(value)))
 const json = value => encode(encoder.encode(JSON.stringify(value)));
 
 export const messages = {
+  TASK_MANUAL_RESOLUTION_REQUIRED:'任务多次不通过或已超时，须由负责人处理。请停止开发，保留日志和代码备份。',
+  WORKFLOW_RESOLUTION_CONFLICT:'任务已变化或已被处理，请重新打开任务详情核对。',
   RECOVERY_CODE_INVALID:'恢复码无效、已使用或已过期。请使用当前批次的恢复码。',
   OAUTH_ACCESS_DENIED:'此授权请求不属于当前账号和浏览器设备，或已过期。请使用已获批准的设备重新发起。',
   OAUTH_INVALID_GRANT:'连接对应的账号、设备或项目授权当前不可用，请核对审批状态。',

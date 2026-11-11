@@ -1,0 +1,191 @@
+{
+  "schema": 1,
+  "created_at": "2026-11-11T00:51:57.952616+00:00",
+  "scope": "workflow-failure-limits-timeouts-human-recovery-and-work-preservation",
+  "backend": "0.20.0",
+  "desktop": "0.22.0",
+  "database_schema": "0031",
+  "backend_tests": {
+    "passed": 394,
+    "failed": 0,
+    "database": "isolated-real-postgresql-on-server",
+    "log_sha256": "42767780b666424f35be80434dbc56d43169cb590d92eeb3fc588f77be5245b1"
+  },
+  "previous_runtime_tests": {
+    "passed": 385,
+    "failed": 0,
+    "business_version": "0.19.0",
+    "explicit_schema_declaration": "0031",
+    "log_sha256": "65f57d6e8230a7310ade4dfcc6adc0640ff2d49a31f2d5e8aa07d162555da034"
+  },
+  "desktop_tests": {
+    "passed": 180,
+    "failed": 0,
+    "log_sha256": "12fbc736f2cf89bca88d9c3e8e57282190417c804285aa4b26234d88fcc135b6",
+    "changed_packaged_sources_match": true
+  },
+  "workflow_controls": {
+    "default_rejections_per_stage": 3,
+    "default_test_returns": 2,
+    "default_stage_hours": 24,
+    "idempotent_retries_not_recounted": true,
+    "first_unclaimed_queue_has_no_development_deadline": true,
+    "heartbeats_and_handoffs_do_not_extend_same_stage": true,
+    "database_protected_runtime_and_append_only_events": true,
+    "bounded_independent_timeout_sweeper": true,
+    "expired_deadline_blocks_before_sweep": true,
+    "paused_original_executor_can_preserve_existing_work": true,
+    "original_and_current_path_protections_checked": true,
+    "permission_revocation_closeout_still_works": true,
+    "human_resume_requires_permission_password_and_versions": true,
+    "human_resume_creates_new_cycle_and_invalidates_old_run": true,
+    "automatic_mcp_resume_tool": false
+  },
+  "web_ui": {
+    "passed": true,
+    "realElectronWebUI": true,
+    "backend": "synthetic-fixture",
+    "resumptions": 1,
+    "limitSaves": 1,
+    "passwordNotDisplayed": true,
+    "untrustedTextNotExecuted": true,
+    "pausedActionsHidden": true,
+    "historyPreserved": true,
+    "horizontalOverflow": false
+  },
+  "desktop_ui": {
+    "passed": true,
+    "realElectronUI": true,
+    "backend": "synthetic-fixture",
+    "pauseVisible": true,
+    "limitsAndHistoryVisible": true,
+    "preservationInstructions": true,
+    "humanRecoveryLink": true,
+    "scopeScrubbedOnSignout": true,
+    "horizontalOverflow": false
+  },
+  "public_gateway": {
+    "assets_match_deployed_source": true,
+    "assets_sha256": {
+      "api.js": "baf7ac1d37c347642ffcba3667c65ddf97fcb5c2aee14b2c3720b97d158fc5ca",
+      "app.js": "9ad97db44d077b23c8340828c5154375d323e58403d79c9f80a4ff4cb5a63eb5"
+    },
+    "authentication_bypassed": false,
+    "backend": "0.20.0",
+    "database_schema": "0031",
+    "https": true,
+    "landing_page": true,
+    "passed": true,
+    "unauthenticated_sensitive_api_status": 401,
+    "user_credentials_used": false
+  },
+  "deployed_sources_match_verified_release": true,
+  "verified_backend_release_files": 201,
+  "backend_image_id": "sha256:8271c23429a5ef821fa11ffefe3ca443384b376d1f6dc6f293d157ba8382d82b",
+  "rollback_image_id": "sha256:83b8eccae8cde33300ed63ab2f733316223d3542210df1945f33e7550acc5b7c",
+  "synthetic_database": {
+    "upgrade_preserved_old_tables": 78,
+    "upgrade_preserved_rows": 211,
+    "restored_tables": 80,
+    "exact_restore_rows": 212,
+    "fresh_and_upgraded_structure_equal": true,
+    "archive_and_memory_audited": true,
+    "semantic_vectors": 4,
+    "real_business_pilot": false
+  },
+  "production_upgrade": {
+    "passed": true,
+    "migration_performed": true,
+    "old_schema": "0030",
+    "new_schema": "0031",
+    "volume_preserved": true,
+    "existing_rows_preserved": true,
+    "verified_tables": 78,
+    "verified_rows": 61
+  },
+  "backup_restore": {
+    "passed": true,
+    "structure_verified": true,
+    "role_bindings_verified": true,
+    "verified_tables": 80,
+    "verified_rows": 62,
+    "real_business_shared_memory_present": false,
+    "offsite_confirmed": false
+  },
+  "public_desktop": {
+    "version": "0.22.0",
+    "metadata_sequence": 23,
+    "ed25519_feed_verified": true,
+    "zip_sha256": "601a3f4ad6e5f71ee8ee821bad979b53c70f6923b430b918fdd56e1f6426c1df",
+    "installer_sha256": "16b73cba770be7d66e5877156a515bc382309cdd93951f5e3f9e8f9cec1c4e4b",
+    "files_sha256": "0f89ec42b146bfa6ef2968a4eb8aacde75683948f1463dad0d3d8f40cfc54b0a",
+    "public_gateway_full_bytes_verified": true,
+    "authenticode_signed": false
+  },
+  "online_upgrade": {
+    "passed": true,
+    "old_version": "0.21.0",
+    "new_version": "0.22.0",
+    "clicked_from_signed_out_client": true,
+    "signed_release_activated": true,
+    "native_restart_completed": true,
+    "publicDownload": true,
+    "profileIsolated": true
+  },
+  "installed_desktop": {
+    "passed": true,
+    "version": "0.22.0",
+    "installerBytesVerified": true,
+    "installerSource": "local-build-matched-published-sha256",
+    "installerSha256": "16b73cba770be7d66e5877156a515bc382309cdd93951f5e3f9e8f9cec1c4e4b",
+    "installedManifestMatchesSignedRelease": true,
+    "installedFilesVerified": 188,
+    "unlistedApplicationResourcesAbsent": true,
+    "managedSkillMatchesPackagedVersion": true,
+    "managedSkillFilesVerified": 18,
+    "existingDataDirectoryUsed": "D:/agent_cache/agent-hub",
+    "codexConfigurationUpdated": true,
+    "loginPerformedByAgent": false,
+    "authenticodeSigned": false
+  },
+  "stdio_mcp": {
+    "passed": true,
+    "installedVersion": "0.22.0",
+    "realStdioMcp": true,
+    "configurationFromInstalledCodex": true,
+    "signedFeedVerified": true,
+    "loginState": "LOGIN_REQUIRED",
+    "authenticationNotBypassed": true
+  },
+  "operations": {
+    "healthy": true,
+    "checked_at": "2026-11-11T00:41:26.814178+00:00",
+    "unconfigured_warnings": [
+      "alerts:external-delivery",
+      "offsite:continuous-copy"
+    ]
+  },
+  "actual_environment_limits": {
+    "real_provider_quality_and_billing_verified": false,
+    "offsite_continuous_copy_configured": false,
+    "external_alert_receiver_configured": false,
+    "all_seven_hosts_native_hooks_and_execution_verified": false,
+    "macos_and_real_business_pilot_deferred": true,
+    "system_level_file_isolation": false
+  },
+  "evidence_sha256": {
+    "backend-full-results.log": "42767780b666424f35be80434dbc56d43169cb590d92eeb3fc588f77be5245b1",
+    "backup.json": "d9d52d60a1ab4c192571eb20ed627e54ce7b69e3d757276dfb144310cdfbd35d",
+    "fresh-schema.json": "314e42649d75539b90f1d0e6039c8ac60c0cfb5118f3c34002c6a2ed805aa334",
+    "ops.json": "411923a5e5f08c028ccdeef5806cd2a84917e3373a82165fef29b17b144cf133",
+    "previous-runtime-results.log": "65f57d6e8230a7310ade4dfcc6adc0640ff2d49a31f2d5e8aa07d162555da034",
+    "production.json": "506d5d9a275fad373941fca97678a696092c9d73fae2be3cab38ce357b542814",
+    "restore.json": "8eb9ba29495992742237c9b575d5096a8202b0b5ed1ed58cdd8f264f57a35854",
+    "restored-memory.json": "9593e0a04f9694a1a769a4beecd83c50c35c19b9dc024fae0452c2660f85ade7",
+    "stable.json": "1156179d630480a3f8bef1189a663ff1cb6474bbd16ba7b77e4241a85b9cff2a",
+    "synthetic-memory.json": "9593e0a04f9694a1a769a4beecd83c50c35c19b9dc024fae0452c2660f85ade7",
+    "synthetic-restore.json": "49d3bda227c7486b09210e3da44f8f0459e71db0ab1abc860897f49c3ae262eb",
+    "synthetic-upgrade.json": "8b1841665b7278144e8a5deb7fd4b24162a784051dcad7eaff01bf21425b8f56",
+    "validation.json": "e4498e1e669a99a05a97fd69bb83eefda36ac28831c15bf65f61cf4464c902c0"
+  }
+}

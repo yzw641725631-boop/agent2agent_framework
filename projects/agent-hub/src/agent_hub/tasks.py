@@ -7,7 +7,7 @@ from datetime import timedelta
 
 from sqlalchemy import delete, func, select, text
 
-from . import collaboration, repositories, roles, work_policy
+from . import collaboration, repositories, roles, work_policy, workflow_control
 from .models import (
     CodeDelivery,
     ProjectProgress,
@@ -31,6 +31,7 @@ def task_view(t):
             "execution_mode": t.execution_mode, "execution_role": t.execution_role,
             "role_profile": t.role_profile, "workflow": t.workflow,
             "workflow_reason": t.workflow_reason, "workflow_policy": t.workflow_policy,
+            "workflow_control": workflow_control.view(t),
             "documentation": t.documentation,
             "status": t.status, "admission_step": t.admission_step, "version": t.version,
             "lease_epoch": t.lease_epoch, "active_run_id": str(t.active_run_id) if t.active_run_id else None,
@@ -141,6 +142,7 @@ def set_dependencies(db, task, dependency_ids):
 def update_dependencies(hub, db, actor, project_id, task_id, body, request_id):
     hub.project(db, actor, project_id, "tasks:publish")
     task = get_task(db, project_id, task_id)
+    workflow_control.require_open(db, task)
     check_version(task, body.expected_version)
     if task.lease_epoch or task.status not in {"draft", "ready"}:
         raise HubError("TASK_DEPENDENCIES_FROZEN", 409)
@@ -177,9 +179,11 @@ def detail(db, project_id, task_id):
     dep = dependency_view(db, task)
     return {"task": task_view(task), "coordination": {**dep, "scope_conflicts": conflicts,
                 "claimable": task.status in {"ready", "in_progress"} and dep["dependencies_satisfied"]
-                    and not conflicts and (not task.lease_until or task.lease_until <= now())},
+                    and not conflicts and not workflow_control.view(task)["manual_required"]
+                    and (not task.lease_until or task.lease_until <= now())},
             "runs": [run_view(r) for r in runs],
-            "decisions": [decision_view(d) for d in decisions]}
+            "decisions": [decision_view(d) for d in decisions],
+            "workflow_events": workflow_control.history(db, task)}
 
 
 def emit(hub, db, actor, task, kind, request_id, *, run_id=None, worklog_id=None):
@@ -227,6 +231,7 @@ def claim(hub, db, actor, project_id, task_id, body, request_id):
     hub.project(db, actor, project_id, "tasks:claim")
     hub.project(db, actor, project_id, "tasks:write")
     task = get_task(db, project_id, task_id)
+    workflow_control.require_open(db, task)
     require_budget(db, project_id)
     if task.repository_id:
         repositories.require(db, project_id, task.repository_id, "code:write")
@@ -257,16 +262,17 @@ def claim(hub, db, actor, project_id, task_id, body, request_id):
     return {"task": task_view(task), "run": run_view(run), "heartbeat_seconds": 120}
 
 
-def live_run(db, actor, project_id, task_id, body):
+def live_run(db, actor, project_id, task_id, body, *, preserve=False):
     task = get_task(db, project_id, task_id)
     if task.repository_id:
         repositories.require(db, project_id, task.repository_id, "code:write")
+    control = workflow_control.check(db, task) if preserve else workflow_control.require_open(db, task)
     if task.active_run_id != body.run_id or task.lease_epoch != body.lease_epoch or task.status != "in_progress":
         raise HubError("TASK_LEASE_STALE", 409)
     run = db.get(TaskRun, body.run_id)
     if not run or run.user_id != actor.user.id or run.device_id != actor.device.id or run.state != "active":
         raise HubError("TASK_LEASE_NOT_OWNED", 403)
-    if not task.lease_until or task.lease_until <= now():
+    if (not task.lease_until or task.lease_until <= now()) and not (preserve and control["manual_required"]):
         raise HubError("TASK_LEASE_EXPIRED", 409)
     return task, run
 
@@ -292,10 +298,11 @@ def release(hub, db, actor, project_id, task_id, body, request_id):
 
 def write_log(hub, db, actor, project_id, task_id, body, request_id):
     hub.project(db, actor, project_id, "tasks:write")
-    task, run = live_run(db, actor, project_id, task_id, body)
+    task, run = live_run(db, actor, project_id, task_id, body, preserve=True)
     evidence_value = evidence_hash = None
     if task.execution_mode == "observed":
-        evidence_value, evidence_hash = work_policy.evidence(db, actor, task, run, body)
+        evidence_value, evidence_hash = work_policy.evidence(db, actor, task, run, body,
+            preserving=workflow_control.view(task)["manual_required"])
     elif body.context_id or body.change_evidence:
         raise HubError("WORK_EVIDENCE_MODE_MISMATCH", 422)
     for path in body.changed_paths:
@@ -394,6 +401,7 @@ def decide(hub, db, actor, project_id, task_id, body, request_id):
     cap = {"review": "tasks:review", "test": "tasks:test"}.get(body.gate, "tasks:publish")
     hub.project(db, actor, project_id, cap)
     task = get_task(db, project_id, task_id)
+    workflow_control.require_open(db, task)
     check_version(task, body.expected_version)
     run_id = None
     if body.gate in ADMISSION:
@@ -439,5 +447,6 @@ def decide(hub, db, actor, project_id, task_id, body, request_id):
                         evidence=body.evidence, override_reason=body.override_reason.strip(), task_version=task.version))
     task.version += 1
     db.flush()
+    db.refresh(task)  # The decision trigger may have paused this cycle and advanced its revision.
     emit(hub, db, actor, task, "task.gate_decided", request_id, run_id=run_id, worklog_id=body.worklog_id)
     return task_view(task)

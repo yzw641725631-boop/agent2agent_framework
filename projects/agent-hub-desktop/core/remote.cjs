@@ -95,6 +95,8 @@ const messages = {
   POLICY_VERSION_CONFLICT:'规则已有新版本，请刷新后再发布。',
   TASK_NOT_FOUND:'任务不存在或不在当前项目。',TASK_ALREADY_CLAIMED:'任务已被认领，请等待释放或租约过期。',
   TASK_NOT_CLAIMABLE:'任务还不能认领，请先完成准入确认或当前评审流程。',
+  TASK_MANUAL_RESOLUTION_REQUIRED:'任务多次不通过或已超时，须由负责人处理。请停止开发并保存工作日志与代码备份；项目无需卸载。',
+  WORKFLOW_RESOLUTION_CONFLICT:'处理状态或任务版本已变化，请刷新任务后核对。',
   TASK_LEASE_STALE:'任务已交接或提交，当前执行凭证失效，请重新读取任务。',
   TASK_LEASE_EXPIRED:'认领已过期，请重新核验和认领任务。',TASK_LEASE_NOT_OWNED:'这个开发租约属于其他执行者。',
   TASK_VERSION_CONFLICT:'任务状态已变化，请刷新后重试。',TASK_GATE_ORDER_INVALID:'流程关口或提交版本不匹配，请刷新任务。',

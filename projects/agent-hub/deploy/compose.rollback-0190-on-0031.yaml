@@ -1,0 +1,12 @@
+# Combine with the verified 0.19.0 compose file after migration to 0031.
+services:
+  api:
+    image: agent-hub:0.19.0-schema0031
+  document-worker:
+    image: agent-hub:0.19.0-schema0031
+  memory-worker:
+    image: agent-hub:0.19.0-schema0031
+  embedding-worker:
+    image: agent-hub:0.19.0-schema0031
+  generation-worker:
+    image: agent-hub:0.19.0-schema0031

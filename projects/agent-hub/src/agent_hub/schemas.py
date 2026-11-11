@@ -248,11 +248,18 @@ class RoleProfile(Input):
         return [value.strip() for value in values]
 
 
+class WorkflowLimits(Input):
+    stage_rejections: int = Field(default=3, ge=1, le=10)
+    test_returns: int = Field(default=2, ge=1, le=10)
+    stage_timeout_seconds: int = Field(default=86400, ge=60, le=604800)
+
+
 class CollaborationInput(Input):
     expected_version: int = Field(ge=0)
     profiles: list[RoleProfile] = Field(default_factory=list, max_length=32)
     allow_compact: bool = False
     require_guides: bool | None = None
+    workflow_limits: WorkflowLimits | None = None
     change_reason: str = Field(min_length=10, max_length=1000)
 
     @model_validator(mode="after")

@@ -222,6 +222,8 @@ def create_app(
             and not request.url.path.endswith(("/documents/read", "/documents/search")),
         )
         identity = hub.authenticate(db, value, thumb)
+        db.info["workflow_exclusive"] = request.method not in {"GET", "HEAD"} and not request.url.path.endswith(
+            ("/documents/read", "/documents/search"))
         request.state.actor_id = identity.user.id
         return identity
 
@@ -1312,6 +1314,8 @@ def create_app(
         identity = actor(request, db)
         return email_change_complete(hub, db, identity, body, request.state.request_id)
 
+    from . import workflow_control
+    workflow_control.install(app, hub, actor, db_dependency, security_sessions)
     static = Path(__file__).parent / "static"
     git_gateway.install(app, hub, sessions, db_dependency)
     work_archives.install(app, hub, actor, token, db_dependency)

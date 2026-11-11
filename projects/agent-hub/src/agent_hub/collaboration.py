@@ -21,7 +21,9 @@ def current(db, project_id):
         .limit(1)
     )
     content = row.content if row else {"profiles": [], "allow_compact": False}
-    payload = {"version": row.version if row else 0, "require_guides": False, **content}
+    payload = {"version": row.version if row else 0, "require_guides": False,
+               "workflow_limits": {"stage_rejections": 3, "test_returns": 2, "stage_timeout_seconds": 86400},
+               **content}
     return {**payload, "content_hash": roles.digest(payload), "grants_permissions": False}
 
 
@@ -38,6 +40,8 @@ def publish(hub, db, actor, project_id, body, request_id):
     content = body.model_dump(mode="json", exclude={"expected_version", "change_reason"})
     if content["require_guides"] is None:
         content["require_guides"] = previous["require_guides"]
+    if content["workflow_limits"] is None:
+        content["workflow_limits"] = previous["workflow_limits"]
     row = ProjectCollaboration(
         project_id=project_id,
         version=previous["version"] + 1,
@@ -120,6 +124,8 @@ def change_workflow(hub, db, actor, task, body, request_id):
     from . import tasks
 
     hub.project(db, actor, task.project_id, "tasks:publish")
+    from .workflow_control import require_open
+    require_open(db, task)
     tasks.check_version(task, body.expected_version)
     if task.status not in {"draft", "ready"} or task.active_run_id:
         raise HubError("WORKFLOW_CHANGE_REQUIRES_RELEASE", 409)

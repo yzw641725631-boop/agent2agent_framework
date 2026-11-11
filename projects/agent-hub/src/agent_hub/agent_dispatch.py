@@ -114,6 +114,8 @@ def event(hub, db, actor, row, request_id):
 def send(hub, db, actor, project_id, body, request_id):
     hub.project(db, actor, project_id, "tasks:publish")
     task = tasks.get_task(db, project_id, body.task_id)
+    from .workflow_control import require_open
+    require_open(db, task)
     endpoint = get_endpoint(db, project_id, body.endpoint_id)
     require_eligible(db, endpoint)
     tasks.check_version(task, body.expected_task_version)

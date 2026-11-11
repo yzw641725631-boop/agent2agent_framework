@@ -8,7 +8,7 @@
 2. 用户选择项目组本机根目录及开发工具，用 `hub_connect_project` 建立项目组连接，重新加载连接。
 3. 在项目组连接调用 `hub_list_repositories`。管理员可按用户要求用 `hub_register_repository` 登记公共只读仓库或已配置 GitHub App 的仓库；专用 PAT 和 App 私钥直接填后台，不传给 Agent。
 4. 超管按成员、设备审批仓库权限。管理员只能提交申请。`project:read` 不开放任何仓库；`code:write` 要同时具有 `code:read`。读资料需要仓库 `documents:read` 和项目 `documents:read`，读同事任务日志还需要相应仓库代码读取权限及 `logs:read`。
-5. 调用 `hub_assemble_project`，传入明确获准的 `repository_ids`、`harness`（`codex`、`claude` 或 `cursor`）及新 `operation_id`。每个仓库拉到根目录下独立的 slug 子目录，生成固定仓库连接。不覆盖已有同名目录，不拉没有代码读取权限的资料仓库。
+5. 调用 `hub_assemble_project`，传入明确获准的 `repository_ids`、`harness`（`codex`、`claude`、`cursor`、`qoder`、`workbuddy`、`codebuddy`、`trae`）及新 `operation_id`。每个仓库拉到根目录下独立的 slug 子目录，生成固定仓库连接。不覆盖已有同名目录，不拉没有代码读取权限的资料仓库。
 6. 根据结果在具体仓库目录打开工具、重新加载并完成信任确认。工具配置若已受 Git 管理，会返回 `manual-tracked-configuration`；保留原配置，从该仓库连接复制并合并本机 MCP，不把本机配置提交到业务 Git。
 
 已有代码目录可从安装连接用 `hub_connect_project`，传入项目组 ID、`repository_id` 和目录。首次准备任务会核对 Git origin，来源须为登记地址或平台该仓库的代理地址。没有代码权限时不能认领开发。
@@ -25,4 +25,4 @@
 
 服务器只发两分钟以内的平台 Git 票据，每次 HTTP 请求重新检查身份、设备、授权、仓库和写入租约。GitHub App/PAT 保留在服务器。持有其他 GitHub 凭证的人仍可能在平台外访问；本平台不会收回这些凭证或擦除私自复制的代码。
 
-当前仅支持 GitHub HTTPS、普通 Git 对象和单分支拉取，Git 上传请求最大 64 MiB；不自动处理 LFS、submodule、PR、合并或部署。服务器核对提交引用和日志，不独立审计 pack 内所有代码的业务合规性。未提交修改的远程快照须另看 `code_receipt`，见[开发记录与交接](work-records.md)。撤权卸载见[撤权交接](revocation.md)；系统级文件隔离和长期共享记忆仍待实现。
+当前仅支持 GitHub HTTPS、普通 Git 对象和单分支拉取，Git 上传请求最大 64 MiB；不自动处理 LFS、submodule、PR、合并或部署。服务器核对提交引用和日志，不独立审计 pack 内所有代码的业务合规性。未提交修改的远程快照须另看 `code_receipt`，见[开发记录与交接](work-records.md)。撤权卸载见[撤权交接](revocation.md)。共享记忆已支持原文保留、持续摘录、独立审核知识、混合检索和有预算的本机缓存；系统级文件隔离仍不在当前机制内。安装适配、原生钩子和自动执行的范围分别核验，不能视为同一种支持。

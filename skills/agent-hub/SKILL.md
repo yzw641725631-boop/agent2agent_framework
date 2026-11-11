@@ -34,6 +34,7 @@ description: 安装和使用 Agent Hub 桌面协作框架，通过 MCP 接入授
 - 有前置或并行任务时读[任务依赖与独立目录](references/parallel-work.md)：`parent_id` 是层级，`depends_on` 是完成依赖；先认领，再在准备前创建独立任务 worktree。同仓库重叠代码范围占用期间停止新认领，不能用新实例绕过。
 - 代码任务默认 `observed`：`hub_prepare_work` 返回当前职责、规则、任务范围及有预算的获准记忆。阅读职责、规则、卡片和 `gaps` 后，用 `hub_acknowledge_work` 确认全部规则 ID 和内容哈希。职责、规则、来源权限或已用事实失效后重新准备；回执不证明模型理解。
 - 修改前用 `hub_check_changes` 核验拟改路径及实际 Git 改动，租约、规则过期或路径被拒绝时停止并处理原因。首次准备需要干净 Git 工程，可先保留原修改并使用独立 worktree；不要自动丢弃或提交用户工作。
+- 任务返回 `workflow_control.manual_required: true` 或 `TASK_MANUAL_RESOLUTION_REQUIRED` 时停止开发、推送和流程决定。只保全已有工作，当前运行所有者仍可保存获准日志和代码快照。请负责人在网页任务详情记录处理原因并自行验证后恢复；不得代填密码、自动恢复或把流程暂停当作撤权卸载。恢复后重新读取任务并认领，旧执行代次不可复用，详见[任务流程](references/task-workflow.md)。
 
 ## 每轮代码变更与交接
 
