@@ -1,0 +1,99 @@
+{
+  "date": "2026-11-11",
+  "scope": "stage-D-existing-Windows-environment-collaboration",
+  "runtime_baseline_commit": "f160714d152fd441b6c2880915d0a7f827ef3aed",
+  "source_sha256": {
+    "projects/agent-hub/tests/collaboration_http_fixture.py": "f23a0c49b8f2e86be60ee53029b19b97e54277a05c59bfdbcc5434c302fa128e",
+    "projects/agent-hub-desktop/tests/collaboration.integration.cjs": "4fc93cc2d94afa516cf497c463b947fbf81fd432c7451d4502f4beb038024753",
+    "projects/agent-hub-desktop/scripts/check-collaboration.cjs": "b7d0586a6b7a5c44a00e4bc3b949b6d3831b8e4c7ae2ecd434f1336866ec30bd"
+  },
+  "integration": {
+    "passed": true,
+    "started_at": "2026-11-11T05:48:43.218Z",
+    "fixture": "isolated-collaboration-v1",
+    "platform": "win32",
+    "desktop_version": "0.23.1",
+    "electron_version": "45.2.3",
+    "node_version": "24.22.2",
+    "protector": "Electron-Windows-DPAPI",
+    "physical_windows_computers": 1,
+    "synthetic_members": 2,
+    "synthetic_device_identities": 2,
+    "repositories": [
+      "web",
+      "api"
+    ],
+    "harness_protocols": [
+      "codex",
+      "claude-code"
+    ],
+    "actual_host_launches": 0,
+    "actual_model_calls": 0,
+    "injected_lifecycle_payloads": true,
+    "checks": {
+      "cross_repository_dependency_blocks_early_claim": true,
+      "explicit_acceptance_and_retry_preserve_one_run": true,
+      "codex_hook_protocol_guards_bound_task_and_paths": true,
+      "offline_mcp_preserves_encrypted_pending_without_shared_receipt": true,
+      "desktop_restart_recovers_pending_and_retries_idempotently": true,
+      "other_member_recovers_uncommitted_binary_and_deleted_files_to_new_directory": true,
+      "fixed_mcp_repository_prevents_cross_repository_task_access": true,
+      "web_submit_self_review_rejection_and_other_member_gates": true,
+      "completed_run_cannot_resume_writes": true,
+      "claude_code_hook_protocol_guards_bound_task_and_paths": true,
+      "cross_repository_dependency_releases_and_api_workflow_completes": true,
+      "desktop_sse_reconnect_replays_missed_events_without_duplicates": true,
+      "both_repository_submissions_have_persistent_activity": true,
+      "injected_prompt_text_is_not_saved_in_desktop_vault": true,
+      "unrelated_repository_member_cannot_read_handoff": true,
+      "author_revocation_blocks_old_mcp_and_preserves_colleague_handoff_and_working_files": true
+    },
+    "checkpoints": [
+      {
+        "task": "web",
+        "log_receipt": "3a0726b066197ef9054fc6fd971ef374dfcf3227e763f6d9935e902dd2806017",
+        "code_receipt": "641cdd1d27211fdfecf8735a77b006bfa432ffffe77a6ecc786cbdc29d27a978"
+      },
+      {
+        "task": "api",
+        "log_receipt": "4777d2605eb8bbd769caf913ad5669ea10546858eb5af1a4ce3bc23d1adeef03",
+        "code_receipt": "640422ed7337e2a8d570572e451ec6b2925d201af9a9ead8db9ec2227bf58513"
+      }
+    ],
+    "completed_at": "2026-11-11T05:49:07.632Z",
+    "elapsed_ms": 24414
+  },
+  "server": {
+    "fixture_source_sha256": "f23a0c49b8f2e86be60ee53029b19b97e54277a05c59bfdbcc5434c302fa128e",
+    "fixture_removed": true,
+    "test_network_removed": true,
+    "fixture_secret_file_removed": true,
+    "test_database_previous_state_restored": true,
+    "production_release": "0.22.0",
+    "production_schema": "0032",
+    "production_data_volume": "agent-hub-postgres-data",
+    "production_gateway_healthy": true,
+    "location": "server47",
+    "database": "hub_test",
+    "database_network": "agent-hub-complete-test",
+    "http_exposure": "127.0.0.1:18768 via SSH loopback tunnel",
+    "memory_bytes": 536870912,
+    "cpu_limit": 1.5,
+    "swap_disabled": true,
+    "ruff_new_fixture_passed": true
+  },
+  "boundaries": {
+    "actual_two_physical_devices": false,
+    "actual_two_humans": false,
+    "actual_native_host_trigger": false,
+    "substantive_human_or_model_code_review": false,
+    "entire_electron_process_restart": false,
+    "restart_scope": "Controller and stdio MCP bridge rebuilt; Vault and checkpoints reloaded from disk",
+    "real_business_pilot": false,
+    "real_generation_model_quality_or_billing": false,
+    "real_hindsight_comparison": false,
+    "offsite_disaster_recovery": false,
+    "macos": false,
+    "fixed_project_mcp_shared_worklog_confirmed": false
+  }
+}
