@@ -1,0 +1,706 @@
+{
+  "date": "2026-11-11",
+  "scope": "bounded-isolated-server-concurrency-and-process-crash-recovery",
+  "runtime_baseline_commit": "025ba0ca516ac11ea25d9617df9c1adc936265fa",
+  "runtime_source_matches_baseline": true,
+  "runtime_baseline_comparison": "Tracked runtime and migration bytes compared with CRLF/LF normalized. Tested file SHA-256 uses actual bytes.",
+  "final_run": {
+    "passed": true,
+    "started_unix": 1794380446.1743844,
+    "host": "server47",
+    "baseline_production": {
+      "release": "/opt/agent-hub/application/releases/0.22.0",
+      "database_container_id": "e52acea9b0729ec4c67bc8a60f5a830a854f9e3db3dae8d62aba2352a76471dc",
+      "database_started_at": "2026-11-09T04:19:28.677698281Z",
+      "production_data_volume": "agent-hub-postgres-data",
+      "api_image": "sha256:e0d64ea7ad89267715cb7f97c0299e311b39541fc342c2d490586f056c46f60c",
+      "api_container_id": "4dc84d2654d6311d83b6468993d0ed4832155d3017b1d972804aefb45d252cb1",
+      "api_started_at": "2026-11-11T03:53:23.38321956Z",
+      "schema": "0032",
+      "gateway": {
+        "healthy": true,
+        "seconds": 0.171,
+        "response": {
+          "status": "ok",
+          "phase": "P8-reviewed-knowledge",
+          "version": "0.22.0",
+          "database_schema": "0032"
+        }
+      }
+    },
+    "memory_available_before_bytes": 1531383808,
+    "resource_limits": {
+      "api": {
+        "memory_mib": 512,
+        "cpus": 0.75
+      },
+      "database": {
+        "memory_mib": 384,
+        "cpus": 0.5
+      },
+      "driver": {
+        "memory_mib": 192,
+        "cpus": 0.25
+      }
+    },
+    "swap_disabled": true,
+    "network_internal": true,
+    "published_ports": [],
+    "images": {
+      "postgres": "sha256:02379aeb6ffc220ae64ee8ba6e61bf66799a69155d6ba61bca1f88df4be6a05d",
+      "runtime": "sha256:17f827e71d66217c588d04b38c9c88f78d9d5787fe264038d21fb1c4e4d6d090"
+    },
+    "source_sha256": {
+      "scripts/run-server-resilience.py": "d9717665afb8f1b0f98a788511bfa6d23256eccda7d31d433bfe114123579dde",
+      "tests/server_resilience_fixture.py": "050576f12e6c88be5dc1d44bc2e0e29dd28fdb1922df886daac70e4c70f870f9",
+      "src/agent_hub/api.py": "ca6eb964656cd329cb7febd0ca51accbf20aaf69b741eaa10942778d64776362",
+      "src/agent_hub/db.py": "b54396a33d865796c5c69499ec5025d002189fd03a9dc05435cc84ab39a1608e",
+      "src/agent_hub/tasks.py": "dea8200f8c3985ccd3fc69e766a37ca97139293434cee0d8b5e0f832a338382b",
+      "src/agent_hub/work_archives.py": "c0651155d470b70f3a5513524fdaa67f41b30ba92702964b4bcabbef0694a7e5"
+    },
+    "production_probes": [
+      {
+        "healthy": true,
+        "seconds": 0.13,
+        "response": {
+          "status": "ok",
+          "phase": "P8-reviewed-knowledge",
+          "version": "0.22.0",
+          "database_schema": "0032"
+        }
+      },
+      {
+        "healthy": true,
+        "seconds": 0.156,
+        "response": {
+          "status": "ok",
+          "phase": "P8-reviewed-knowledge",
+          "version": "0.22.0",
+          "database_schema": "0032"
+        }
+      },
+      {
+        "healthy": true,
+        "seconds": 0.116,
+        "response": {
+          "status": "ok",
+          "phase": "P8-reviewed-knowledge",
+          "version": "0.22.0",
+          "database_schema": "0032"
+        }
+      },
+      {
+        "healthy": true,
+        "seconds": 0.2,
+        "response": {
+          "status": "ok",
+          "phase": "P8-reviewed-knowledge",
+          "version": "0.22.0",
+          "database_schema": "0032"
+        }
+      },
+      {
+        "healthy": true,
+        "seconds": 0.167,
+        "response": {
+          "status": "ok",
+          "phase": "P8-reviewed-knowledge",
+          "version": "0.22.0",
+          "database_schema": "0032"
+        }
+      },
+      {
+        "healthy": true,
+        "seconds": 0.19,
+        "response": {
+          "status": "ok",
+          "phase": "P8-reviewed-knowledge",
+          "version": "0.22.0",
+          "database_schema": "0032"
+        }
+      },
+      {
+        "healthy": true,
+        "seconds": 0.106,
+        "response": {
+          "status": "ok",
+          "phase": "P8-reviewed-knowledge",
+          "version": "0.22.0",
+          "database_schema": "0032"
+        }
+      },
+      {
+        "healthy": true,
+        "seconds": 0.125,
+        "response": {
+          "status": "ok",
+          "phase": "P8-reviewed-knowledge",
+          "version": "0.22.0",
+          "database_schema": "0032"
+        }
+      }
+    ],
+    "resource_samples": [
+      {
+        "unix": 1794380448.5748546,
+        "containers": [
+          {
+            "BlockIO": "0B / 28.2MB",
+            "CPUPerc": "49.99%",
+            "Container": "agent-hub-resilience-776daf5be6a7-db",
+            "ID": "d6bb72d120d3",
+            "MemPerc": "4.77%",
+            "MemUsage": "18.34MiB / 384MiB",
+            "Name": "agent-hub-resilience-776daf5be6a7-db",
+            "NetIO": "692B / 0B",
+            "PIDs": "2"
+          }
+        ]
+      },
+      {
+        "unix": 1794380459.8385658,
+        "containers": [
+          {
+            "BlockIO": "0B / 78.4MB",
+            "CPUPerc": "7.39%",
+            "Container": "agent-hub-resilience-776daf5be6a7-db",
+            "ID": "d6bb72d120d3",
+            "MemPerc": "14.00%",
+            "MemUsage": "53.76MiB / 384MiB",
+            "Name": "agent-hub-resilience-776daf5be6a7-db",
+            "NetIO": "862kB / 815kB",
+            "PIDs": "9"
+          },
+          {
+            "BlockIO": "0B / 0B",
+            "CPUPerc": "0.00%",
+            "Container": "agent-hub-resilience-776daf5be6a7-seed",
+            "ID": "5ea173803c75",
+            "MemPerc": "0.00%",
+            "MemUsage": "0B / 0B",
+            "Name": "agent-hub-resilience-776daf5be6a7-seed",
+            "NetIO": "0B / 0B",
+            "PIDs": "0"
+          }
+        ]
+      },
+      {
+        "unix": 1794380470.2266064,
+        "containers": [
+          {
+            "BlockIO": "0B / 78.4MB",
+            "CPUPerc": "0.02%",
+            "Container": "agent-hub-resilience-776daf5be6a7-db",
+            "ID": "d6bb72d120d3",
+            "MemPerc": "14.43%",
+            "MemUsage": "55.43MiB / 384MiB",
+            "Name": "agent-hub-resilience-776daf5be6a7-db",
+            "NetIO": "865kB / 818kB",
+            "PIDs": "10"
+          },
+          {
+            "BlockIO": "0B / 0B",
+            "CPUPerc": "0.12%",
+            "Container": "agent-hub-resilience-776daf5be6a7-api",
+            "ID": "d219bd05776c",
+            "MemPerc": "18.51%",
+            "MemUsage": "94.75MiB / 512MiB",
+            "Name": "agent-hub-resilience-776daf5be6a7-api",
+            "NetIO": "3.76kB / 2.69kB",
+            "PIDs": "2"
+          },
+          {
+            "BlockIO": "0B / 0B",
+            "CPUPerc": "25.07%",
+            "Container": "agent-hub-resilience-776daf5be6a7-driver",
+            "ID": "29f689aaadf7",
+            "MemPerc": "13.01%",
+            "MemUsage": "24.97MiB / 192MiB",
+            "Name": "agent-hub-resilience-776daf5be6a7-driver",
+            "NetIO": "516B / 0B",
+            "PIDs": "1"
+          }
+        ]
+      },
+      {
+        "unix": 1794380480.438692,
+        "containers": [
+          {
+            "BlockIO": "0B / 80.3MB",
+            "CPUPerc": "6.19%",
+            "Container": "agent-hub-resilience-776daf5be6a7-db",
+            "ID": "d6bb72d120d3",
+            "MemPerc": "21.58%",
+            "MemUsage": "82.85MiB / 384MiB",
+            "Name": "agent-hub-resilience-776daf5be6a7-db",
+            "NetIO": "1.82MB / 1.99MB",
+            "PIDs": "18"
+          },
+          {
+            "BlockIO": "0B / 2.12MB",
+            "CPUPerc": "33.36%",
+            "Container": "agent-hub-resilience-776daf5be6a7-api",
+            "ID": "d219bd05776c",
+            "MemPerc": "21.92%",
+            "MemUsage": "112.2MiB / 512MiB",
+            "Name": "agent-hub-resilience-776daf5be6a7-api",
+            "NetIO": "22.5MB / 3.2MB",
+            "PIDs": "18"
+          },
+          {
+            "BlockIO": "201kB / 0B",
+            "CPUPerc": "9.15%",
+            "Container": "agent-hub-resilience-776daf5be6a7-driver",
+            "ID": "29f689aaadf7",
+            "MemPerc": "58.49%",
+            "MemUsage": "112.3MiB / 192MiB",
+            "Name": "agent-hub-resilience-776daf5be6a7-driver",
+            "NetIO": "110kB / 14.9MB",
+            "PIDs": "5"
+          }
+        ]
+      },
+      {
+        "unix": 1794380490.4576426,
+        "containers": [
+          {
+            "BlockIO": "0B / 86.6MB",
+            "CPUPerc": "37.77%",
+            "Container": "agent-hub-resilience-776daf5be6a7-db",
+            "ID": "d6bb72d120d3",
+            "MemPerc": "27.59%",
+            "MemUsage": "106MiB / 384MiB",
+            "Name": "agent-hub-resilience-776daf5be6a7-db",
+            "NetIO": "5.45MB / 7.93MB",
+            "PIDs": "21"
+          },
+          {
+            "BlockIO": "0B / 2.12MB",
+            "CPUPerc": "74.15%",
+            "Container": "agent-hub-resilience-776daf5be6a7-api",
+            "ID": "d219bd05776c",
+            "MemPerc": "21.69%",
+            "MemUsage": "111MiB / 512MiB",
+            "Name": "agent-hub-resilience-776daf5be6a7-api",
+            "NetIO": "28.9MB / 10.5MB",
+            "PIDs": "10"
+          },
+          {
+            "BlockIO": "201kB / 4.1kB",
+            "CPUPerc": "5.06%",
+            "Container": "agent-hub-resilience-776daf5be6a7-driver",
+            "ID": "29f689aaadf7",
+            "MemPerc": "60.00%",
+            "MemUsage": "115.2MiB / 192MiB",
+            "Name": "agent-hub-resilience-776daf5be6a7-driver",
+            "NetIO": "5.75MB / 21.8MB",
+            "PIDs": "9"
+          }
+        ]
+      },
+      {
+        "unix": 1794380500.5285978,
+        "containers": [
+          {
+            "BlockIO": "0B / 91.8MB",
+            "CPUPerc": "41.56%",
+            "Container": "agent-hub-resilience-776daf5be6a7-db",
+            "ID": "d6bb72d120d3",
+            "MemPerc": "34.42%",
+            "MemUsage": "132.2MiB / 384MiB",
+            "Name": "agent-hub-resilience-776daf5be6a7-db",
+            "NetIO": "9.15MB / 13.2MB",
+            "PIDs": "28"
+          },
+          {
+            "BlockIO": "0B / 2.12MB",
+            "CPUPerc": "76.83%",
+            "Container": "agent-hub-resilience-776daf5be6a7-api",
+            "ID": "d219bd05776c",
+            "MemPerc": "22.13%",
+            "MemUsage": "113.3MiB / 512MiB",
+            "Name": "agent-hub-resilience-776daf5be6a7-api",
+            "NetIO": "34.6MB / 15.8MB",
+            "PIDs": "34"
+          },
+          {
+            "BlockIO": "201kB / 12.3kB",
+            "CPUPerc": "5.04%",
+            "Container": "agent-hub-resilience-776daf5be6a7-driver",
+            "ID": "29f689aaadf7",
+            "MemPerc": "61.43%",
+            "MemUsage": "118MiB / 192MiB",
+            "Name": "agent-hub-resilience-776daf5be6a7-driver",
+            "NetIO": "7.31MB / 22.2MB",
+            "PIDs": "33"
+          }
+        ]
+      },
+      {
+        "unix": 1794380510.4594085,
+        "containers": [
+          {
+            "BlockIO": "0B / 92.9MB",
+            "CPUPerc": "0.04%",
+            "Container": "agent-hub-resilience-776daf5be6a7-db",
+            "ID": "d6bb72d120d3",
+            "MemPerc": "22.69%",
+            "MemUsage": "87.14MiB / 384MiB",
+            "Name": "agent-hub-resilience-776daf5be6a7-db",
+            "NetIO": "10MB / 14.5MB",
+            "PIDs": "18"
+          },
+          {
+            "BlockIO": "0B / 2.12MB",
+            "CPUPerc": "0.13%",
+            "Container": "agent-hub-resilience-776daf5be6a7-api",
+            "ID": "d219bd05776c",
+            "MemPerc": "22.21%",
+            "MemUsage": "113.7MiB / 512MiB",
+            "Name": "agent-hub-resilience-776daf5be6a7-api",
+            "NetIO": "35.9MB / 17MB",
+            "PIDs": "34"
+          },
+          {
+            "BlockIO": "201kB / 16.4kB",
+            "CPUPerc": "2.15%",
+            "Container": "agent-hub-resilience-776daf5be6a7-driver",
+            "ID": "29f689aaadf7",
+            "MemPerc": "61.29%",
+            "MemUsage": "117.7MiB / 192MiB",
+            "Name": "agent-hub-resilience-776daf5be6a7-driver",
+            "NetIO": "7.89MB / 22.3MB",
+            "PIDs": "1"
+          }
+        ]
+      },
+      {
+        "unix": 1794380520.7012794,
+        "containers": [
+          {
+            "BlockIO": "0B / 11.6MB",
+            "CPUPerc": "0.01%",
+            "Container": "agent-hub-resilience-776daf5be6a7-db",
+            "ID": "d6bb72d120d3",
+            "MemPerc": "7.61%",
+            "MemUsage": "29.21MiB / 384MiB",
+            "Name": "agent-hub-resilience-776daf5be6a7-db",
+            "NetIO": "107kB / 129kB",
+            "PIDs": "11"
+          },
+          {
+            "BlockIO": "0B / 0B",
+            "CPUPerc": "0.12%",
+            "Container": "agent-hub-resilience-776daf5be6a7-api",
+            "ID": "d219bd05776c",
+            "MemPerc": "19.52%",
+            "MemUsage": "99.95MiB / 512MiB",
+            "Name": "agent-hub-resilience-776daf5be6a7-api",
+            "NetIO": "312kB / 8.74MB",
+            "PIDs": "2"
+          },
+          {
+            "BlockIO": "0B / 0B",
+            "CPUPerc": "0.00%",
+            "Container": "agent-hub-resilience-776daf5be6a7-driver",
+            "ID": "29f689aaadf7",
+            "MemPerc": "0.00%",
+            "MemUsage": "0B / 0B",
+            "Name": "agent-hub-resilience-776daf5be6a7-driver",
+            "NetIO": "0B / 0B",
+            "PIDs": "0"
+          }
+        ]
+      }
+    ],
+    "drill": {
+      "passed": true,
+      "version": "0.22.0",
+      "schema": "0032",
+      "concurrency": [
+        {
+          "concurrency": 1,
+          "requests": 160,
+          "elapsed_seconds": 3.509,
+          "requests_per_second": 45.6,
+          "latency_p50_ms": 20.51,
+          "latency_p95_ms": 31.93,
+          "latency_max_ms": 41.18,
+          "http_status_counts": {
+            "200": 128,
+            "404": 32
+          },
+          "acknowledged_writes": 32,
+          "persisted_writes": 32,
+          "expected_denials": 32,
+          "busy_responses": 0,
+          "unexpected_errors": 0
+        },
+        {
+          "concurrency": 4,
+          "requests": 160,
+          "elapsed_seconds": 4.279,
+          "requests_per_second": 37.4,
+          "latency_p50_ms": 104.9,
+          "latency_p95_ms": 155.08,
+          "latency_max_ms": 263.26,
+          "http_status_counts": {
+            "200": 128,
+            "404": 32
+          },
+          "acknowledged_writes": 32,
+          "persisted_writes": 32,
+          "expected_denials": 32,
+          "busy_responses": 0,
+          "unexpected_errors": 0
+        },
+        {
+          "concurrency": 8,
+          "requests": 160,
+          "elapsed_seconds": 4.479,
+          "requests_per_second": 35.73,
+          "latency_p50_ms": 226.1,
+          "latency_p95_ms": 304.83,
+          "latency_max_ms": 466.71,
+          "http_status_counts": {
+            "200": 128,
+            "404": 32
+          },
+          "acknowledged_writes": 32,
+          "persisted_writes": 32,
+          "expected_denials": 32,
+          "busy_responses": 0,
+          "unexpected_errors": 0
+        },
+        {
+          "concurrency": 16,
+          "requests": 160,
+          "elapsed_seconds": 4.752,
+          "requests_per_second": 33.67,
+          "latency_p50_ms": 465.24,
+          "latency_p95_ms": 653.52,
+          "latency_max_ms": 764.78,
+          "http_status_counts": {
+            "200": 128,
+            "404": 32
+          },
+          "acknowledged_writes": 32,
+          "persisted_writes": 32,
+          "expected_denials": 32,
+          "busy_responses": 0,
+          "unexpected_errors": 0
+        },
+        {
+          "concurrency": 32,
+          "requests": 160,
+          "elapsed_seconds": 4.827,
+          "requests_per_second": 33.15,
+          "latency_p50_ms": 868.45,
+          "latency_p95_ms": 1313.94,
+          "latency_max_ms": 1430.57,
+          "http_status_counts": {
+            "200": 128,
+            "404": 32
+          },
+          "acknowledged_writes": 32,
+          "persisted_writes": 32,
+          "expected_denials": 32,
+          "busy_responses": 0,
+          "unexpected_errors": 0
+        }
+      ],
+      "checks": [
+        {
+          "name": "sixteen_competing_claims_have_one_active_owner",
+          "passed": true,
+          "contenders": 16,
+          "winners": 1
+        },
+        {
+          "name": "sixteen_identical_claims_reuse_one_run",
+          "passed": true,
+          "requests": 16
+        },
+        {
+          "name": "sixteen_identical_worklogs_reuse_one_record",
+          "passed": true,
+          "requests": 16
+        },
+        {
+          "name": "concurrent_binary_backups_are_durable_and_idempotent",
+          "passed": true,
+          "concurrent_uploads": 4,
+          "distinct_snapshots": 2,
+          "changed_bytes_per_snapshot": 2097152,
+          "compressed_bytes_per_snapshot": [
+            2118697,
+            2118685
+          ]
+        },
+        {
+          "name": "eight_hundred_mixed_requests_preserve_isolation_and_write_counts",
+          "passed": true,
+          "requests": 800
+        },
+        {
+          "name": "blocked_database_locks_return_bounded_busy_and_recover",
+          "passed": true,
+          "requests": 32,
+          "busy_responses": 32,
+          "failure_batch_seconds": 6.38,
+          "five_recovery_reads_seconds": 0.165
+        },
+        {
+          "name": "api_sigkill_restart_preserves_commits_and_backups",
+          "passed": true
+        },
+        {
+          "name": "database_sigkill_restart_preserves_commits_and_backups",
+          "passed": true
+        }
+      ],
+      "faults": [
+        {
+          "kind": "api",
+          "passed": true,
+          "failure_observed": "ConnectError",
+          "outage_observed_through_verification_seconds": 4.564,
+          "authenticated_retry_after_restart_seconds": 3.734,
+          "post_restart_complete_verification_seconds": 3.956,
+          "committed_log_reused": true,
+          "retried_during_outage_log_count": 1,
+          "both_backup_bytes_and_receipts_preserved": true,
+          "operator": {
+            "signal": "SIGKILL",
+            "new_main_pid": 8962,
+            "old_main_pid": 6911,
+            "same_container": true,
+            "distinct_main_process": true
+          }
+        },
+        {
+          "kind": "database",
+          "passed": true,
+          "failure_observed": "503 SERVICE_BUSY",
+          "outage_observed_through_verification_seconds": 1.397,
+          "authenticated_retry_after_restart_seconds": 0.055,
+          "post_restart_complete_verification_seconds": 0.288,
+          "committed_log_reused": true,
+          "retried_during_outage_log_count": 1,
+          "both_backup_bytes_and_receipts_preserved": true,
+          "operator": {
+            "signal": "SIGKILL",
+            "new_main_pid": 9369,
+            "old_main_pid": 5841,
+            "same_container": true,
+            "distinct_main_process": true,
+            "api_process_preserved": true,
+            "wal_crash_recovery_observed": true
+          }
+        }
+      ],
+      "elapsed_seconds": 42.03,
+      "worklogs_final": 167,
+      "snapshots_final": 2,
+      "synthetic_access_seconds": 1800
+    },
+    "container_final_states": [
+      {
+        "kind": "db",
+        "exit_code": 0,
+        "oom_killed": false
+      },
+      {
+        "kind": "seed",
+        "exit_code": 0,
+        "oom_killed": false
+      },
+      {
+        "kind": "api",
+        "exit_code": 0,
+        "oom_killed": false
+      },
+      {
+        "kind": "driver",
+        "exit_code": 0,
+        "oom_killed": false
+      }
+    ],
+    "final_production": {
+      "release": "/opt/agent-hub/application/releases/0.22.0",
+      "database_container_id": "e52acea9b0729ec4c67bc8a60f5a830a854f9e3db3dae8d62aba2352a76471dc",
+      "database_started_at": "2026-11-09T04:19:28.677698281Z",
+      "production_data_volume": "agent-hub-postgres-data",
+      "api_image": "sha256:e0d64ea7ad89267715cb7f97c0299e311b39541fc342c2d490586f056c46f60c",
+      "api_container_id": "4dc84d2654d6311d83b6468993d0ed4832155d3017b1d972804aefb45d252cb1",
+      "api_started_at": "2026-11-11T03:53:23.38321956Z",
+      "schema": "0032",
+      "gateway": {
+        "healthy": true,
+        "seconds": 0.105,
+        "response": {
+          "status": "ok",
+          "phase": "P8-reviewed-knowledge",
+          "version": "0.22.0",
+          "database_schema": "0032"
+        }
+      }
+    },
+    "production_unchanged": true,
+    "existing_test_database_state_preserved": true,
+    "cleanup": {
+      "containers_removed": true,
+      "private_test_volume_removed": true,
+      "private_network_removed": true,
+      "random_environment_removed": true,
+      "synthetic_credentials_removed": true
+    },
+    "finished_unix": 1794380522.3802462
+  },
+  "independent_cleanup": {
+    "test_containers_remaining": "",
+    "test_volumes_remaining": "",
+    "test_networks_remaining": "",
+    "existing_test_database_running": "false",
+    "production_gateway_healthy": true,
+    "source_package_sha256": "6171b32069afcb2a6822ae19bca27a65f4be640509afa0b382cc71768d3991fc",
+    "random_environment_files_remaining": 0,
+    "synthetic_state_directories_remaining": 0
+  },
+  "development_attempts": [
+    {
+      "stage": "fixture-seeding",
+      "passed": false,
+      "reason": "Test helper passed scope twice; fixed before any load execution.",
+      "resources_cleaned": true,
+      "production_unchanged": true
+    },
+    {
+      "stage": "first-complete-run",
+      "passed": true,
+      "drill_seconds": 41.641,
+      "followup": "Formatted scripts, bound workload loop parameters and recorded production API process identity, then reran final sources."
+    }
+  ],
+  "boundaries": {
+    "real_tcp_http_and_dpop": true,
+    "normal_api_no_test_routes_or_method_patches": true,
+    "dedicated_new_database_volume_and_internal_network": true,
+    "api_and_database_sigkill": true,
+    "database_wal_crash_recovery_observed": true,
+    "already_committed_records_before_kill": true,
+    "synthetic_established_sessions": true,
+    "client_cpu_capped": true,
+    "maximum_sustainable_production_capacity_proven": false,
+    "long_duration_soak": false,
+    "login_password_throughput_or_sse_connection_scale": false,
+    "full_16_mib_backup_concurrency": false,
+    "memory_retrieval_or_model_generation_load": false,
+    "power_loss_or_disk_corruption": false,
+    "offsite_disaster_recovery": false,
+    "two_physical_devices": false,
+    "real_business_pilot": false,
+    "product_release_changed": false,
+    "fixed_project_mcp_worklog_shared": false
+  }
+}
