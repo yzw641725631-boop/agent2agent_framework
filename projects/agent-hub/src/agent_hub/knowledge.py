@@ -21,7 +21,7 @@ def base_query(project_id, repository_id=None):
     statement = select(MemoryFact, state_expression().label("state")).where(MemoryFact.project_id == project_id)
     if repository_id:
         statement = statement.where(MemoryFact.resource_id == repository_id)
-    return statement
+    return statement.execution_options(populate_existing=True)
 
 
 def get(db, project_id, fact_id, repository_id=None):
@@ -32,15 +32,42 @@ def get(db, project_id, fact_id, repository_id=None):
 
 
 def view(db, row, *, compact=False):
+    return views(db, [row], compact=compact)[0]
+
+
+def views(db, rows, *, compact=False):
+    rows = list(rows)
+    if not rows:
+        return []
+    by_project, sources = {}, {}
+    for fact, _ in rows:
+        ids = by_project.setdefault(fact.project_id, set())
+        ids.add(fact.source_card_id)
+        ids.update(uuid.UUID(c["source_card_id"]) for c in fact.additional_sources)
+    for project_id, ids in by_project.items():
+        sources.update(memory.read_cards(db, project_id, ids))
+    events = {} if compact else {event.fact_id: event for event in db.scalars(
+        select(MemoryFactEvent).where(MemoryFactEvent.fact_id.in_([row[0].id for row in rows]))
+        .distinct(MemoryFactEvent.fact_id).order_by(MemoryFactEvent.fact_id, MemoryFactEvent.version.desc())
+        .execution_options(populate_existing=True)
+    )}
+    return [_view(row, sources, events.get(row[0].id), compact=compact) for row in rows]
+
+
+def _view(row, sources, latest, *, compact):
     fact, state = row
-    source = memory.read_card(db, fact.project_id, fact.source_card_id)
+    def source_card(value):
+        if str(value) not in sources:
+            raise HubError("MEMORY_NOT_FOUND", 404)
+        return sources[str(value)]
+    source = source_card(fact.source_card_id)
     result = {"id": str(fact.id), "topic": fact.topic, "kind": fact.kind, "title": fact.title, "body": fact.body,
               "state": state, "review_state": fact.status, "version": fact.version, "content_hash": fact.content_hash,
               "source_card_id": str(fact.source_card_id), "source_hash": fact.source_hash, "source": source["source"],
               "line_start": source["line_start"], "line_end": source["line_end"],
               "content_trust": "untrusted-project-data"}
     result["additional_sources"] = [{**citation,
-        "source": memory.read_card(db, fact.project_id, uuid.UUID(citation["source_card_id"]))["source"]}
+        "source": source_card(citation["source_card_id"])["source"]}
         for citation in fact.additional_sources]
     result["experience_id"] = "EXP-" + str(fact.id)
     result["revision"] = digest({"kind": "knowledge", "id": str(fact.id), "version": fact.version,
@@ -49,8 +76,6 @@ def view(db, row, *, compact=False):
         for citation in result["additional_sources"]:
             citation.pop("source_quote")
     if not compact:
-        latest = db.scalar(select(MemoryFactEvent).where(MemoryFactEvent.fact_id == fact.id)
-                           .order_by(MemoryFactEvent.version.desc()).limit(1))
         result.update(source_quote=fact.source_quote, generation=fact.generation, author_id=str(fact.author_id),
                       created_at=fact.created_at.isoformat(), state_reason=latest.reason if latest else "",
                       reviewer_id=str(latest.author_id) if latest and latest.author_id and latest.state != "pending" else None,
@@ -69,7 +94,7 @@ def search(db, project_id, body, *, compact=False):
     exact = re.fullmatch(r"EXP-([a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12})", body.query.strip(), re.I)
     if exact:
         rows = list(db.execute(statement.where(MemoryFact.id == uuid.UUID(exact[1]))))
-        return {"items": [view(db, row, compact=compact) for row in rows[body.offset:body.offset + body.limit]],
+        return {"items": views(db, rows[body.offset:body.offset + body.limit], compact=compact),
                 "has_more": False, "next_offset": body.offset + len(rows),
                 "search_mode": "authorized-exact-experience-id", "semantic_search": "not-used-exact-id",
                 "review_required": True, "content_trust": "untrusted-project-data"}
@@ -79,8 +104,8 @@ def search(db, project_id, body, *, compact=False):
     hybrid = semantic.hybrid_rows(db, statement, MemoryFact, score, matches, body, kind="fact")
     if hybrid is not None:
         rows, methods, meta = hybrid
-        return {"items": [{**view(db, row, compact=compact), "retrieved_by": methods[str(row[0].id)]}
-                          for row in rows[:body.limit]], "has_more": len(rows) > body.limit,
+        return {"items": [{**item, "retrieved_by": methods[item["id"]]}
+                          for item in views(db, rows[:body.limit], compact=compact)], "has_more": len(rows) > body.limit,
                 "next_offset": body.offset + min(len(rows), body.limit), **meta,
                 "review_required": True, "content_trust": "untrusted-project-data"}
     if matches:
@@ -89,7 +114,7 @@ def search(db, project_id, body, *, compact=False):
     statement = statement.order_by(score.desc() if not isinstance(score, int) else MemoryFact.created_at.desc(),
                                    MemoryFact.created_at.desc(), MemoryFact.id)
     rows = list(db.execute(statement.offset(body.offset).limit(body.limit + 1)))
-    return {"items": [view(db, row, compact=compact) for row in rows[:body.limit]],
+    return {"items": views(db, rows[:body.limit], compact=compact),
             "has_more": len(rows) > body.limit, "next_offset": body.offset + min(len(rows), body.limit),
             "search_mode": "authorized-reviewed-knowledge-keywords", "semantic_search": semantic.query_state(db, body).state,
             "review_required": True, "content_trust": "untrusted-project-data"}

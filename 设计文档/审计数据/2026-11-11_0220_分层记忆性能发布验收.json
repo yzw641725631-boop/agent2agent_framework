@@ -1,0 +1,313 @@
+{
+  "schema": 1,
+  "created_at": "2026-11-11T03:54:34.210056+00:00",
+  "scope": "native-layered-memory-retrieval-performance-and-live-source-authorization",
+  "backend": "0.22.0",
+  "database_schema": "0032",
+  "desktop": "0.23.1",
+  "desktop_changed": false,
+  "tests": {
+    "full": {
+      "passed": 404,
+      "failed": 0,
+      "sha256": "e6f32ba8aeae254891b8c26177678e88dfdf79f81655dba027333b316604f5a6"
+    },
+    "targeted": {
+      "passed": 56,
+      "failed": 0,
+      "sha256": "d0451eb62c272da2ad72b80cbf101d1b5360e845b99ecaba0c9be73379b05d8b"
+    },
+    "benchmark": {
+      "passed": 1,
+      "failed": 0,
+      "sha256": "21e0088cabe7ae14f8368e1386542cd4c736ca6c457d25b5757fec121f813c4b"
+    },
+    "previous-runtime": {
+      "passed": 401,
+      "failed": 0,
+      "sha256": "fda84d49d2fd61dc75a4961f66d046c5bf2f03180f4efd6296771bf00327be81"
+    }
+  },
+  "test_resource_limits": {
+    "memory_mib": 512,
+    "cpus": 1.5,
+    "swap_disabled": true,
+    "database_and_model_on_server_47": true
+  },
+  "response_equivalence": {
+    "cases": 24,
+    "identical_complete_responses": 24,
+    "different_cases": [],
+    "same_fixture": true,
+    "same_rls_schema": "0032",
+    "paths": [
+      "keyword",
+      "hybrid",
+      "startup",
+      "recall",
+      "repeat"
+    ]
+  },
+  "benchmark": {
+    "source_class": "synthetic",
+    "cases": 24,
+    "corpus_sizes": [
+      87,
+      536,
+      2073
+    ],
+    "report": "2026-11-11_0220_分层记忆性能复测.json",
+    "embedding_model": "bge-small-zh-v1.5-fp32-75c43b0-cls-mean384s320-v1",
+    "largest_layered": {
+      "cases": 24,
+      "context_support_passed": 23,
+      "expected_facts": 19,
+      "missing_facts": 1,
+      "fact_context_recall": 0.9474,
+      "critical_rules_missed": 0,
+      "stale_or_conflicted_exposures": 0,
+      "unauthorized_exposures": 0,
+      "total_reference_tokens": 187061,
+      "response_reference_tokens": 186588,
+      "median_ms": 911.536,
+      "p95_ms": 1166.7,
+      "sql_queries": 561,
+      "embedding_requests": 23,
+      "retries": 0
+    },
+    "peak_process_rss_bytes": 234549248,
+    "largest_repeat_delta": {
+      "case": "repeat-delta",
+      "category": "incremental",
+      "strategy": "layered",
+      "expected_facts": 1,
+      "missing_facts": 0,
+      "context_support_pass": true,
+      "stale_or_conflicted_exposures": 0,
+      "unauthorized_exposures": 0,
+      "critical_rules_missed": 0,
+      "request_reference_tokens": 17,
+      "response_reference_tokens": 8063,
+      "complete_input_reference_tokens": 8080,
+      "serialized_response_bytes": 20926,
+      "elapsed_ms": 828.202,
+      "sql_queries": 24,
+      "repeat_sql_queries": 12,
+      "repeat_elapsed_ms": 520.718,
+      "embedding_requests": 1,
+      "retries": 0,
+      "recall_budget_respected": true,
+      "repeat_response_reference_tokens": 3689,
+      "repeat_unchanged": 8
+    }
+  },
+  "synthetic_upgrade": {
+    "business_contents_disclosed": false,
+    "database_schema": "0032",
+    "mode": "upgrade",
+    "passed": true,
+    "structure_verified": false,
+    "verified_rows": 211,
+    "verified_tables": 79
+  },
+  "synthetic_restore": {
+    "business_contents_disclosed": false,
+    "database_schema": "0032",
+    "mode": "exact",
+    "passed": true,
+    "structure_verified": true,
+    "verified_rows": 212,
+    "verified_tables": 80
+  },
+  "fresh_schema": {
+    "passed": true,
+    "database_schema": "0032",
+    "tables": 80,
+    "fresh_and_upgraded_structure_equal": true,
+    "database_and_docker_only_on_server": true
+  },
+  "synthetic_memory": {
+    "passed": true,
+    "synthetic_only": true,
+    "counts": {
+      "database_schema": "0032",
+      "worklogs": 2
+    },
+    "verified_archives": 1,
+    "memory": {
+      "documents": 1,
+      "exact_originals": 1,
+      "cards": 3,
+      "knowledge_facts": 1,
+      "knowledge_events": 2,
+      "semantic_vectors": 4,
+      "errors": [],
+      "healthy": true
+    }
+  },
+  "production_upgrade": {
+    "business_contents_disclosed": false,
+    "database_schema": "0032",
+    "mode": "upgrade",
+    "passed": true,
+    "structure_verified": true,
+    "verified_rows": 82,
+    "verified_tables": 79,
+    "schema": 1,
+    "application_version": "0.22.0",
+    "previous_application_version": "0.21.0",
+    "previous_database_schema": "0031",
+    "image_id": "sha256:e0d64ea7ad89267715cb7f97c0299e311b39541fc342c2d490586f056c46f60c",
+    "created_at": "2026-11-11T03:53:41.827688+00:00",
+    "production_volume_preserved": true,
+    "migration_performed": true,
+    "business_pilot_performed": false,
+    "first_install_structure_bound": true
+  },
+  "backup_restore": {
+    "passed": true,
+    "application_version": "0.22.0",
+    "database_schema": "0032",
+    "verified_tables": 80,
+    "verified_rows": 83,
+    "database_inventory_verified": true,
+    "structure_verified": true,
+    "role_bindings_verified": true,
+    "verified_archives": 0,
+    "memory": {
+      "documents": 0,
+      "exact_originals": 0,
+      "cards": 0,
+      "knowledge_facts": 0,
+      "knowledge_events": 0,
+      "semantic_vectors": 0,
+      "errors": [],
+      "healthy": true
+    }
+  },
+  "backup_full_repository_check": true,
+  "ops": {
+    "schema": 1,
+    "created_at": "2026-11-11T03:54:09.870047+00:00",
+    "checks": [
+      {
+        "id": "container:agent-hub-postgres",
+        "state": "ok"
+      },
+      {
+        "id": "container:agent-hub-app-api-1",
+        "state": "ok"
+      },
+      {
+        "id": "container:agent-hub-app-document-worker-1",
+        "state": "ok"
+      },
+      {
+        "id": "container:agent-hub-app-memory-worker-1",
+        "state": "ok"
+      },
+      {
+        "id": "container:agent-hub-app-embedding-1",
+        "state": "ok"
+      },
+      {
+        "id": "container:agent-hub-app-embedding-worker-1",
+        "state": "ok"
+      },
+      {
+        "id": "container:agent-hub-app-generation-worker-1",
+        "state": "ok"
+      },
+      {
+        "id": "container:agent-hub-edge",
+        "state": "ok"
+      },
+      {
+        "id": "database:query",
+        "state": "ok"
+      },
+      {
+        "id": "memory:queue",
+        "state": "ok"
+      },
+      {
+        "id": "semantic:queue",
+        "state": "ok"
+      },
+      {
+        "id": "generation:manual-recovery",
+        "state": "ok",
+        "needs_attention": 0
+      },
+      {
+        "id": "public:https",
+        "state": "ok",
+        "version": "0.22.0"
+      },
+      {
+        "id": "desktop:signed-feed",
+        "state": "ok",
+        "version": "0.23.1",
+        "remaining_hours": 718
+      },
+      {
+        "id": "disk:capacity",
+        "state": "ok",
+        "free_bytes": 13234171904
+      },
+      {
+        "id": "agent-hub-backup",
+        "state": "ok",
+        "age_hours": 0.0,
+        "maximum_hours": 36
+      },
+      {
+        "id": "agent-hub-archive-audit",
+        "state": "ok",
+        "age_hours": 9.6,
+        "maximum_hours": 36
+      },
+      {
+        "id": "agent-hub-restore-drill",
+        "state": "ok",
+        "age_hours": 0.0,
+        "maximum_hours": 1080
+      },
+      {
+        "id": "offsite:continuous-copy",
+        "state": "warning",
+        "configured": false
+      },
+      {
+        "id": "alerts:external-delivery",
+        "state": "warning",
+        "configured": false
+      }
+    ],
+    "healthy": true,
+    "has_warnings": true,
+    "scope": "local-operator-checks-only"
+  },
+  "image_id": "sha256:e0d64ea7ad89267715cb7f97c0299e311b39541fc342c2d490586f056c46f60c",
+  "rollback_image_id": "sha256:199121c8c4b81384d7041eb298486469ca68a89231ccec8d529d299461f95edd",
+  "installed_modules_verified": 62,
+  "rollback_adaptation": "0.21.0-business-code-with-schema-0032-constant",
+  "source_archive_sha256": "d2c4c5e56303960910c9c5b7f8646c3388a410923e230152b45267c08b1e4cb9",
+  "desktop_feed": {
+    "version": "0.23.1",
+    "metadata_sequence": 25,
+    "signed_feed_unchanged": true,
+    "no_repackaging": true
+  },
+  "shared_worklog_confirmed": false,
+  "work_record_scope": "repository-design-documents; no fixed project MCP connection",
+  "not_measured": [
+    "completion-answer-correctness",
+    "provider-billing",
+    "real-Hindsight",
+    "offsite-replication",
+    "all-host-physical-tests",
+    "macOS",
+    "Authenticode"
+  ]
+}

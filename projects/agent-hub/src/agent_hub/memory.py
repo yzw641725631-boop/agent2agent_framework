@@ -6,7 +6,7 @@ import uuid
 
 from sqlalchemy import case, exists, func, or_, select, tuple_, update
 from sqlalchemy.dialects.postgresql import insert
-from sqlalchemy.orm import aliased
+from sqlalchemy.orm import aliased, load_only
 
 from .models import (
     DocumentVersion,
@@ -103,15 +103,33 @@ def lifecycle_expression():
                 (MemoryCard.document_id.is_not(None) & ~current_document, "superseded"), else_="active")
 
 
-def base_query(project_id, repository_id=None):
-    statement = (select(MemoryCard, Worklog, DocumentVersion, Task.repository_id, lifecycle_expression().label("state"))
+def scope_query(project_id, repository_id=None):
+    """Rank/count under source RLS without joining full citation rows per card."""
+    statement = (select(MemoryCard, Worklog.task_id, lifecycle_expression().label("state"))
                  .outerjoin(Worklog, Worklog.id == MemoryCard.worklog_id)
-                 .outerjoin(Task, Task.id == Worklog.task_id)
-                 .outerjoin(DocumentVersion, DocumentVersion.id == MemoryCard.document_id)
                  .where(MemoryCard.project_id == project_id))
     if repository_id:
-        statement = statement.where(or_(Task.repository_id == repository_id, DocumentVersion.source_id == repository_id))
-    return statement
+        statement = statement.where(or_(
+            Worklog.task_id.in_(select(Task.id).where(Task.repository_id == repository_id)),
+            MemoryCard.document_id.in_(select(DocumentVersion.id).where(DocumentVersion.source_id == repository_id)),
+        ))
+    return statement.execution_options(populate_existing=True)
+
+
+def base_query(project_id, repository_id=None):
+    statement = (scope_query(project_id, repository_id)
+                 .with_only_columns(MemoryCard, Worklog, DocumentVersion, Task.repository_id,
+                                    lifecycle_expression().label("state"))
+                 .outerjoin(Task, Task.id == Worklog.task_id)
+                 .outerjoin(DocumentVersion, DocumentVersion.id == MemoryCard.document_id))
+    # Source bodies are available through original(); citations only need metadata.
+    return statement.options(
+        load_only(Worklog.id, Worklog.task_id, Worklog.git_commit, Worklog.receipt_hash,
+                  Worklog.created_at, Worklog.outcome),
+        load_only(DocumentVersion.id, DocumentVersion.source_id, DocumentVersion.project_id,
+                  DocumentVersion.path, DocumentVersion.git_commit, DocumentVersion.snapshot_id,
+                  DocumentVersion.sha256, DocumentVersion.content_hash, DocumentVersion.exact_bytes),
+    ).execution_options(populate_existing=True)
 
 
 def source_reference(log, doc, repository_id):
@@ -128,9 +146,23 @@ def source_reference(log, doc, repository_id):
 
 
 def card_view(db, row):
+    return card_views(db, [row])[0]
+
+
+def card_views(db, rows):
+    rows = list(rows)
+    if not rows:
+        return []
+    events = {event.card_id: event for event in db.scalars(
+        select(MemoryEvent).where(MemoryEvent.card_id.in_([row[0].id for row in rows]))
+        .distinct(MemoryEvent.card_id).order_by(MemoryEvent.card_id, MemoryEvent.version.desc())
+        .execution_options(populate_existing=True)
+    )}
+    return [_card_view(row, events.get(row[0].id)) for row in rows]
+
+
+def _card_view(row, event):
     card, log, doc, rid, state = row
-    event = db.scalar(select(MemoryEvent).where(MemoryEvent.card_id == card.id)
-                      .order_by(MemoryEvent.version.desc()).limit(1))
     return {"id": str(card.id), "title": card.title, "body": card.body,
             "state": state, "state_version": event.version if event else 0,
             "state_reason": event.reason if event else "",
@@ -152,21 +184,23 @@ def terms(query):
 
 def search(db, project_id, body, *, task=None):
     from . import semantic
-    statement = base_query(project_id, body.repository_id)
+    statement = scope_query(project_id, body.repository_id)
+    hydration = base_query(project_id, body.repository_id)
     state = lifecycle_expression()
     if not body.include_history:
         statement = statement.where(state == "active")
+        hydration = hydration.where(state == "active")
     keywords = terms(body.query)
     matches = [func.strpos(func.lower(MemoryCard.title + "\n" + MemoryCard.body), word) > 0 for word in keywords]
     score = sum((case((condition, 1), else_=0) for condition in matches), 0)
     if task:
         score = score + case((Worklog.task_id == task.id, 100), else_=0)
-        db.info["semantic_task_id"] = task.id
     hybrid = semantic.hybrid_rows(db, statement, MemoryCard, score, matches, body, kind="card",
-                                   priority=Worklog.task_id == task.id if task else None)
+                                   priority=Worklog.task_id == task.id if task else None,
+                                   hydrate=hydration)
     if hybrid is not None:
         rows, methods, meta = hybrid
-        items = [{**card_view(db, row), "retrieved_by": methods[str(row[0].id)]} for row in rows[:body.limit]]
+        items = [{**item, "retrieved_by": methods[item["id"]]} for item in card_views(db, rows[:body.limit])]
         return {"items": items, "has_more": len(rows) > body.limit, "next_offset": body.offset + len(items),
                 **meta, "content_trust": "untrusted-project-data"}
     if task:
@@ -176,8 +210,11 @@ def search(db, project_id, body, *, task=None):
         statement = statement.where(or_(*matches))
     statement = statement.order_by(score.desc() if not isinstance(score, int) else MemoryCard.created_at.desc(),
                                    MemoryCard.created_at.desc(), MemoryCard.id, MemoryCard.ordinal)
-    rows = list(db.execute(statement.offset(body.offset).limit(body.limit + 1)))
-    items = [card_view(db, row) for row in rows[:body.limit]]
+    ids = list(db.scalars(statement.with_only_columns(MemoryCard.id).offset(body.offset).limit(body.limit + 1)))
+    hydrated = {row[0].id: row for row in db.execute(
+        hydration.where(MemoryCard.id.in_(ids)))} if ids else {}
+    rows = [hydrated[value] for value in ids if value in hydrated]
+    items = card_views(db, rows[:body.limit])
     return {"items": items, "has_more": len(rows) > body.limit, "next_offset": body.offset + len(items),
             "search_mode": "authorized-literal-keywords", "semantic_search": semantic.query_state(db, body).state,
             "content_trust": "untrusted-project-data"}
@@ -190,10 +227,17 @@ def read_card(db, project_id, card_id, *, repository_id=None):
     return card_view(db, row)
 
 
+def read_cards(db, project_id, card_ids, *, repository_id=None):
+    if not card_ids:
+        return {}
+    rows = db.execute(base_query(project_id, repository_id).where(MemoryCard.id.in_(card_ids)))
+    return {item["id"]: item for item in card_views(db, rows)}
+
+
 def status(db, project_id, repository_id=None):
     from . import knowledge, semantic
     # Count only rows whose original source is currently visible to this session.
-    cards = base_query(project_id, repository_id).subquery()
+    cards = scope_query(project_id, repository_id).subquery()
     counts = dict(db.execute(select(cards.c.state, func.count()).group_by(cards.c.state)).all())
     jobs = select(MemoryJob.status, func.count()).where(MemoryJob.project_id == project_id)
     if repository_id:
@@ -206,13 +250,13 @@ def status(db, project_id, repository_id=None):
     fact_query = knowledge.base_query(project_id, repository_id).where(
         MemoryFact.status == "active",
         func.hub.knowledge_sources_current(MemoryFact.source_card_id, MemoryFact.additional_sources))
-    card_coverage = semantic.coverage(db, base_query(project_id, repository_id).where(lifecycle_expression() == "active"),
+    card_coverage = semantic.coverage(db, scope_query(project_id, repository_id).where(lifecycle_expression() == "active"),
                                       MemoryCard, "card")
     fact_coverage = semantic.coverage(db, fact_query, MemoryFact, "fact")
     job_query = select(EmbeddingJob.status, func.count()).where(EmbeddingJob.project_id == project_id,
                                                               EmbeddingJob.model == semantic.MODEL)
     if repository_id:
-        visible_cards = base_query(project_id, repository_id).with_only_columns(MemoryCard.id)
+        visible_cards = scope_query(project_id, repository_id).with_only_columns(MemoryCard.id)
         visible_facts = knowledge.base_query(project_id, repository_id).with_only_columns(MemoryFact.id)
         job_query = job_query.where(or_(EmbeddingJob.card_id.in_(visible_cards), EmbeddingJob.fact_id.in_(visible_facts)))
     embeddings = {"model": semantic.MODEL, "dimensions": semantic.DIMENSIONS,

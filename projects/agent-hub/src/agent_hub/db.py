@@ -16,7 +16,9 @@ def session_factory(settings: Settings, *, security=False):
         pool_timeout=3,
         connect_args={
             "connect_timeout": 5,
-            "options": "-c timezone=UTC -c lock_timeout=3000 -c statement_timeout=10000 "
+            # RLS-heavy interactive reads spend seconds compiling JIT code for
+            # millisecond scans. Keep these bounded service sessions interpreted.
+            "options": "-c timezone=UTC -c jit=off -c lock_timeout=3000 -c statement_timeout=10000 "
             "-c idle_in_transaction_session_timeout=15000",
         },
     )

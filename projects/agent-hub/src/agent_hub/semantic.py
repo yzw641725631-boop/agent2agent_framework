@@ -99,7 +99,7 @@ def embedding_table(kind):
     return MemoryEmbedding if kind == "card" else KnowledgeEmbedding
 
 
-def hybrid_rows(db, statement, entity, score, matches, body, *, kind, priority=None):
+def hybrid_rows(db, statement, entity, score, matches, body, *, kind, priority=None, hydrate=None):
     """Rank only rows visible through the caller's original-source RLS.
 
     Exact search deliberately has no ANN index. Both lists are capped; paging
@@ -130,17 +130,19 @@ def hybrid_rows(db, statement, entity, score, matches, body, *, kind, priority=N
         table.dimensions == DIMENSIONS,
         table.content_hash == source_hash,
     ]
+    # Rank IDs rather than repeatedly transferring complete source documents.
+    ranked = statement.with_only_columns(entity.id, (priority if priority is not None else literal(False)).label("priority"))
     semantic = list(
         db.execute(
-            statement.join(table, conditions[0])
+            ranked.join(table, conditions[0])
             .where(*conditions[1:])
             .order_by(distance, entity.id)
             .limit(MAX_CANDIDATES)
         )
     )
-    literal_query = statement.where(or_(*matches)) if matches else statement
+    literal_query = ranked.where(or_(*matches)) if matches else ranked
     if priority is not None:
-        literal_query = statement.where(or_(priority, *matches))
+        literal_query = ranked.where(or_(priority, *matches))
     literal_rows = list(
         db.execute(
             literal_query.order_by(
@@ -153,7 +155,7 @@ def hybrid_rows(db, statement, entity, score, matches, body, *, kind, priority=N
     ranks, rows, methods = {}, {}, {}
     for method, candidates in (("keyword", literal_rows), ("semantic", semantic)):
         for rank, row in enumerate(candidates, 1):
-            item_id = row[0].id
+            item_id = row[0]
             rows[item_id] = row
             ranks[item_id] = ranks.get(item_id, 0) + 1 / (60 + rank)
             methods.setdefault(item_id, []).append(method)
@@ -163,7 +165,7 @@ def hybrid_rows(db, statement, entity, score, matches, body, *, kind, priority=N
         key=lambda key: (
             -int(
                 priority is not None
-                and getattr(rows[key][1], "task_id", None) == db.info.get("semantic_task_id")
+                and bool(rows[key][1])
             ),
             -ranks[key],
             str(key),
@@ -179,7 +181,9 @@ def hybrid_rows(db, statement, entity, score, matches, body, *, kind, priority=N
         "candidate_limit_reached": len(semantic) == MAX_CANDIDATES or len(literal_rows) == MAX_CANDIDATES,
         "ranking_meaning": "relative reciprocal ranks; not relevance probabilities or verified facts",
     }
-    return [rows[key] for key in selected], {str(key): methods[key] for key in selected}, metadata
+    hydration_query = statement if hydrate is None else hydrate
+    hydrated = {row[0].id: row for row in db.execute(hydration_query.where(entity.id.in_(selected)))} if selected else {}
+    return [hydrated[key] for key in selected if key in hydrated], {str(key): methods[key] for key in selected}, metadata
 
 
 # Keep pgvector optional in the Python runtime; PostgreSQL validates the actual type.
@@ -198,11 +202,10 @@ def coverage(db, statement, entity, kind):
         func.sha256(func.convert_to(topic + entity.title + "\n" + entity.body, "UTF8")), "hex"
     )
     visible = statement.with_only_columns(entity.id, expected.label("expected")).order_by(None).subquery()
-    total = db.scalar(select(func.count()).select_from(visible))
-    indexed = db.scalar(
-        select(func.count())
+    total, indexed = db.execute(
+        select(func.count(), func.count(key))
         .select_from(visible)
-        .join(table, key == visible.c.id)
-        .where(table.model == MODEL, table.dimensions == DIMENSIONS, table.content_hash == visible.c.expected)
-    )
+        .outerjoin(table, (key == visible.c.id) & (table.model == MODEL) & (table.dimensions == DIMENSIONS)
+                   & (table.content_hash == visible.c.expected))
+    ).one()
     return {"visible": total, "indexed": indexed, "pending_or_failed": total - indexed}

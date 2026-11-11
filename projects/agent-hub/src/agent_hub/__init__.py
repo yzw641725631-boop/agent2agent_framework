@@ -1,4 +1,4 @@
 """Agent Hub control plane."""
 
-__version__ = "0.21.0"
-SCHEMA_REVISION = "0031"
+__version__ = "0.22.0"
+SCHEMA_REVISION = "0032"

@@ -3690,6 +3690,30 @@ ALTER TABLE tasks ADD COLUMN workflow_runtime jsonb NOT NULL DEFAULT '{}';
 
 UPDATE alembic_version SET version_num='0031' WHERE alembic_version.version_num = '0030';
 
+-- Running upgrade 0031 -> 0032
+
+ALTER POLICY card_read ON memory_cards USING (
+            CASE WHEN worklog_id IS NOT NULL THEN
+              worklog_id IN (SELECT w.id FROM public.worklogs w)
+            ELSE document_id IN (SELECT d.id FROM public.document_versions d) END
+          );
+
+ALTER POLICY job_read ON memory_jobs USING (
+            CASE WHEN worklog_id IS NOT NULL THEN
+              worklog_id IN (SELECT w.id FROM public.worklogs w)
+            ELSE document_id IN (SELECT d.id FROM public.document_versions d) END
+          );
+
+ALTER POLICY embedding_read ON memory_embeddings USING (
+        card_id IN (SELECT c.id FROM public.memory_cards c));
+      ALTER POLICY knowledge_embedding_read ON knowledge_embeddings USING (
+        fact_id IN (SELECT f.id FROM public.memory_facts f));
+      ALTER POLICY embedding_job_read ON embedding_jobs USING (
+        (card_id IS NOT NULL AND (card_id,project_id) IN (SELECT c.id,c.project_id FROM public.memory_cards c))
+        OR (fact_id IS NOT NULL AND (fact_id,project_id) IN (SELECT f.id,f.project_id FROM public.memory_facts f)));;
+
+UPDATE alembic_version SET version_num='0032' WHERE alembic_version.version_num = '0031';
+
 COMMIT;
 
 

@@ -1,6 +1,6 @@
 # Agent Hub：身份与项目基础服务
 
-> 2026-11-11｜0.21.0 / 迁移 0031，配套 Windows 0.23.1：支持大仓库 v2 工作树快照、流式校验与加密存储、按文件读取审查源码；提供 24 个代表问题的原生长期记忆与参考 Token 成本基准。继续使用现有服务器数据库，结构保持 0031。操作、验证与边界见[大仓库交接与长期记忆基准](../../设计文档/40_大仓库交接与长期记忆基准.md)。
+> 2026-11-11｜0.22.0 / 迁移 0032，配套 Windows 0.23.1：批量核验记忆来源权限，按需读取排序结果和来源元数据，批量校验已读版本，合并索引覆盖统计，并关闭服务连接的JIT编译。操作、同组基准与边界见[分层记忆检索性能优化](../../设计文档/41_分层记忆检索性能优化.md)。大仓库交接继续使用[0.21.0版能力](../../设计文档/40_大仓库交接与长期记忆基准.md)。
 
 本服务提供身份、设备审批、逐仓库授权、任务租约、不可覆盖工作日志、代码快照、Git 回执及共享记忆，含 REST API、中文后台、PostgreSQL 迁移和运维 CLI。通过 [桌面端](../agent-hub-desktop/README.md) 提供本机 stdio MCP。配套[私有模型服务](../agent-hub-embedding/README.md)，语义故障明示退回关键词。文档接入见 [Git 文档索引](../../设计文档/11_Git文档索引与MCP查询.md)。
 
@@ -64,7 +64,7 @@
 | `src/agent_hub/generation_provider.py` | 有界的兼容 OpenAI 请求，不自动重试 |
 | `src/agent_hub/generation_worker.py` | 独立角色的后台生成、撤权复核和执行回执 |
 | `src/agent_hub/guide_lifecycle.py` | 已发布说明的修订、审核、历史、归档和反馈 |
-| `migrations/versions/` | 版本化数据库迁移，当前到 0031 |
+| `migrations/versions/` | 版本化数据库迁移，当前到 0032 |
 | `tests/` | 真实 PostgreSQL 上的权限与会话测试 |
 | `deploy/compose.server-db.yaml` | 已在指定服务器运行的数据库配置 |
 | `deploy/compose.server-app.yaml` | 已部署的应用配置，复用服务器数据库 |
@@ -80,14 +80,14 @@
 |---|---|
 | 部署目录 | `/opt/agent-hub/database` |
 | 容器 | `agent-hub-postgres`，PostgreSQL 18.6 |
-| 数据库 | `agent_hub`，本轮迁移 `0031`，实际状态见发布验收回执 |
+| 数据库 | `agent_hub`，本轮迁移 `0032`，实际状态见发布验收回执 |
 | 数据卷 | `agent-hub-postgres-data` |
 | 私有网络 | `agent-hub-database`，内部主机名 `postgres:5432` |
 | 运行/迁移角色 | `hub_runtime` / `hub_owner` |
 | 文档 Worker | `hub_document_worker` 登录，继承 `hub_indexer`；与 API 角色分开 |
 | 凭证 | 服务器 `.env`，root 所有，权限 `0600` |
 | 对外端口 | 数据库不发布宿主机或公网端口 |
-| 应用目录 | `/opt/agent-hub/application/current`，本轮目录 `releases/0.21.0` |
+| 应用目录 | `/opt/agent-hub/application/current`，本轮目录 `releases/0.22.0` |
 | 应用容器 | `agent-hub-app-api-1`，仅发布服务器 `127.0.0.1:8765` |
 | 公网入口 | `https://47.109.23.86:18180`，容器 `agent-hub-edge` |
 | 入口与证书状态 | `/opt/agent-hub/edge`；每六小时检查证书续期 |
@@ -108,6 +108,8 @@ PostgreSQL 初始化脚本只在空数据卷执行；后续变更通过 owner �
 首次建立独立角色需在服务器运行 `deploy/provision-generation-worker.sh`。历史版本的升级脚本保留；0.19.0 → 0.20.0 使用 `deploy/upgrade-server-0200.sh`，数据库迁移到 0031，不重新初始化生产卷。升级前完成非空数据升级、恢复、候选镜像和旧业务代码回退验证，再执行生产备份与停写迁移。生成契约见[服务端 AI](../../设计文档/35_服务端AI与操作说明维护.md)，本轮操作见[流程控制说明](../../设计文档/39_流程限制与人工处理.md)。
 
 0.20.0 → 0.21.0 使用 `deploy/upgrade-server-0210.sh`，数据库结构保持 0031。回退业务镜像明确带入 v2 档案兼容模块，旧发布目录保持原样。只有完整回归、容量交接、非空恢复和镜像摘要核验通过后才执行；网关使用新的配置目录。
+
+0.21.0 → 0.22.0 使用 `deploy/upgrade-server-0220.sh`，0032仅调整五项记忆读取RLS策略，授权集合仍由调用者当前可见的原文生成。先完成全量回归、24个问题三档规模复测、非空升级与恢复、首次安装结构一致性及回退镜像核验，再备份、停写迁移并核对业务数据。回退使用另建的0.21.0兼容镜像，仅适配0032结构常量；按脚本的`--no-deps`方式启动业务进程，保留0032结构和备份。
 
 ## 超管初始化与设备密钥
 

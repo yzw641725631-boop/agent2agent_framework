@@ -1,0 +1,16 @@
+# Separate 0.21.0 runtime with only the supported schema constant adapted to 0032.
+services:
+  migrate:
+    image: agent-hub:0.21.0-memory-compatible
+  api:
+    image: agent-hub:0.21.0-memory-compatible
+  document-worker:
+    image: agent-hub:0.21.0-memory-compatible
+  memory-worker:
+    image: agent-hub:0.21.0-memory-compatible
+  embedding-worker:
+    image: agent-hub:0.21.0-memory-compatible
+  generation-worker:
+    image: agent-hub:0.21.0-memory-compatible
+  archive-maintenance:
+    image: agent-hub:0.21.0-memory-compatible

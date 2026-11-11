@@ -47,21 +47,32 @@ def entry(kind, item):
 
 def current(db, project_id, kind, value, repository_id):
     """Inaccessible, withdrawn and nonexistent IDs have the same public result."""
-    if kind == "knowledge":
-        row = db.execute(
+    return current_many(db, project_id, [(kind, value)], repository_id).get((kind, str(value)))
+
+
+def current_many(db, project_id, references, repository_id):
+    """Revalidate under current RLS on every call; never reuse an authority cache."""
+    references = list(references)
+    result = {}
+    fact_ids = [value for kind, value in references if kind == "knowledge"]
+    card_ids = [value for kind, value in references if kind == "card"]
+    if fact_ids:
+        rows = db.execute(
             knowledge.base_query(project_id, repository_id).where(
-                MemoryFact.id == value,
+                MemoryFact.id.in_(fact_ids),
                 MemoryFact.status == "active",
                 func.hub.knowledge_sources_current(MemoryFact.source_card_id, MemoryFact.additional_sources),
             )
-        ).first()
-        return knowledge.view(db, row, compact=True) if row else None
-    row = db.execute(
-        memory.base_query(project_id, repository_id).where(
-            MemoryCard.id == value, memory.lifecycle_expression() == "active"
         )
-    ).first()
-    return memory.card_view(db, row) if row else None
+        result.update((("knowledge", item["id"]), item) for item in knowledge.views(db, rows, compact=True))
+    if card_ids:
+        rows = db.execute(
+            memory.base_query(project_id, repository_id).where(
+                MemoryCard.id.in_(card_ids), memory.lifecycle_expression() == "active"
+            )
+        )
+        result.update((("card", item["id"]), item) for item in memory.card_views(db, rows))
+    return result
 
 
 class NativeEngine:
@@ -69,10 +80,12 @@ class NativeEngine:
 
     def candidates(self, db, project_id, body, task):
         if body.experience_ids:
+            current_items = current_many(db, project_id, (("knowledge", value) for value in body.experience_ids),
+                                         task.repository_id)
             return [
                 ("knowledge", item)
                 for value in body.experience_ids
-                if (item := current(db, project_id, "knowledge", value, task.repository_id))
+                if (item := current_items.get(("knowledge", str(value))))
             ], {"mode": "authorized-exact-experience-id", "semantic_search": "not-used-exact-id"}
         search = MemorySearch(
             query=body.query or (task.title + " " + task.description)[:200],
@@ -116,8 +129,9 @@ def recall(db, project_id, task, body, *, counter=None, engine=None):
         "meter_scope": "delivered-experience-responses; not provider-billing",
     }
     known = {}
+    current_items = current_many(db, project_id, ((prior.kind, prior.id) for prior in body.known), task.repository_id)
     for prior in body.known:
-        item = current(db, project_id, prior.kind, prior.id, task.repository_id)
+        item = current_items.get((prior.kind, str(prior.id)))
         if not item or revision(prior.kind, item) != prior.revision:
             result["invalidated"].append(reference(prior.kind, prior.id))
         else:
