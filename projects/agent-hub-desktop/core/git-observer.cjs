@@ -51,7 +51,7 @@ async function initialize(workspace,{ignoreUntracked=[]}={}){
     fail('WORKTREE_NOT_CLEAN','首次准备任务需要干净的 Git 工作区，请先保存原有修改或使用独立 worktree。');
   return {workspace:repo.workspace,base_commit:repo.head};
 }
-async function safeRead(workspace,relative){
+async function safeRead(workspace,relative,{maxBytes=4194304}={}){
   keyPath(relative);
   const file=path.join(workspace,...relative.split('/'));
   for(let current=file;current!==workspace;current=path.dirname(current)){
@@ -62,7 +62,7 @@ async function safeRead(workspace,relative){
   const real=await fs.realpath(file),rel=path.relative(workspace,real);
   if(rel.startsWith('..'+path.sep) || path.isAbsolute(rel) || !rel)fail('WORK_PATH_UNSAFE','文件超出工程目录。');
   const before=await fs.stat(file);
-  if(!before.isFile() || before.size>4194304)fail('WORK_SNAPSHOT_LIMIT','单个检查点文件必须是普通文件且不超过 4 MiB。');
+  if(!before.isFile() || before.size>maxBytes)fail('WORK_SNAPSHOT_LIMIT','文件超过当前检查点容量，原工作已保留。');
   const data=await fs.readFile(file),after=await fs.stat(file);
   if(before.ino!==after.ino || before.size!==after.size || before.mtimeMs!==after.mtimeMs || data.length!==after.size)
     fail('WORKTREE_CHANGED','文件在采集时变化，请保存编辑后重试。');

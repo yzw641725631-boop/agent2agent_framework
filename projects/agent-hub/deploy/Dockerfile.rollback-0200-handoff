@@ -1,0 +1,13 @@
+# Build from a separate verified 0.20.0 checkout with an explicit v2 archive bridge.
+# Never edit the previously published 0.20.0 release directory.
+FROM agent-hub:0.20.0 AS runtime
+USER root
+WORKDIR /app
+RUN rm -rf /app/src /app/migrations
+COPY pyproject.toml alembic.ini requirements.lock ./
+COPY src ./src
+COPY migrations ./migrations
+RUN PIP_NO_INDEX=1 pip install --no-deps --no-build-isolation . && pip check
+USER 10001
+EXPOSE 8765
+CMD ["agent-hub", "serve", "--host", "0.0.0.0", "--port", "8765"]

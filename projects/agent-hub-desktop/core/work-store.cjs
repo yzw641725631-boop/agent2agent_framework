@@ -3,6 +3,7 @@ const fs=require('node:fs/promises'),path=require('node:path'),crypto=require('n
 const {HubError}=require('./remote.cjs');
 const observer=require('./git-observer.cjs');
 const backupCodec=require('./backup-codec.cjs');
+const {LOCAL_RECORD_BYTES,BASE_FILE_BYTES}=require('./backup-limits.cjs');
 const uuid=value=>typeof value==='string' && /^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/i.test(value);
 class WorkStore{
   constructor(directory,protector){this.directory=path.join(directory,'work-checkpoints');this.protector=protector;this.pending=Promise.resolve();}
@@ -10,7 +11,7 @@ class WorkStore{
   async read(id){
     try{
       const stat=await fs.lstat(this.file(id));
-      if(stat.isSymbolicLink() || !stat.isFile() || stat.size>64*1024*1024)throw new HubError('WORK_STORE_UNAVAILABLE');
+      if(stat.isSymbolicLink() || !stat.isFile() || stat.size>LOCAL_RECORD_BYTES)throw new HubError('WORK_STORE_UNAVAILABLE');
       const result=await this.protector.decryptStringAsync(await fs.readFile(this.file(id)));
       const record=JSON.parse(result.result);
       if(record.schema!==1 || record.operation_id!==id)throw new HubError('WORK_STORE_UNAVAILABLE');
@@ -27,7 +28,7 @@ class WorkStore{
       const exists=await this.read(record.operation_id);
       if(!exists && names.filter(n=>n.endsWith('.bin')).length>=100)throw new HubError('WORK_STORE_LIMIT','本地已保留 100 个检查点，请导出并整理后继续。');
       const bytes=await this.protector.encryptStringAsync(JSON.stringify(record));
-      if(bytes.length>64*1024*1024)throw new HubError('WORK_SNAPSHOT_LIMIT');
+      if(bytes.length>LOCAL_RECORD_BYTES)throw new HubError('WORK_SNAPSHOT_LIMIT');
       let used=0;
       for(const name of names.filter(n=>n.endsWith('.bin') && n!==record.operation_id+'.bin'))used+=(await fs.lstat(path.join(this.directory,name))).size;
       if(used+bytes.length>512*1024*1024)throw new HubError('WORK_STORE_LIMIT','本机检查点已达到 512 MiB，请先导出并核验，保留原工作后再整理。');
@@ -72,7 +73,7 @@ class WorkStore{
     }
     if(record.snapshot.baseline){
       for(const file of this.workingFiles(record)){
-        const data=await observer.safeRead(path.join(target,'working-tree'),file.path);
+        const data=await observer.safeRead(path.join(target,'working-tree'),file.path,{maxBytes:BASE_FILE_BYTES});
         if(!data.data.equals(file.data))throw new HubError('WORK_EXPORT_NOT_CONFIRMED');
       }
     }
@@ -107,7 +108,7 @@ class WorkStore{
       await fs.mkdir(path.dirname(output),{recursive:true});await fs.writeFile(output,bytes,{flag:'wx',mode:0o600});
     }
     if(record.snapshot.baseline){
-      backupCodec.validate({schema:1,worklog_id:record.server_receipt?.id || record.operation_id,
+      backupCodec.validate({schema:backupCodec.archiveSchema(record.snapshot),worklog_id:record.server_receipt?.id || record.operation_id,
         evidence:record.snapshot.evidence,evidence_hash:record.snapshot.evidence_hash,
         contents:record.snapshot.contents,baseline:record.snapshot.baseline});
       await fs.mkdir(path.join(target,'working-tree'));

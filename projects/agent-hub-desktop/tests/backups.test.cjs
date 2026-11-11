@@ -158,7 +158,7 @@ test('binary Remote refresh preserves bytes, DPoP binding and idempotency; downl
 test('binary download truncation, forged content hashes and excessive size fail without yielding a checkpoint',async()=>{
   const remoteFor=transport=>new Remote(binaryProfile(),async()=>{},transport);
   await assert.rejects(remoteFor(async()=>new Response('damaged',{headers:{'X-Content-SHA256':'0'.repeat(64)}})).request('GET','/api/snapshot',undefined,{binary:true}),{code:'WORK_ARCHIVE_HASH_MISMATCH'});
-  await assert.rejects(remoteFor(async()=>new Response('',{headers:{'Content-Length':String(37*1024*1024)}})).request('GET','/api/snapshot',undefined,{binary:true}),{code:'WORK_ARCHIVE_LIMIT'});
+  await assert.rejects(remoteFor(async()=>new Response('',{headers:{'Content-Length':String(97*1024*1024)}})).request('GET','/api/snapshot',undefined,{binary:true}),{code:'WORK_ARCHIVE_LIMIT'});
   const broken=new ReadableStream({start(controller){controller.enqueue(new Uint8Array([1,2]));controller.error(new TypeError('connection closed'));}});
   await assert.rejects(remoteFor(async()=>new Response(broken)).request('GET','/api/snapshot',undefined,{binary:true}),{code:'NETWORK_UNAVAILABLE'});
 });

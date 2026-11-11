@@ -224,7 +224,7 @@ def install(app, hub, actor, token, proof, db_dependency):
             with tempfile.SpooledTemporaryFile(max_size=1024 * 1024) as spool:
                 size = 0
                 try:
-                    async with asyncio.timeout(120):
+                    async with asyncio.timeout(300):
                         async for chunk in request.stream():
                             size += len(chunk)
                             if size > archive_codec.MAX_ARCHIVE:

@@ -29,6 +29,14 @@ test('MCP advertises authorized audit tools and emits source material once',asyn
   assert.equal(response.result.content.length,1);
 });
 
+test('source paging reaches the end of a 16 MiB baseline without enlarging response slices',()=>{
+  const args={job_id:id,instance_id:id,lease_epoch:1,path:'src/large.txt',side:'before',offset:16*1024*1024-6000,limit:6000};
+  const result=request('hub_read_code_audit_source',args,{projectId:id,repositoryId:repo},caps);
+  assert.ok(result.path.includes('offset=16771216'));
+  assert.throws(()=>request('hub_read_code_audit_source',{...args,offset:16*1024*1024+1},{projectId:id},caps),{code:'INVALID_REQUEST'});
+  assert.throws(()=>request('hub_read_code_audit_source',{...args,limit:12001},{projectId:id},caps),{code:'INVALID_REQUEST'});
+});
+
 test('structured reports validate arbitrary approved rule IDs without accepting values of other types',()=>{
   const args={job_id:id,operation_id:id,expected_version:2,instance_id:id,lease_epoch:1,source_hash:'a'.repeat(64),
     content:{conclusion:'incomplete',summary:'未取得完整代码，需要留下覆盖缺口。',checkout_commit:'b'.repeat(40),source_basis:'archived_worktree',

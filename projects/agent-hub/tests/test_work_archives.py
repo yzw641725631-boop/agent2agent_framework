@@ -51,7 +51,7 @@ def upload(w, path, data, who=None, sha=None):
         "X-Content-SHA256": sha or hashlib.sha256(data).hexdigest(), "Idempotency-Key": str(uuid.uuid4())})
 
 
-def setup_archive(w, *, member=False):
+def setup_archive(w, *, member=False, value_factory=archive_fixture):
     p = w.project()
     repo = register(w, p)
     who = w.root
@@ -61,9 +61,10 @@ def setup_archive(w, *, member=False):
     t = task(w, p, repo, execution_mode="observed")
     run = claim(w, p, t, who)
     prepared = prepare(w, p, run, who)
-    value = archive_fixture()
+    value = value_factory()
     body = observed_body(run, prepared)
-    body.update(change_evidence=value["evidence"], git_commit=value["evidence"]["head_commit"])
+    body.update(change_evidence=value["evidence"], git_commit=value["evidence"]["head_commit"],
+                changed_paths=[entry["path"] for entry in value["evidence"]["files"]])
     log = w.ok("POST", f"/api/projects/{p}/tasks/{t['id']}/worklogs", who=who, body=body)
     value["worklog_id"] = log["id"]
     path = f"/api/projects/{p}/tasks/{t['id']}/worklogs/{log['id']}/snapshot"
@@ -124,6 +125,8 @@ def test_server_archive_is_encrypted_immutable_idempotent_and_required_for_submi
         assert store.read(row) == data
         on_disk = store.file(row.id).read_bytes()
         assert data not in on_disk and b"uncommitted change" not in on_disk
+        from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+        assert AESGCM(store.key(row.id)).decrypt(on_disk[5:17], on_disk[17:], store.aad(row)) == data
     assert w.ok("POST", f"/api/projects/{p}/tasks/{t['id']}/submit", who=who, body=submission)["status"] == "review"
     runtime = session_factory(database[0])
     with runtime() as db:

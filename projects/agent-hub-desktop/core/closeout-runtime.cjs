@@ -185,7 +185,7 @@ class CloseoutRuntime{
     receipts[job.id]={log};(job.worklog_ids??={})[record.operation_id]=log.id;
     await c.work.store.write(record);await c.persist();this.guard(p);
     if(!record.snapshot.baseline)record.snapshot.baseline=await codec.baseline(binding?.workspace || record.workspace,record.snapshot.evidence.base_commit);
-    const archive=codec.encode({...record,server_receipt:log});
+    const archive=await codec.encodeArchive({...record,server_receipt:log});
     const result=await remote.raw('POST',`/api/closeouts/${job.id}/checkpoints/${log.id}/snapshot`,archive.data,job.upload_token,
       {binary:true,contentHash:archive.archive_sha256,idempotency:record.operation_id});this.guard(p);
     if(result.worklog_id!==log.id || result.evidence_hash!==record.snapshot.evidence_hash || result.manifest_hash!==archive.manifest_hash ||

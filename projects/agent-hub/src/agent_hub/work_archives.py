@@ -2,6 +2,7 @@
 import asyncio
 import hashlib
 import hmac
+import io
 import os
 import secrets
 import shutil
@@ -12,7 +13,7 @@ import uuid
 from pathlib import Path
 
 import httpx
-from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
 from fastapi import Depends, Request
 from fastapi.responses import Response
 from sqlalchemy import select, text
@@ -65,13 +66,19 @@ class ArtifactStore:
         except OSError as exc:
             raise HubError("WORK_ARCHIVE_STORAGE_UNAVAILABLE", 503) from exc
         nonce = secrets.token_bytes(12)
-        encrypted = b"HUBW1" + nonce + AESGCM(self.key(row.id)).encrypt(nonce, data, self.aad(row))
+        cipher = Cipher(algorithms.AES(self.key(row.id)), modes.GCM(nonce)).encryptor()
+        cipher.authenticate_additional_data(self.aad(row))
         target = self.file(row.id)
         temporary = root / ("upload-" + str(uuid.uuid4()) + ".tmp")
         try:
             with temporary.open("xb") as output:
                 os.chmod(temporary, 0o600)
-                output.write(encrypted)
+                output.write(b"HUBW1" + nonce)
+                # Keep the on-disk AES-GCM format while avoiding full ciphertext copies.
+                for offset in range(0, len(data), 1024 * 1024):
+                    output.write(cipher.update(memoryview(data)[offset:offset + 1024 * 1024]))
+                output.write(cipher.finalize())
+                output.write(cipher.tag)
                 output.flush()
                 os.fsync(output.fileno())
             # Exclusive publication cannot overwrite an existing archive, including on POSIX.
@@ -86,7 +93,7 @@ class ArtifactStore:
             raise HubError("WORK_ARCHIVE_STORAGE_UNAVAILABLE", 503) from exc
         finally:
             temporary.unlink(missing_ok=True)
-        return len(encrypted)
+        return len(data) + 33
 
     def read(self, row):
         try:
@@ -94,13 +101,30 @@ class ArtifactStore:
             info = file.lstat()
             if not stat.S_ISREG(info.st_mode) or info.st_size > archive_codec.MAX_ARCHIVE + 64:
                 raise ValueError()
-            data = file.read_bytes()
-            if len(data) != row.storage_bytes or data[:5] != b"HUBW1":
-                raise ValueError()
-            result = AESGCM(self.key(row.id)).decrypt(data[5:17], data[17:], self.aad(row))
-            if hashlib.sha256(result).hexdigest() != row.archive_hash:
-                raise ValueError()
-            return result
+            with file.open("rb") as stream:
+                if os.fstat(stream.fileno()).st_size != row.storage_bytes or row.storage_bytes < 33:
+                    raise ValueError()
+                header = stream.read(17)
+                if header[:5] != b"HUBW1":
+                    raise ValueError()
+                stream.seek(-16, os.SEEK_END)
+                cipher = Cipher(algorithms.AES(self.key(row.id)), modes.GCM(header[5:], stream.read(16))).decryptor()
+                cipher.authenticate_additional_data(self.aad(row))
+                stream.seek(17)
+                remaining, digest = row.storage_bytes - 33, hashlib.sha256()
+                with io.BytesIO() as output:
+                    while remaining:
+                        chunk = stream.read(min(remaining, 1024 * 1024))
+                        if not chunk:
+                            raise ValueError()
+                        body = cipher.update(chunk)
+                        digest.update(body)
+                        output.write(body)
+                        remaining -= len(chunk)
+                    output.write(cipher.finalize())  # No plaintext is returned before authentication.
+                    if digest.hexdigest() != row.archive_hash:
+                        raise ValueError()
+                    return output.getvalue()
         except HubError:
             raise
         except Exception as exc:
@@ -141,7 +165,7 @@ def get_log(hub, db, identity, project_id, task_id, log_id, *, upload=False, evi
 
 
 def save(hub, db, identity, log, data, *, closeout=False):
-    _, manifest_hash, metadata = archive_codec.decode(data, log)
+    _, manifest_hash, metadata = archive_codec.decode(data, log, retain=False)
     existing = db.scalar(select(WorkSnapshot).where(WorkSnapshot.worklog_id == log.id))
     if existing:
         if existing.manifest_hash != manifest_hash:
@@ -265,7 +289,7 @@ def install(app, hub, actor, token, db_dependency):
             with tempfile.SpooledTemporaryFile(max_size=1024 * 1024) as spool:
                 size = 0
                 try:
-                    async with asyncio.timeout(120):
+                    async with asyncio.timeout(300):
                         async for chunk in request.stream():
                             size += len(chunk)
                             if size > archive_codec.MAX_ARCHIVE:

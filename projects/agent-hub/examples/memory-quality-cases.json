@@ -1,0 +1,30 @@
+{
+  "schema_version": 1,
+  "source_class": "synthetic",
+  "cases": [
+    {"id":"old-db","category":"old-valid","query":"数据库 测试 本机 开发","expected":["生产数据库只在47服务器运行"],"critical":true},
+    {"id":"old-example","category":"old-valid","query":".env.example 示例配置","expected":[".env.example 可以随项目保存"]},
+    {"id":"old-recovery","category":"old-valid","query":"管理员 恢复 邮箱","expected":["管理员恢复必须重新验证本人邮箱"],"critical":true},
+    {"id":"old-export","category":"old-valid","query":"恢复代码 覆盖 工程","expected":["导出交接必须使用全新目录"],"critical":true},
+    {"id":"old-receipt","category":"old-valid","query":"日志确认 代码备份 回执","expected":["工作日志确认与代码备份确认分别记录"]},
+    {"id":"old-review","category":"old-valid","query":"长期知识 候选 审核","expected":["只有独立审核通过的候选才进入长期知识"],"critical":true},
+    {"id":"replace-timeout","category":"superseded","query":"上传 超时 秒","expected":["当前上传超时为300秒"],"forbidden":["旧版上传超时为30秒"]},
+    {"id":"replace-dimensions","category":"superseded","query":"向量 模型 维度","expected":["当前向量维度是512维"],"forbidden":["旧版向量维度是384维"]},
+    {"id":"replace-files","category":"superseded","query":"基线 文件 变更 数量","expected":["基线最多10000个文件，变更最多100个文件"],"forbidden":["旧版基线最多1000个文件"]},
+    {"id":"replace-lease","category":"superseded","query":"人工处理 恢复 认领 租约","expected":["人工处理后须重新认领"],"forbidden":["旧版恢复后沿用旧租约"],"critical":true},
+    {"id":"conflicted","category":"conflicted","query":"冲突路径 自动放行","forbidden":["冲突路径自动放行"]},
+    {"id":"retired","category":"retired","query":"停用经验 自动放行","forbidden":["停用经验自动放行"]},
+    {"id":"cross-repository","category":"authorization","query":"桌面仓库专属维护路径","unauthorized":["桌面仓库专属维护路径"]},
+    {"id":"revoked-source","category":"authorization","query":"已撤销来源专属维护说明","unauthorized":["已撤销来源专属维护说明"]},
+    {"id":"fresh-summary","category":"index-lag","query":"最新交接 备份回执","expected":["当前交接：先核验新版备份回执"],"critical":true},
+    {"id":"fresh-next","category":"index-lag","query":"下一步 来源撤权 记忆","expected":["下一步：核验来源撤权后的记忆失效"],"critical":true},
+    {"id":"paraphrase-device","category":"paraphrase","query":"换机器后怎么证明是我","expected":["设备切换必须重新进行身份验证"],"critical":true},
+    {"id":"paraphrase-index","category":"paraphrase","query":"搜不到刚写的记录怎么办","expected":["检索索引尚未完成时应读取最新原文"]},
+    {"id":"paraphrase-billing","category":"paraphrase","query":"估算 Token 能当账单吗","expected":["费用统计使用宿主上报的真实用量"]},
+    {"id":"paraphrase-history","category":"paraphrase","query":"下载快照后能看到所有提交吗","expected":["工作树快照不含 Git 历史"]},
+    {"id":"large-fact","category":"budget","query":"超长经验 来源","expected":["超长经验必须附带来源"],"max_tokens":1024},
+    {"id":"read-exhausted","category":"budget","query":"读取预算 用尽","consumed_units":24000},
+    {"id":"repeat-delta","category":"incremental","query":"生产数据库 本机 测试","expected":["生产数据库只在47服务器运行"]},
+    {"id":"exact-id","category":"incremental","query":"按经验编号核验旧接口约定","expected":[".env.example 可以随项目保存"],"exact_fact":1}
+  ]
+}

@@ -1,0 +1,16 @@
+# Preserves v2 backup reading when the business runtime returns to 0.20.0.
+services:
+  migrate:
+    image: agent-hub:0.20.0-handoff-compatible
+  api:
+    image: agent-hub:0.20.0-handoff-compatible
+  document-worker:
+    image: agent-hub:0.20.0-handoff-compatible
+  memory-worker:
+    image: agent-hub:0.20.0-handoff-compatible
+  embedding-worker:
+    image: agent-hub:0.20.0-handoff-compatible
+  generation-worker:
+    image: agent-hub:0.20.0-handoff-compatible
+  archive-maintenance:
+    image: agent-hub:0.20.0-handoff-compatible

@@ -197,7 +197,7 @@ class Remote {
     let response;
     try {
       response=await this.transport(this.base+path,{method,headers,redirect:'error',
-        body:body===undefined?undefined:binary?body:JSON.stringify(body),signal:AbortSignal.any([this.lifetime.signal,signal || AbortSignal.timeout(binary?150000:18000)])});
+        body:body===undefined?undefined:binary?body:JSON.stringify(body),signal:AbortSignal.any([this.lifetime.signal,signal || AbortSignal.timeout(binary?360000:18000)])});
     } catch (error) {
       this.checkOpen();
       if (signal?.aborted) throw error;
@@ -206,7 +206,7 @@ class Remote {
     this.checkOpen();
     if (response.ok && stream) return response;
     if(response.ok && binary && method==='GET'){
-      const max=36*1024*1024,parts=[];let total=0;
+      const max=require('./backup-limits.cjs').ARCHIVE_BYTES,parts=[];let total=0;
       if(Number(response.headers.get('content-length'))>max){await response.body?.cancel();throw new HubError('WORK_ARCHIVE_LIMIT');}
       try{
         for await(const part of response.body){total+=part.length;if(total>max)throw new HubError('WORK_ARCHIVE_LIMIT');parts.push(Buffer.from(part));}

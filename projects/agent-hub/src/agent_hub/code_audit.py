@@ -629,7 +629,7 @@ def install(app, hub, actor, mutate, dependency):
         lease_epoch: int = Query(ge=1),
         path: str = Query(max_length=800),
         side: Literal["before", "after"] = "after",
-        offset: int = Query(0, ge=0, le=4000000),
+        offset: int = Query(0, ge=0, le=16777216),
         limit: int = Query(6000, ge=100, le=12000),
     ):
         identity = actor(request, db)
@@ -642,7 +642,8 @@ def install(app, hub, actor, mutate, dependency):
         from .work_archives import ArtifactStore
 
         value, _, _ = archive_codec.decode(
-            ArtifactStore(hub.settings).read(snapshot), db.get(Worklog, row.worklog_id)
+            ArtifactStore(hub.settings).read(snapshot), db.get(Worklog, row.worklog_id),
+            retain=("contents" if side == "after" else "baseline", path),
         )
         files = value["contents"] if side == "after" else value["baseline"]["files"]
         file = next((f for f in files if f["path"] == path), None)

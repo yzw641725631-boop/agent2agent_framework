@@ -10,7 +10,8 @@ import unicodedata
 from .security import HubError, canonical, payload_hash
 
 MIB = 1024 * 1024
-MAX_ARCHIVE = 36 * MIB
+MAX_ARCHIVE = 96 * MIB
+V1_MAX_ARCHIVE = 36 * MIB
 MAX_JSON = 48 * MIB
 MAX_BASE = 16 * MIB
 MAX_FILE = 4 * MIB
@@ -36,22 +37,29 @@ def safe_path(value):
     return value.lower()
 
 
-def content(value):
-    if not isinstance(value, str) or len(value) > (MAX_FILE + 2) // 3 * 4:
+def secret(data):
+    if re.search(rb"-----BEGIN (?:[A-Z ]+ )?PRIVATE KEY-----|(?:gh[pousr]_[A-Za-z0-9]{30,}|github_pat_[A-Za-z0-9_]{40,})", data):
+        fail("WORK_ARCHIVE_SECRET_CONTENT")
+
+
+def content(value, maximum=MAX_FILE):
+    if not isinstance(value, str) or len(value) > (maximum + 2) // 3 * 4:
         fail()
     try:
         data = base64.b64decode(value, validate=True)
     except Exception:
         fail()
-    if len(data) > MAX_FILE or base64.b64encode(data).decode() != value:
+    if len(data) > maximum or base64.b64encode(data).decode() != value:
         fail()
-    if re.search(rb"-----BEGIN (?:[A-Z ]+ )?PRIVATE KEY-----|(?:gh[pousr]_[A-Za-z0-9]{30,}|github_pat_[A-Za-z0-9_]{40,})", data):
-        fail("WORK_ARCHIVE_SECRET_CONTENT")
+    secret(data)
     return data
 
 
 def git_hash(kind, data):
-    return hashlib.sha1(kind.encode() + b" " + str(len(data)).encode() + b"\0" + data, usedforsecurity=False).hexdigest()
+    digest = hashlib.sha1(usedforsecurity=False)
+    digest.update(kind.encode() + b" " + str(len(data)).encode() + b"\0")
+    digest.update(data)
+    return digest.hexdigest()
 
 
 def tree_hash(files):
@@ -89,8 +97,8 @@ def unique_object(pairs):
     return result
 
 
-def decode(archive, log):
-    if len(archive) > MAX_ARCHIVE:
+def decode_v1(archive, log):
+    if len(archive) > V1_MAX_ARCHIVE:
         fail("WORK_ARCHIVE_LIMIT")
     try:
         with gzip.GzipFile(fileobj=io.BytesIO(archive)) as stream:
@@ -169,6 +177,29 @@ def decode(archive, log):
         return value, payload_hash(value), {"baseline_files": len(files), "changed_files": len(expected),
             "baseline_bytes": total, "working_tree_restorable": True, "git_history_included": False,
             "base_commit": value["evidence"]["base_commit"], "head_commit": value["evidence"]["head_commit"]}
+    except HubError:
+        raise
+    except Exception as exc:
+        raise HubError("WORK_ARCHIVE_INVALID", 422) from exc
+
+
+def decode(archive, log, *, retain=True):
+    """Validate every byte; optionally retain only one audit source or no file bodies."""
+    if len(archive) > MAX_ARCHIVE:
+        fail("WORK_ARCHIVE_LIMIT")
+    try:
+        with gzip.GzipFile(fileobj=io.BytesIO(archive)) as stream:
+            if stream.read(6) == b"HUBW2\n":
+                from .archive_v2 import decode_stream
+
+                return decode_stream(stream, log, retain=retain)
+        value, manifest, metadata = decode_v1(archive, log)
+        if retain is not True:
+            for section, files in [("baseline", value["baseline"]["files"]), ("contents", value["contents"])]:
+                for file in files:
+                    if retain != (section, file["path"]):
+                        file.pop("content_base64", None)
+        return value, manifest, metadata
     except HubError:
         raise
     except Exception as exc:

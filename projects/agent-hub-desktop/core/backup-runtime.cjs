@@ -15,7 +15,7 @@ class BackupRuntime{
       if(c.updater){const update=await c.updater.check();if(!update.can_continue)throw new HubError(update.code,update.message);}
       c.ensureCurrent(p,remote);
       if(!record.snapshot.baseline)record.snapshot.baseline=await codec.baseline(binding.workspace,record.snapshot.evidence.base_commit);
-      const archive=codec.encode(record),slot=await c.projectSlot(binding.projectId);
+      const archive=await codec.encodeArchive(record),slot=await c.projectSlot(binding.projectId);
       c.ensureCurrent(p,remote);
       const result=await remote.request('POST',`/api/projects/${binding.projectId}/tasks/${record.task_id}/worklogs/${record.server_receipt.id}/snapshot`,
         archive.data,{slot,binary:true,contentHash:archive.archive_sha256,idempotency:record.operation_id});
@@ -41,7 +41,7 @@ class BackupRuntime{
       const data=await remote.request('GET',`/api/projects/${binding.projectId}/tasks/${args.task_id}/worklogs/${args.worklog_id}/snapshot/content`,undefined,{slot,binary:true});
       c.ensureCurrent(p,remote);
       if(codec.hash(data)!==log.snapshot.archive_sha256)throw new HubError('WORK_ARCHIVE_HASH_MISMATCH');
-      const archive=codec.decode(data,{worklogId:log.id,evidenceHash:log.evidence_hash,manifestHash:log.snapshot.manifest_hash});
+      const archive=await codec.decodeArchive(data,{worklogId:log.id,evidenceHash:log.evidence_hash,manifestHash:log.snapshot.manifest_hash});
       const record={schema:1,operation_id:args.operation_id,request_hash:requestHash,owner:c.work.owner(),binding_id:binding.id,
         project_id:binding.projectId,task_id:args.task_id,run_id:log.run_id,lease_epoch:log.lease_epoch,workspace:binding.workspace,
         created_at:new Date().toISOString(),state:'shared',backup_state:'shared',recovered_from:log.snapshot.id,
